@@ -1,0 +1,42 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  --border: #8884;
+}
+
+body {
+  margin: 0;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 260px 1fr 280px;
+  flex: 1;
+  min-height: 0;
+}
+
+.panel {
+  padding: 0 16px;
+  overflow: auto;
+}
+
+.map {
+  display: grid;
+  place-items: center;
+  border-inline: 1px solid var(--border);
+  opacity: 0.6;
+}
