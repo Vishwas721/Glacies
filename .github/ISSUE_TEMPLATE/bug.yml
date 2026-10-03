@@ -1,0 +1,22 @@
+name: Bug
+description: Something produces wrong results, crashes, or fails to build
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Observed vs. expected behaviour.
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Command, scenario JSON, dataset version, random seed.
+    validations: { required: true }
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [data ingestion, validation, routing, accessibility, scenario, demand, assignment, api, web, ci/tooling]
+    validations: { required: true }
