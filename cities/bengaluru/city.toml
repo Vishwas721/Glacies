@@ -1,0 +1,75 @@
+# City definition for Bengaluru.
+#
+# The Glacies engine is city-agnostic: everything city-specific lives in this file.
+# `verified = false` means the URL/license was taken from the PRD/research and must be
+# confirmed by hand during Phase 1 before the dataset is used (see docs/data-sources.md).
+
+[city]
+id = "bengaluru"
+name = "Bengaluru"
+country = "IN"
+timezone = "Asia/Kolkata"
+crs_projected = "EPSG:32643"   # UTM zone 43N, metres — used for distances/areas
+
+# Study area bounding box, WGS84 [min_lon, min_lat, max_lon, max_lat].
+# Assumed: roughly BBMP + periphery. Refine to an official boundary in Phase 1.
+bbox = [77.35, 12.75, 77.85, 13.20]
+
+[zoning]
+system = "h3"
+resolution = 8      # Assumed (~0.74 km² cells). Decide in Phase 1.
+
+[sources.bmtc_gtfs]
+kind = "gtfs"
+mode = "bus"
+source = "Vonter/bmtc-gtfs"
+url = "https://github.com/Vonter/bmtc-gtfs"
+license = "ODbL-1.0"
+verified = false
+notes = "Unofficial; omits routes without live-tracking telematics. Coverage must be measured."
+
+[sources.bmrcl_gtfs]
+kind = "gtfs"
+mode = "metro"
+source = "TBD in Phase 1"
+url = ""
+license = ""
+verified = false
+
+[sources.bmrcl_ridership]
+kind = "ridership"
+mode = "metro"
+source = "Vonter/bmrcl-ridership-hourly"
+url = "https://github.com/Vonter/bmrcl-ridership-hourly"
+license = ""
+verified = false
+notes = "Hourly station-level ingress/egress; primary demand calibration target."
+
+[sources.osm]
+kind = "osm_pbf"
+source = "Geofabrik"
+url = "https://download.geofabrik.de/asia/india.html"
+license = "ODbL-1.0"
+verified = false
+notes = "Pick the smallest extract covering the bbox, then clip with osmium."
+
+[sources.worldpop]
+kind = "population_raster"
+source = "WorldPop — India 100m constrained, 2020 UN-adjusted"
+url = "https://hub.worldpop.org/"
+license = "CC-BY-4.0"
+verified = false
+
+[sources.open_buildings]
+kind = "buildings"
+source = "Google Open Buildings"
+url = "https://sites.research.google/open-buildings/"
+license = "CC-BY-4.0 / ODbL-1.0"
+verified = false
+
+[sources.worldcover]
+kind = "landcover_raster"
+source = "ESA WorldCover 10m"
+url = "https://esa-worldcover.org/"
+license = "CC-BY-4.0"
+verified = false
