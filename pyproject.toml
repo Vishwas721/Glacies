@@ -60,3 +60,19 @@ strict = true
 warn_unreachable = true
 plugins = ["pydantic.mypy"]
 files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+markers = [
+    "slow: long-running tests (city-scale data)",
+    "integration: requires docker services or downloaded datasets",
+]
+
+[tool.coverage.run]
+source = ["glacies"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
