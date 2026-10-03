@@ -1,0 +1,25 @@
+name: Feature / task
+description: New capability or a planned task from a phase
+labels: [enhancement]
+body:
+  - type: input
+    id: phase
+    attributes:
+      label: Phase
+      placeholder: "e.g. 02-routing-engine"
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be possible afterwards, and why it matters.
+    validations: { required: true }
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope class (PRD §71 risk 5)
+      options: [Core, Later, Never]
+    validations: { required: true }
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done

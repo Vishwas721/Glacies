@@ -1,0 +1,49 @@
+# --- Data (never committed; rebuilt from raw sources) ---
+/data/*
+!/data/README.md
+
+# --- Environment ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# --- Rust ---
+/target/
+**/*.rs.bk
+
+# --- Web ---
+node_modules/
+web/dist/
+web/coverage/
+*.tsbuildinfo
+
+# --- Analytical outputs ---
+*.parquet
+*.duckdb
+*.duckdb.wal
+
+# --- Editors / OS ---
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*.swp
+
+# --- Claude Code local settings ---
+.claude/settings.local.json
