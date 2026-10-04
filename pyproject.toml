@@ -15,6 +15,9 @@ dependencies = [
     "uvicorn[standard]>=0.32",
 ]
 
+[project.scripts]
+glacies = "glacies.cli:app"
+
 [dependency-groups]
 dev = [
     "httpx2>=2.13",
