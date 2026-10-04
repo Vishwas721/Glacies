@@ -87,7 +87,7 @@ def register(
             move=not copy,
             version=version,
         )
-    except (archive.ArchiveError, CityConfigError) as exc:
+    except (archive.ArchiveError, CityConfigError, OSError) as exc:
         _fail(str(exc))
     _report(result, path)
 
