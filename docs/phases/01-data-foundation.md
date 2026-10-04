@@ -48,12 +48,14 @@ Phase 0 merged; `docker compose up -d` healthy; about 30 GB free disk.
 
 | Decision | Options / guidance | Your choice |
 |---|---|---|
-| Study area | bbox in `city.toml` vs. official BBMP/BDA boundary polygon | |
-| Zone resolution | H3 r8 (recommended), r9 finer but about 7× more cells | |
-| Metro source | found GTFS / hand-built GTFS | |
-| Service date | one representative weekday (e.g. a Tuesday) to freeze the timetable | |
-| Storage split | PostGIS for geometry + metadata; Parquet for big tables (recommended) | |
-| Canonical schema format | Parquet tables + Pydantic/Arrow schema (recommended) | |
+| Study area | bbox in `city.toml` vs. official BBMP/BDA boundary polygon | **bbox in `city.toml`** for now; official polygon later (Assumed) |
+| Zone resolution | H3 r8 (recommended), r9 finer but about 7× more cells | **H3 r8** (Assumed) |
+| Metro source | found GTFS / hand-built GTFS | **Found:** Vonter/bmrcl-gtfs (exact timetable feed; frequency-based variant archived for reference) |
+| Service date | one representative weekday (e.g. a Tuesday) to freeze the timetable | **Typical non-holiday Tuesday** in the feed range. BMTC feed has one 7-day service, so this only affects metro (Assumed) |
+| Storage split | PostGIS for geometry + metadata; Parquet for big tables (recommended) | **PostGIS + Parquet** split |
+| Canonical schema format | Parquet tables + Pydantic/Arrow schema (recommended) | **Parquet + Pydantic/Arrow** |
+
+_Decisions recorded 2026-10-04 from the Phase 1 handoff._
 
 ## 5. Your hands-on tasks
 

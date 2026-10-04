@@ -56,6 +56,9 @@ cargo test --workspace
 pnpm install
 pnpm lint && pnpm typecheck && pnpm test && pnpm build
 
+# Data archive (see data/README.md)
+uv run glacies ingest list | register | fetch | verify
+
 # Infra
 docker compose up -d          # PostGIS :5432, Redis :6379
 uv run uvicorn glacies.api.app:app --reload   # API on :8000

@@ -53,8 +53,8 @@ like a CLI report or a quick map in QGIS/kepler.gl. Phase 7 is where the product
 
 | Phase | Doc | Status |
 |---|---|---|
-| 0 | [Foundation](00-foundation.md) | ✅ in review |
-| 1 | [Data Foundation](01-data-foundation.md) | ⏳ next |
+| 0 | [Foundation](00-foundation.md) | ✅ done |
+| 1 | [Data Foundation](01-data-foundation.md) | 🚧 M1 in review |
 | 2 | [Routing Engine](02-routing-engine.md) | — |
 | 3 | [Accessibility](03-accessibility.md) | — |
 | 4 | [Scenario Engine](04-scenario-engine.md) | — |

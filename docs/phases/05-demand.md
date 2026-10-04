@@ -24,7 +24,7 @@ cost); BMRCL ridership downloaded and validated.
 - Indian city travel surveys and Bengaluru CMP (Comprehensive Mobility Plan) published figures:
   trip rates per person, mode shares, average trip lengths. These are useful **Assumed** priors.
   Cite the source for each number you use.
-- The BMRCL ridership dataset: the structure (station × hour × entries/exits), and which dates it
+- The BMRCL ridership dataset: the structure (station × hour × entries/exits, plus **station-pair hourly flows**, i.e. observed metro OD), and which dates it
   covers.
 
 ## 4. Decisions you must make
@@ -36,7 +36,7 @@ cost); BMRCL ridership downloaded and validated.
 | Transit share | fixed share (Assumed) or a simple logit vs. distance; v1 can be fixed | |
 | Friction function | exponential (recommended start) | |
 | Cost used | generalised transit cost from Phase 2 (in-vehicle + 2×wait + 2×walk + transfer penalty) | |
-| Calibration target | metro station entries 08:00–10:00, averaged over weekdays | |
+| Calibration target | metro station entries 08:00–10:00 **and station-pair OD flows** (`stationpair-hourly.parquet`, Observed), averaged over weekdays | |
 | Calibration method | 1-D search on β minimising RMSE/GEH vs. station entries; held-out stations for validation | |
 
 ## 5. Your hands-on tasks

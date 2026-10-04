@@ -5,16 +5,30 @@ sources by the ingestion pipeline (Phase 1).
 
 ```
 data/
-├── raw/<city>/<dataset>/<download-date>/   immutable downloads + manifest.json (never edited)
-├── interim/<city>/                          clipped / reprojected / validated intermediates
-└── processed/<city>/                        canonical datasets consumed by the engine
-    └── results/<simulation-id>/             Parquet outputs of simulations
+├── raw/<city>/<dataset>/<snapshot>/     immutable archive (never edited)
+│   ├── data/                            the files exactly as downloaded
+│   └── manifest.json                    DatasetManifest: source, licence, per-file sha256
+├── interim/<city>/                      clipped / reprojected / validated intermediates
+└── processed/<city>/                    canonical datasets consumed by the engine
+    └── results/<simulation-id>/         Parquet outputs of simulations
+```
+
+## Getting data into the archive
+
+```bash
+uv run glacies ingest list                       # sources from city.toml + archived snapshots
+uv run glacies ingest register <dataset> <path> --snapshot <name>   # manual downloads (moves)
+uv run glacies ingest register ... --copy        # keep the original where it is
+uv run glacies ingest fetch <dataset>            # sources with a download_url
+uv run glacies ingest verify                     # re-hash everything against manifests
 ```
 
 Rules:
 
-1. `raw/` is append-only. A new download goes into a new dated folder with its own
-   `manifest.json` (see `glacies.provenance.DatasetManifest`).
-2. The engine never reads `raw/` directly — only `processed/`.
-3. Back up `raw/` somewhere outside the repo (external drive / cloud folder). The BMTC feed
+1. `raw/` is append-only. New content goes into a new snapshot; identical content is detected by
+   checksum and not archived twice; reusing a snapshot name for different content is refused.
+2. Pick snapshot names that identify the upstream version: the GTFS `feed_version`, the release
+   (`2021-R2025A`), or the download date (`2026-10-04`).
+3. The engine never reads `raw/` directly, only `processed/`.
+4. Back up `raw/` somewhere outside the repo (external drive / cloud folder). The BMTC feed
    may disappear upstream; your archive may become the only copy.
