@@ -1,8 +1,8 @@
 # City definition for Bengaluru.
 #
 # The Glacies engine is city-agnostic: everything city-specific lives in this file.
-# `verified = false` means the URL/license was taken from the PRD/research and must be
-# confirmed by hand during Phase 1 before the dataset is used (see docs/data-sources.md).
+# `verified = true` means the URL and licence were checked by hand (Phase 1 handoff,
+# 2026-10-04). `nature` is the provenance label of the data (see docs/glossary.md).
 
 [city]
 id = "bengaluru"
@@ -25,51 +25,71 @@ mode = "bus"
 source = "Vonter/bmtc-gtfs"
 url = "https://github.com/Vonter/bmtc-gtfs"
 license = "ODbL-1.0"
-verified = false
-notes = "Unofficial; omits routes without live-tracking telematics. Coverage must be measured."
+verified = true
+nature = "observed"
+notes = "Unofficial; omits routes without live-tracking telematics. One service_id covers all 7 days."
 
 [sources.bmrcl_gtfs]
 kind = "gtfs"
 mode = "metro"
-source = "TBD in Phase 1"
-url = ""
-license = ""
-verified = false
+source = "Vonter/bmrcl-gtfs"
+url = "https://github.com/Vonter/bmrcl-gtfs"
+license = "ODbL-1.0"
+verified = true
+nature = "observed"
+notes = "Exact-times feed; used for routing. Stops include platforms/entrances (location_type)."
+
+[sources.bmrcl_gtfs_frequencies]
+kind = "gtfs"
+mode = "metro"
+source = "Vonter/bmrcl-gtfs (frequencies variant)"
+url = "https://github.com/Vonter/bmrcl-gtfs"
+license = "ODbL-1.0"
+verified = true
+nature = "observed"
+notes = "Headway-based variant of the same feed. Archived for reference, not used for routing."
 
 [sources.bmrcl_ridership]
 kind = "ridership"
 mode = "metro"
 source = "Vonter/bmrcl-ridership-hourly"
 url = "https://github.com/Vonter/bmrcl-ridership-hourly"
-license = ""
-verified = false
-notes = "Hourly station-level ingress/egress; primary demand calibration target."
+license = "ODbL-1.0"
+verified = true
+nature = "observed"
+notes = "Hourly station entries/exits and station-pair (OD) flows. Primary demand calibration target."
 
 [sources.osm]
 kind = "osm_pbf"
-source = "Geofabrik"
+source = "Geofabrik — India southern zone"
 url = "https://download.geofabrik.de/asia/india.html"
 license = "ODbL-1.0"
-verified = false
-notes = "Pick the smallest extract covering the bbox, then clip with osmium."
+verified = true
+nature = "observed"
+notes = "Large extract; clip to the bbox with osmium before loading anything in Python."
 
 [sources.worldpop]
 kind = "population_raster"
-source = "WorldPop — India 100m constrained, 2020 UN-adjusted"
+source = "WorldPop — India 100m constrained, 2021, release R2025A"
 url = "https://hub.worldpop.org/"
 license = "CC-BY-4.0"
-verified = false
+verified = true
+nature = "estimated"
+notes = "Modelled population raster; record the 2021 vintage wherever it is used."
 
 [sources.open_buildings]
 kind = "buildings"
-source = "Google Open Buildings"
+source = "Google Open Buildings v3"
 url = "https://sites.research.google/open-buildings/"
 license = "CC-BY-4.0 / ODbL-1.0"
-verified = false
+verified = true
+nature = "estimated"
+notes = "Exported for a custom WKT polygon; confirm it covers the bbox before use (M5)."
 
 [sources.worldcover]
 kind = "landcover_raster"
-source = "ESA WorldCover 10m"
+source = "ESA WorldCover 10m 2021 v200 (tile N12E075)"
 url = "https://esa-worldcover.org/"
 license = "CC-BY-4.0"
-verified = false
+verified = true
+nature = "estimated"
