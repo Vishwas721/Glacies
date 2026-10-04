@@ -254,3 +254,48 @@ def test_verify_flags_snapshot_without_manifest(tmp_path: Path) -> None:
     issues = verify(tmp_path / "raw", "toyville")
 
     assert [i.problem for i in issues] == ["missing manifest.json"]
+
+
+def test_final_rename_retries_transient_lock(
+    tmp_path: Path, city: CityConfig, toy_gtfs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_rename = Path.rename
+    failures = iter([True, True])
+
+    def flaky_rename(self: Path, target: Path) -> Path:
+        if self.name.endswith(".staging") and next(failures, False):
+            raise PermissionError("locked by antivirus")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", flaky_rename)
+    monkeypatch.setattr("glacies.ingest.archive._RENAME_DELAY_SECONDS", 0)
+
+    result = register(
+        raw_dir=tmp_path / "raw", city=city, dataset="toy_gtfs", source_path=toy_gtfs, snapshot="v1"
+    )
+
+    assert result.status == "archived"
+    assert (result.snapshot_dir / "manifest.json").is_file()
+
+
+def test_persistent_lock_leaves_complete_staging_and_explains(
+    tmp_path: Path, city: CityConfig, toy_gtfs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def locked(self: Path, target: Path) -> Path:
+        raise PermissionError("locked by antivirus")
+
+    monkeypatch.setattr(Path, "rename", locked)
+    monkeypatch.setattr("glacies.ingest.archive._RENAME_DELAY_SECONDS", 0)
+
+    with pytest.raises(ArchiveError, match="staging directory"):
+        register(
+            raw_dir=tmp_path / "raw",
+            city=city,
+            dataset="toy_gtfs",
+            source_path=toy_gtfs,
+            snapshot="v1",
+        )
+
+    staging = tmp_path / "raw" / "toyville" / "toy_gtfs" / ".v1.staging"
+    assert (staging / "manifest.json").is_file()
+    assert (staging / "data" / "stops.txt").is_file()

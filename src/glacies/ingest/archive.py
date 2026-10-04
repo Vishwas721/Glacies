@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -27,6 +28,11 @@ DATA_DIR_NAME = "data"
 
 # Snapshot names become directory names, so keep them to a portable, traversal-free charset.
 _SNAPSHOT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+# On Windows, antivirus or the search indexer can hold a freshly moved large file open for a
+# few seconds, making the final directory rename fail with "Access is denied".
+_RENAME_ATTEMPTS = 10
+_RENAME_DELAY_SECONDS = 1.0
 
 
 class ArchiveError(Exception):
@@ -155,8 +161,23 @@ def register(
             shutil.rmtree(staging, ignore_errors=True)
         # After a failed move the files may already sit in staging; leave them for inspection.
         raise
-    staging.rename(target)
+    _rename_with_retry(staging, target)
     return RegisterResult(status="archived", snapshot_dir=target, manifest=manifest)
+
+
+def _rename_with_retry(source: Path, target: Path) -> None:
+    for attempt in range(1, _RENAME_ATTEMPTS + 1):
+        try:
+            source.rename(target)
+            return
+        except PermissionError as exc:
+            if attempt == _RENAME_ATTEMPTS:
+                raise ArchiveError(
+                    f"could not rename {source} to {target} (file locked, e.g. by antivirus); "
+                    "the data and manifest are complete in the staging directory, "
+                    "rename it by hand once the lock is released"
+                ) from exc
+            time.sleep(_RENAME_DELAY_SECONDS)
 
 
 def _transfer(source: Path, data_dir: Path, *, move: bool) -> None:
