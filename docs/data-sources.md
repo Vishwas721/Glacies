@@ -3,18 +3,29 @@
 Single source of truth for every external dataset. The machine-readable copy for Bengaluru is
 `cities/bengaluru/city.toml`; keep the two in sync.
 
-> **Status legend.** ✅ verified by hand (URL, license, coverage) · ⚠️ from PRD/research and not yet
-> verified · ❓ source not yet identified. Nothing is ✅ until Phase 1 is done.
+> **Status legend.** ✅ URL and licence verified by hand · ⚠️ not yet verified · ❓ source not yet
+> identified. Verification: Phase 1 handoff, 2026-10-04.
 
-| Dataset | Role | Source | License | Status | Nature |
-|---|---|---|---|---|---|
-| BMTC bus GTFS | Bus network & schedules | [Vonter/bmtc-gtfs](https://github.com/Vonter/bmtc-gtfs) | ODbL-1.0 | ⚠️ | Observed (incomplete) |
-| BMRCL metro GTFS | Metro network & schedules | ❓ find in Phase 1 | ❓ | ❓ | Observed |
-| BMRCL hourly ridership | Demand calibration target | [Vonter/bmrcl-ridership-hourly](https://github.com/Vonter/bmrcl-ridership-hourly) | ❓ check repo | ⚠️ | Observed |
-| OpenStreetMap | Walk network, POIs, stations | [Geofabrik](https://download.geofabrik.de/asia/india.html) | ODbL-1.0 | ⚠️ | Observed |
-| WorldPop India 100 m constrained 2020 (UN-adj.) | Trip origins | [WorldPop Hub](https://hub.worldpop.org/) | CC-BY-4.0 | ⚠️ | Estimated (modelled raster) |
-| Google Open Buildings | Employment proxy (floor area) | [Open Buildings](https://sites.research.google/open-buildings/) | CC-BY-4.0 / ODbL-1.0 | ⚠️ | Estimated (ML-detected) |
-| ESA WorldCover 10 m | Employment proxy (land use) | [ESA WorldCover](https://esa-worldcover.org/) | CC-BY-4.0 | ⚠️ | Estimated (classified) |
+| Dataset | Role | Source | Version used | License | Status | Nature |
+|---|---|---|---|---|---|---|
+| BMTC bus GTFS | Bus network & schedules | [Vonter/bmtc-gtfs](https://github.com/Vonter/bmtc-gtfs) | feed 20260907 | ODbL-1.0 | ✅ | Observed (incomplete) |
+| BMRCL metro GTFS | Metro network & schedules | [Vonter/bmrcl-gtfs](https://github.com/Vonter/bmrcl-gtfs) | feed 20260817 | ODbL-1.0 | ✅ | Observed |
+| BMRCL metro GTFS (frequencies) | Reference only | [Vonter/bmrcl-gtfs](https://github.com/Vonter/bmrcl-gtfs) | feed 20260817 | ODbL-1.0 | ✅ | Observed |
+| BMRCL hourly ridership | Demand calibration (station entries/exits **and station-pair OD**) | [Vonter/bmrcl-ridership-hourly](https://github.com/Vonter/bmrcl-ridership-hourly) | downloaded 2026-10-04 | ODbL-1.0 | ✅ | Observed |
+| OpenStreetMap | Walk network, POIs, stations | [Geofabrik](https://download.geofabrik.de/asia/india.html), southern zone | 2026-10-02 | ODbL-1.0 | ✅ | Observed |
+| WorldPop India 100 m constrained | Trip origins | [WorldPop Hub](https://hub.worldpop.org/) | 2021, R2025A | CC-BY-4.0 | ✅ | Estimated (modelled raster) |
+| Google Open Buildings | Employment proxy (floor area) | [Open Buildings](https://sites.research.google/open-buildings/) | v3, custom polygon export | CC-BY-4.0 / ODbL-1.0 | ✅ | Estimated (ML-detected) |
+| ESA WorldCover 10 m | Employment proxy (land use) | [ESA WorldCover](https://esa-worldcover.org/) | 2021 v200, tile N12E075 | CC-BY-4.0 | ✅ | Estimated (classified) |
+
+### Facts measured from the downloaded files (Observed)
+
+| Feed | GTFS routes | Trips | Stops | Calendar |
+|---|---|---|---|---|
+| BMTC | 4,434 | 57,836 | 9,960 | one `service_id`, all 7 days, 2026-09-07 → 2027-09-07 |
+| BMRCL | 3 | 3,279 | 488 (incl. platforms/entrances) | `weekday` (Tue–Sat), separate Monday, Sunday and holiday services |
+
+GTFS route rows are **not** a coverage measure: one BMTC route number can appear as several GTFS
+routes (directions/variants). Coverage is measured by the M2 validator.
 
 ## Known risks
 
