@@ -18,6 +18,13 @@ url = "https://example.invalid/toy-gtfs"
 license = "CC0-1.0"
 verified = true
 nature = "observed"
+route_number_pattern = '^\S+'
+
+[sources.toy_gtfs.coverage_reference]
+route_count_min = 2
+route_count_max = 4
+source = "Glacies test fixture"
+verified = false
 
 [sources.toy_population]
 kind = "population_raster"

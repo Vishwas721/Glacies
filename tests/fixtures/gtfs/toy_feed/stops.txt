@@ -1,0 +1,8 @@
+stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station
+S1,Central Station,12.0100,77.0100,1,
+P1,Central Station Platform 1,12.0101,77.0101,0,S1
+E1,Central Station Entrance,12.0102,77.0099,2,S1
+A,Stop A,12.0200,77.0200,,
+B,Stop B,12.0300,77.0300,,
+C,Stop C,12.0400,77.0400,,
+D,Stop D,12.0500,77.0500,,
