@@ -8,10 +8,12 @@ from pathlib import Path
 from typing import Annotated, NoReturn
 
 import polars as pl
+import psycopg
 import typer
 
 from glacies.cities import CityConfig, CityConfigError, load_city
 from glacies.config import Settings, get_settings
+from glacies.db import postgis
 from glacies.ingest import archive, download
 from glacies.model.transit.build import FeedInput, TransitBuildError, build_transit
 from glacies.model.transit.writer import MANIFEST_NAME as TRANSIT_MANIFEST
@@ -40,6 +42,8 @@ validate_app = typer.Typer(help="Validate archived datasets.", no_args_is_help=T
 app.add_typer(validate_app, name="validate")
 build_app = typer.Typer(help="Build canonical datasets from archived inputs.", no_args_is_help=True)
 app.add_typer(build_app, name="build")
+load_app = typer.Typer(help="Copy canonical layers into databases.", no_args_is_help=True)
+app.add_typer(load_app, name="load")
 
 CityOption = Annotated[
     str | None, typer.Option("--city", help="City id under cities/ (default: GLACIES_CITY).")
@@ -451,4 +455,37 @@ def build_walk_network(
     typer.echo(
         f"stops snapped: {s['stops_snapped']:,}, flagged > {config.walk.max_snap_m:g} m: "
         f"{s['stops_flagged']:,} -> {out_dir}"
+    )
+
+
+@load_app.command("postgis")
+def load_postgis(
+    connect_timeout: Annotated[int, typer.Option(help="Seconds to wait for the database.")] = 10,
+    city: CityOption = None,
+) -> None:
+    """Load zones, stops and route pattern lines into PostGIS (schema = city id)."""
+    settings, config = _load(city)
+    _, transit_dir = _transit_tables(settings, config)
+    zones_path = settings.processed_dir / config.city.id / "zones" / "zones.parquet"
+    if not zones_path.is_file():
+        _fail("no zones; run `glacies build zones` first")
+    transit = {
+        name: pl.read_parquet(transit_dir / f"{name}.parquet")
+        for name in ("stops", "routes", "patterns", "pattern_stops", "trips")
+    }
+    try:
+        counts = postgis.load(
+            settings.database_url,
+            config.city.id,
+            postgis.layers(transit, pl.read_parquet(zones_path)),
+            connect_timeout=connect_timeout,
+        )
+    except psycopg.OperationalError as exc:
+        _fail(
+            f"cannot connect to {settings.database_url.rsplit('@', 1)[-1]} "
+            f"({str(exc).strip().splitlines()[0]}); is `docker compose up -d` running?"
+        )
+    typer.echo(
+        "loaded into schema "
+        f"{config.city.id!r}: " + ", ".join(f"{name} {n:,}" for name, n in counts.items())
     )
