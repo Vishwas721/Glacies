@@ -45,3 +45,19 @@ url = "https://example.invalid/toy-osm"
 license = "ODbL-1.0"
 verified = true
 nature = "observed"
+
+[sources.toy_landcover]
+kind = "landcover_raster"
+source = "Glacies test fixture"
+url = "https://example.invalid/toy-landcover"
+license = "CC-BY-4.0"
+verified = true
+nature = "estimated"
+
+[sources.toy_buildings]
+kind = "buildings"
+source = "Glacies test fixture"
+url = "https://example.invalid/toy-buildings"
+license = "CC-BY-4.0"
+verified = true
+nature = "estimated"

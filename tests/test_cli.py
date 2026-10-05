@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from glacies.cli import app
+from tests.zone_inputs import write_buildings, write_landcover, write_population
 
 FIXTURES = Path(__file__).parent / "fixtures"
 runner = CliRunner()
@@ -194,3 +195,32 @@ def test_build_walk_needs_transit_and_osm(env: Path) -> None:
     no_transit = runner.invoke(app, ["build", "walk"])
     assert no_transit.exit_code == 1
     assert "run `glacies build transit` first" in no_transit.output
+
+
+def test_build_zones(env: Path, archived_feed: Path) -> None:
+    downloads = env / "downloads"
+    assert runner.invoke(app, ["build", "transit"]).exit_code == 0
+    sources = {
+        "toy_population": write_population(downloads / "pop.tif"),
+        "toy_landcover": write_landcover(downloads / "lc.tif"),
+        "toy_buildings": write_buildings(downloads / "buildings.csv.gz"),
+        "toy_osm": shutil.copy(FIXTURES / "osm" / "toy_pois.osm", downloads / "toy_pois.osm"),
+    }
+    for name, path in sources.items():
+        args = ["ingest", "register", name, str(path), "--snapshot", "v1"]
+        assert runner.invoke(app, args).exit_code == 0
+
+    result = runner.invoke(app, ["build", "zones"])
+
+    assert result.exit_code == 0, result.output
+    assert "conservation error 0.0e+00" in result.output
+    zones = pl.read_parquet(env / "data" / "processed" / "toyville" / "zones" / "zones.parquet")
+    assert int(zones["stops_bus"].sum()) == 3
+    assert int(zones["building_count_c65"].sum()) == 3
+
+
+def test_build_zones_needs_every_input(env: Path) -> None:
+    result = runner.invoke(app, ["build", "zones"])
+
+    assert result.exit_code == 1
+    assert "no archived snapshot of 'toy_population'" in result.output

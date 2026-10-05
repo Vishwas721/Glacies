@@ -7,7 +7,6 @@ import numpy as np
 import polars as pl
 import pytest
 import rasterio
-from rasterio.transform import from_origin
 
 from glacies.model.transit.build import FeedInput, build_transit
 from glacies.model.zones.build import (
@@ -23,62 +22,26 @@ from glacies.model.zones.grid import make_zones
 from glacies.model.zones.pois import extract_pois
 from glacies.validate.gtfs.report import Thresholds
 from tests.gtfs_edit import TOY_FEED
+from tests.zone_inputs import HOT, write_buildings, write_landcover, write_population
 
 BBOX = (77.0, 12.0, 77.1, 12.1)
 RES = 8
 FIXTURES = Path(__file__).parent / "fixtures"
-HOT = (12.0504, 77.0504)  # (lat, lon) of the 1000-person pixel
-POP_RES = 1 / 1200  # WorldPop 100 m grid
-LC_RES = 1 / 12000  # WorldCover 10 m grid
-EXTENT = (76.99, 12.11)  # raster top-left (lon, lat); rasters cover the bbox plus 0.01 deg
-
-
-def _write_raster(path: Path, data: np.ndarray, res: float, nodata: float) -> None:
-    with rasterio.open(
-        path, "w", driver="GTiff", height=data.shape[0], width=data.shape[1], count=1,
-        dtype=data.dtype, crs="EPSG:4326", transform=from_origin(*EXTENT, res, res), nodata=nodata,
-    ) as dst:  # fmt: skip
-        dst.write(data, 1)
 
 
 @pytest.fixture
 def population_raster(tmp_path: Path) -> Path:
-    size = round(0.12 / POP_RES)
-    data = np.ones((size, size), dtype=np.float32)
-    nd_row, nd_col = int((EXTENT[1] - 12.06) / POP_RES), int((77.06 - EXTENT[0]) / POP_RES)
-    data[nd_row : nd_row + 2, nd_col : nd_col + 2] = -99999.0  # nodata block inside the bbox
-    row = int((EXTENT[1] - HOT[0]) / POP_RES)
-    col = int((HOT[1] - EXTENT[0]) / POP_RES)
-    data[row, col] = 1000.0
-    path = tmp_path / "pop.tif"
-    _write_raster(path, data, POP_RES, -99999.0)
-    return path
+    return write_population(tmp_path / "pop.tif")
 
 
 @pytest.fixture
 def landcover_raster(tmp_path: Path) -> Path:
-    size = round(0.12 / LC_RES)
-    data = np.full((size, size), 40, dtype=np.uint8)  # cropland
-    data[:, : round((77.05 - EXTENT[0]) / LC_RES)] = 50  # built-up west of 77.05
-    path = tmp_path / "lc.tif"
-    _write_raster(path, data, LC_RES, 0)
-    return path
+    return write_landcover(tmp_path / "lc.tif")
 
 
 @pytest.fixture
 def buildings_csv(tmp_path: Path) -> Path:
-    path = tmp_path / "buildings.csv.gz"
-    frame = pl.DataFrame(
-        {
-            "latitude": [12.0500, 12.0501, 12.0800, 12.5000],
-            "longitude": [77.0200, 77.0201, 77.0800, 77.5000],
-            "area_in_meters": [100.0, 50.0, 30.0, 10.0],
-            "confidence": [0.70, 0.80, 0.90, 0.90],
-            "geometry": ["POLYGON EMPTY"] * 4,
-        }
-    )
-    frame.write_csv(path, compression="gzip")
-    return path
+    return write_buildings(tmp_path / "buildings.csv.gz")
 
 
 @pytest.fixture
