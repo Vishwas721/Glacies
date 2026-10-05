@@ -169,3 +169,12 @@ def test_report_lists_flagged_stops(tmp_path: Path) -> None:
     assert "**Flagged (> 300 m): 2**" in report
     assert "Next to the island" in report
     assert "| highway=motorway | 1 |" in report
+
+
+def test_private_ways_can_be_made_walkable() -> None:
+    result, stats = run(Walk(exclude_access=["no"], exclude_foot=["no", "use_sidepath"]))
+
+    assert "access=private" not in stats.ways_excluded
+    assert stats.ways_kept["service"] == 1  # way 107, node 4 -> 11
+    component = dict(result.tables["nodes"].select("osm_node_id", "component").iter_rows())
+    assert component[11] == 0
