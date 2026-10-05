@@ -12,6 +12,7 @@ dependencies = [
     "h3>=4.2",
     "osmium>=4.0",
     "polars>=1.0",
+    "psycopg[binary]>=3.2",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "pyproj>=3.6",
