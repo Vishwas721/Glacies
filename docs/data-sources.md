@@ -14,7 +14,7 @@ Single source of truth for every external dataset. The machine-readable copy for
 | BMRCL hourly ridership | Demand calibration (station entries/exits **and station-pair OD**) | [Vonter/bmrcl-ridership-hourly](https://github.com/Vonter/bmrcl-ridership-hourly) | downloaded 2026-10-04 | ODbL-1.0 | ✅ | Observed |
 | OpenStreetMap | Walk network, POIs, stations | [Geofabrik](https://download.geofabrik.de/asia/india.html), southern zone | 2026-10-02 | ODbL-1.0 | ✅ | Observed |
 | WorldPop India 100 m constrained | Trip origins | [WorldPop Hub](https://hub.worldpop.org/) | 2021, R2025A | CC-BY-4.0 | ✅ | Estimated (modelled raster) |
-| Google Open Buildings | Employment proxy (floor area) | [Open Buildings](https://sites.research.google/open-buildings/) | v3, custom polygon export | CC-BY-4.0 / ODbL-1.0 | ⚠️ **re-export needed** | Estimated (ML-detected) |
+| Google Open Buildings | Employment proxy (floor area) | [Open Buildings](https://sites.research.google/open-buildings/) | v3, export for the enlarged bbox (snapshot `v3-2026-10-05`) | CC-BY-4.0 / ODbL-1.0 | ✅ | Estimated (ML-detected) |
 | ESA WorldCover 10 m | Employment proxy (land use) | [ESA WorldCover](https://esa-worldcover.org/) | 2021 v200, tile N12E075 | CC-BY-4.0 | ✅ | Estimated (classified) |
 
 ### Facts measured from the downloaded files (Observed)
@@ -41,7 +41,7 @@ Full reports: `data/processed/bengaluru/reports/<dataset>/<snapshot>/gtfs_valida
 | Dataset | Covers new bbox? |
 |---|---|
 | OSM southern zone, WorldPop India, WorldCover tile N12E075 (lat 12–15°, lon 75–78°) | ✅ |
-| Open Buildings v3 export | ❌ **Exactly the old bbox** (lat 12.75–13.20, lon 77.35–77.85; 2,506,447 buildings), about 34 % of the new area. **Re-export for the new bbox before Phase 1 M5.** |
+| Open Buildings v3, snapshot `v3-2026-10-05` | ✅ Exactly the new bbox: 3,624,814 buildings (confidence ≥ 0.65; 2,413,700 ≥ 0.75). The earlier snapshot `v3` covered only the old bbox and is superseded. |
 
 ## Known risks
 
