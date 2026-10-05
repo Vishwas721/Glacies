@@ -249,7 +249,15 @@ def _prepare(
     trips, stop_times = _keep_trips(trips, stop_times, duplicates)
     step("duplicate_trip", before, trips.height, "exact duplicates removed")
 
-    # 7. Clip to the study area, splitting trips that leave and re-enter.
+    # 7. A trip needs at least two stops to carry anyone anywhere.
+    sizes = stop_times.group_by("trip_id").len()
+    single = sizes.filter(pl.col("len") < 2)["trip_id"]
+    drop(single.to_frame(), "single_stop_trip", "trip visits only one stop")
+    before = trips.height
+    trips, stop_times = _keep_trips(trips, stop_times, single)
+    step("single_stop_trip", before, trips.height, "trips with fewer than two stops")
+
+    # 8. Clip to the study area, splitting trips that leave and re-enter.
     stop_times, outside, detail = _clip(stop_times, stops, bbox)
     drop(outside.to_frame(), "outside_study_area", "fewer than 2 consecutive stops inside bbox")
     before = trips.height
