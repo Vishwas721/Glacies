@@ -120,13 +120,21 @@ Implement milestone M<N> only. Before coding, show me a short plan: modules, fil
 
 ## 9. Definition of done
 
-- [ ] On a clean `data/` directory, `glacies build-city bengaluru` rebuilds everything from
-      `data/raw/` with no manual steps (PRD §62 DoD).
-- [ ] Running it twice produces byte-identical Parquet files (determinism).
-- [ ] A validation report exists for each GTFS feed, with counts, warnings and estimated coverage.
-- [ ] The sum of zone population ≈ WorldPop total for the bbox (within 1 %).
-- [ ] Every Parquet has a matching manifest; `BUILD.json` lists them.
-- [ ] Stops, routes and zones render correctly in QGIS from PostGIS.
+Checked 2026-10-05 against the real Bengaluru data (results in the M1–M6 pull requests).
+
+- [x] On a clean `data/` directory, `glacies build-city bengaluru` rebuilds everything from
+      `data/raw/` with no manual steps (PRD §62 DoD). **~2.5 min end to end.**
+- [x] Running it twice produces byte-identical Parquet files (determinism). **All 25 output
+      files identical across two `--clean` rebuilds.**
+- [x] A validation report exists for each GTFS feed, with counts, warnings and estimated coverage.
+      **BMTC: 0 errors, coverage 108–122 % vs an unverified reference; BMRCL: 0 errors.**
+- [x] The sum of zone population ≈ WorldPop total for the bbox (within 1 %). **100.74 %;
+      conservation error 0.**
+- [x] Every Parquet has a matching manifest; `BUILD.json` lists them. **`BUILD.json` records
+      every raw snapshot, the git commit, the `city.toml` hash and each stage's manifest hash.**
+- [ ] Stops, routes and zones render correctly in QGIS from PostGIS. **Your check:** start
+      Docker Desktop, `docker compose up -d`, `uv run glacies load postgis`, then open schema
+      `bengaluru` on `localhost:5433` in QGIS. (The loader itself is tested against PostGIS in CI.)
 
 ## 10. Risks & pitfalls
 

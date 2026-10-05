@@ -13,6 +13,16 @@ data/
     └── results/<simulation-id>/         Parquet outputs of simulations
 ```
 
+## Rebuilding everything
+
+```bash
+uv run glacies build-city bengaluru --clean   # verify raw → validate → transit → walk → zones
+```
+
+`processed/<city>/BUILD.json` records every raw snapshot used (with checksums), the code version
+and git commit, the `city.toml` hash, validation results and the manifest hash of each stage.
+Two clean builds from the same inputs and code are byte-identical.
+
 ## Getting data into the archive
 
 ```bash

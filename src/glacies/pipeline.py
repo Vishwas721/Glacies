@@ -1,0 +1,458 @@
+"""Pipeline stages shared by the CLI commands and ``glacies build-city``.
+
+Each stage reads archived or already-built inputs, writes one output directory under
+``data/processed/<city>/`` and returns its manifest. Stages raise ``PipelineError`` with a
+message meant for the user.
+"""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+
+import polars as pl
+import psycopg
+from pydantic import BaseModel
+
+from glacies import __version__
+from glacies.cities import CityConfig, CityConfigError
+from glacies.config import Settings
+from glacies.db import postgis
+from glacies.ingest import archive
+from glacies.model.transit.build import FeedInput, TransitBuildError, build_transit
+from glacies.model.transit.writer import MANIFEST_NAME as TRANSIT_MANIFEST
+from glacies.model.transit.writer import TransitManifest, write_transit
+from glacies.model.walk.build import WalkBuild, build_walk
+from glacies.model.walk.extract import extract_walk_segments
+from glacies.model.walk.writer import WalkManifest, write_walk
+from glacies.model.zones.build import (
+    InputRef,
+    ZoneInputs,
+    ZonesBuild,
+    ZonesManifest,
+    build_zones,
+    stop_modes,
+    write_zones,
+)
+from glacies.provenance import DatasetManifest, sha256_file
+from glacies.validate.gtfs.report import Severity, Thresholds, ValidationReport
+from glacies.validate.gtfs.validator import ValidationOptions, validate_feed
+
+BUILD_NAME = "BUILD.json"
+
+
+class PipelineError(Exception):
+    """A stage cannot run; the message says what to do."""
+
+
+# --- locating inputs ------------------------------------------------------------------------
+
+
+def city_dir(settings: Settings, config: CityConfig) -> Path:
+    return settings.processed_dir / config.city.id
+
+
+def newest(snapshots: list[DatasetManifest]) -> DatasetManifest:
+    return max(snapshots, key=lambda m: (m.archived_at, m.snapshot))
+
+
+def gtfs_snapshot(
+    settings: Settings, config: CityConfig, dataset: str, snapshot: str | None = None
+) -> tuple[DatasetManifest, Path]:
+    """The requested (or most recently archived) snapshot of a GTFS source, and its data dir."""
+    try:
+        source = config.source(dataset)
+    except CityConfigError as exc:
+        raise PipelineError(str(exc)) from None
+    if source.kind != "gtfs":
+        raise PipelineError(f"{dataset!r} is a {source.kind!r} source, not GTFS")
+    snapshots = archive.list_snapshots(settings.raw_dir, config.city.id, dataset)
+    if snapshot is not None:
+        snapshots = [m for m in snapshots if m.snapshot == snapshot]
+    if not snapshots:
+        raise PipelineError(
+            f"no archived snapshot of {dataset!r}; run `glacies ingest register` first"
+        )
+    manifest = newest(snapshots)
+    snapshot_dir = (
+        archive.dataset_dir(settings.raw_dir, config.city.id, dataset) / manifest.snapshot
+    )
+    return manifest, snapshot_dir / archive.DATA_DIR_NAME
+
+
+def single_file_snapshot(
+    settings: Settings, config: CityConfig, name: str
+) -> tuple[DatasetManifest, Path]:
+    """Newest snapshot of a single-file source and the path of that file."""
+    snapshots = archive.list_snapshots(settings.raw_dir, config.city.id, name)
+    if not snapshots:
+        raise PipelineError(
+            f"no archived snapshot of {name!r}; run `glacies ingest register` first"
+        )
+    manifest = newest(snapshots)
+    files = [f.path for f in manifest.files]
+    if len(files) != 1:
+        raise PipelineError(
+            f"expected exactly one file in {name} @ {manifest.snapshot}, found {files}"
+        )
+    data_dir = archive.dataset_dir(settings.raw_dir, config.city.id, name) / manifest.snapshot
+    return manifest, data_dir / archive.DATA_DIR_NAME / files[0]
+
+
+def source_of_kind(config: CityConfig, kind: str, chosen: str | None = None) -> str:
+    names = sorted(n for n, s in config.sources.items() if s.kind == kind)
+    if chosen is not None:
+        if chosen not in names:
+            raise PipelineError(f"{chosen!r} is not a {kind} source; choose from {names}")
+        return chosen
+    if len(names) != 1:
+        raise PipelineError(
+            f"expected exactly one {kind!r} source in city.toml, found {names or 'none'}"
+        )
+    return names[0]
+
+
+def transit_manifest(settings: Settings, config: CityConfig) -> tuple[TransitManifest, Path]:
+    transit_dir = city_dir(settings, config) / "transit"
+    if not (transit_dir / TRANSIT_MANIFEST).is_file():
+        raise PipelineError("no canonical transit network; run `glacies build transit` first")
+    manifest = TransitManifest.model_validate_json(
+        (transit_dir / TRANSIT_MANIFEST).read_text(encoding="utf-8")
+    )
+    return manifest, transit_dir
+
+
+def _feed_ref(dataset: str, snapshot: str, checksum: str) -> InputRef:
+    return InputRef(dataset=dataset, snapshot=snapshot, checksum_sha256=checksum)
+
+
+def _ref(name: str, manifest: DatasetManifest) -> InputRef:
+    return InputRef(
+        dataset=name, snapshot=manifest.snapshot, checksum_sha256=manifest.checksum_sha256
+    )
+
+
+# --- stages ---------------------------------------------------------------------------------
+
+
+def validate_gtfs(
+    settings: Settings, config: CityConfig, dataset: str, snapshot: str | None = None
+) -> tuple[ValidationReport, Path]:
+    manifest, data_dir = gtfs_snapshot(settings, config, dataset, snapshot)
+    source = config.source(dataset)
+    report = validate_feed(
+        data_dir,
+        ValidationOptions(
+            dataset=dataset,
+            city=config.city.id,
+            snapshot=manifest.snapshot,
+            input_checksum=manifest.checksum_sha256,
+            bbox=config.city.bbox,
+            route_number_pattern=source.route_number_pattern,
+            coverage_reference=source.coverage_reference,
+        ),
+    )
+    out_dir = city_dir(settings, config) / "reports" / dataset / manifest.snapshot
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "gtfs_validation.json").write_text(report.to_json(), encoding="utf-8")
+    (out_dir / "gtfs_validation.md").write_text(report.to_markdown(), encoding="utf-8")
+    return report, out_dir
+
+
+def run_transit(
+    settings: Settings,
+    config: CityConfig,
+    *,
+    force: bool = False,
+    reports: dict[str, ValidationReport] | None = None,
+) -> tuple[TransitManifest, Path]:
+    """Build the canonical network; refuses feeds with validation errors unless ``force``."""
+    network = config.network
+    if network is None:
+        raise PipelineError(f"city {config.city.id!r} has no [network] section in city.toml")
+    inputs: list[FeedInput] = []
+    for dataset in network.feeds:
+        snapshot, data_dir = gtfs_snapshot(settings, config, dataset)
+        report = (reports or {}).get(dataset) or validate_gtfs(settings, config, dataset)[0]
+        if report.errors and not force:
+            rules = ", ".join(sorted({f.rule for f in report.errors}))
+            raise PipelineError(
+                f"{dataset} @ {snapshot.snapshot} has validation errors ({rules}); "
+                "fix them or pass --force"
+            )
+        source = config.source(dataset)
+        inputs.append(
+            FeedInput(
+                dataset=dataset,
+                snapshot=snapshot.snapshot,
+                checksum_sha256=snapshot.checksum_sha256,
+                directory=data_dir,
+                route_number_pattern=source.route_number_pattern,
+                exclude_route_pattern=source.exclude_route_pattern,
+            )
+        )
+    thresholds = Thresholds()
+    try:
+        result = build_transit(
+            inputs,
+            service_date=network.service_date,
+            bbox=config.city.bbox,
+            thresholds=thresholds,
+            drop_implausible_speed_trips=network.drop_implausible_speed_trips,
+        )
+    except TransitBuildError as exc:
+        raise PipelineError(str(exc)) from None
+    out_dir = city_dir(settings, config) / "transit"
+    manifest = write_transit(
+        result,
+        out_dir,
+        city=config.city.id,
+        service_date=network.service_date.isoformat(),
+        bbox=config.city.bbox,
+        drop_implausible_speed_trips=network.drop_implausible_speed_trips,
+        exclude_route_patterns={d: config.source(d).exclude_route_pattern for d in network.feeds},
+        thresholds=thresholds,
+    )
+    return manifest, out_dir
+
+
+def run_walk(
+    settings: Settings, config: CityConfig, *, source: str | None = None
+) -> tuple[WalkManifest, WalkBuild, Path]:
+    name = source_of_kind(config, "osm_pbf", source)
+    osm, osm_file = single_file_snapshot(settings, config, name)
+    transit, transit_dir = transit_manifest(settings, config)
+    stops = pl.read_parquet(transit_dir / "stops.parquet")
+    boarding = stops.filter(pl.col("location_type") == 0)
+    segments, extract_stats = extract_walk_segments(osm_file, config.city.bbox, config.walk)
+    result = build_walk(segments, boarding, config.walk, config.city.crs_projected)
+    out_dir = city_dir(settings, config) / "walk"
+    manifest = write_walk(
+        result,
+        extract_stats,
+        out_dir,
+        city=config.city.id,
+        bbox=config.city.bbox,
+        osm_snapshot=osm.snapshot,
+        osm_checksum_sha256=osm.checksum_sha256,
+        transit_stops_sha256=transit.outputs["stops.parquet"],
+        walk=config.walk,
+        stop_names=stops.select("stop_idx", "source_stop_id", "name"),
+    )
+    return manifest, result, out_dir
+
+
+def run_zones(settings: Settings, config: CityConfig) -> tuple[ZonesManifest, ZonesBuild, Path]:
+    refs: list[InputRef] = []
+    paths: dict[str, Path] = {}
+    for kind in ("population_raster", "landcover_raster", "buildings", "osm_pbf"):
+        name = source_of_kind(config, kind)
+        snapshot, path = single_file_snapshot(settings, config, name)
+        refs.append(_ref(name, snapshot))
+        paths[kind] = path
+    transit, transit_dir = transit_manifest(settings, config)
+    tables = {
+        name: pl.read_parquet(transit_dir / f"{name}.parquet")
+        for name in ("stops", "stop_times", "trips", "routes")
+    }
+    zoning = config.zoning
+    result = build_zones(
+        ZoneInputs(
+            population_raster=paths["population_raster"],
+            landcover_raster=paths["landcover_raster"],
+            buildings_csv=paths["buildings"],
+            osm_file=paths["osm_pbf"],
+            transit_stops=tables["stops"],
+            transit_stop_modes=stop_modes(tables),
+        ),
+        bbox=config.city.bbox,
+        resolution=zoning.resolution,
+        thresholds=zoning.building_confidence_thresholds,
+    )
+    out_dir = city_dir(settings, config) / "zones"
+    manifest = write_zones(
+        result,
+        out_dir,
+        city=config.city.id,
+        bbox=config.city.bbox,
+        resolution=zoning.resolution,
+        thresholds=zoning.building_confidence_thresholds,
+        inputs=refs,
+        transit_stops_sha256=transit.outputs["stops.parquet"],
+    )
+    return manifest, result, out_dir
+
+
+def run_postgis(
+    settings: Settings, config: CityConfig, *, connect_timeout: int = 10
+) -> dict[str, int]:
+    _, transit_dir = transit_manifest(settings, config)
+    zones_path = city_dir(settings, config) / "zones" / "zones.parquet"
+    if not zones_path.is_file():
+        raise PipelineError("no zones; run `glacies build zones` first")
+    transit = {
+        name: pl.read_parquet(transit_dir / f"{name}.parquet")
+        for name in ("stops", "routes", "patterns", "pattern_stops", "trips")
+    }
+    try:
+        return postgis.load(
+            settings.database_url,
+            config.city.id,
+            postgis.layers(transit, pl.read_parquet(zones_path)),
+            connect_timeout=connect_timeout,
+        )
+    except psycopg.OperationalError as exc:
+        where = settings.database_url.rsplit("@", 1)[-1]  # never echo credentials
+        raise PipelineError(
+            f"cannot connect to {where} ({str(exc).strip().splitlines()[0]}); "
+            "is `docker compose up -d` running?"
+        ) from None
+
+
+# --- whole city -----------------------------------------------------------------------------
+
+
+class StageRecord(BaseModel):
+    stage: str
+    directory: str  # relative to data/processed/<city>/
+    manifest_sha256: str
+
+
+class ValidationSummary(BaseModel):
+    snapshot: str
+    errors: int
+    warnings: int
+    info: int
+
+
+class CityBuild(BaseModel):
+    """``BUILD.json``: everything needed to say exactly what a processed city was built from."""
+
+    city: str
+    builder_version: str
+    git_commit: str | None
+    git_dirty: bool | None
+    city_config_sha256: str
+    inputs: list[InputRef]
+    validation: dict[str, ValidationSummary]
+    stages: list[StageRecord]
+
+
+@dataclass(frozen=True)
+class StageDone:
+    stage: str
+    summary: str
+
+
+def _git_state(repo: Path) -> tuple[str | None, bool | None]:
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=repo, capture_output=True, text=True, check=True,
+        ).stdout  # fmt: skip
+    except (OSError, subprocess.CalledProcessError):
+        return None, None
+    return commit, bool(status.strip())
+
+
+def clean_city(settings: Settings, config: CityConfig) -> Path:
+    """Delete data/processed/<city>/ (rebuildable output only, never raw data)."""
+    target = city_dir(settings, config).resolve()
+    if (
+        not target.is_relative_to(settings.processed_dir.resolve())
+        or target == settings.processed_dir.resolve()
+    ):
+        raise PipelineError(f"refusing to delete {target}: not a city directory under processed/")
+    if target.exists():
+        shutil.rmtree(target)
+    return target
+
+
+def build_city(
+    settings: Settings,
+    config: CityConfig,
+    *,
+    clean: bool = False,
+    force: bool = False,
+    load_postgis: bool = False,
+    on_stage: Callable[[StageDone], None] | None = None,
+) -> CityBuild:
+    """Rebuild every processed dataset of a city from its raw archive, then write BUILD.json."""
+
+    def done(stage: str, summary: str) -> None:
+        if on_stage is not None:
+            on_stage(StageDone(stage, summary))
+
+    issues = archive.verify(settings.raw_dir, config.city.id)
+    if issues:
+        listed = "; ".join(f"{i.snapshot_dir.name}: {i.problem}" for i in issues[:5])
+        raise PipelineError(f"raw archive failed verification ({listed}); fix it before building")
+    done("verify", "raw archive matches its manifests")
+    if clean:
+        done("clean", f"removed {clean_city(settings, config)}")
+
+    network = config.network
+    if network is None:
+        raise PipelineError(f"city {config.city.id!r} has no [network] section in city.toml")
+    reports: dict[str, ValidationReport] = {}
+    validation: dict[str, ValidationSummary] = {}
+    for dataset in network.feeds:
+        report, _ = validate_gtfs(settings, config, dataset)
+        reports[dataset] = report
+        validation[dataset] = ValidationSummary(
+            snapshot=report.snapshot,
+            errors=report.count(Severity.ERROR),
+            warnings=report.count(Severity.WARNING),
+            info=report.count(Severity.INFO),
+        )
+        done("validate", f"{dataset}: {validation[dataset].errors} errors")
+
+    transit, transit_dir = run_transit(settings, config, force=force, reports=reports)
+    done("transit", f"{transit.row_counts['trips']:,} trips")
+    walk, _, walk_dir = run_walk(settings, config)
+    done("walk", f"{walk.row_counts['edges']:,} edges")
+    zones, _, zones_dir = run_zones(settings, config)
+    done("zones", f"{zones.row_counts['zones']:,} zones")
+    if load_postgis:
+        counts = run_postgis(settings, config)
+        done("postgis", ", ".join(f"{k} {v:,}" for k, v in counts.items()))
+
+    base = city_dir(settings, config)
+    osm_name = source_of_kind(config, "osm_pbf")
+    refs = [
+        *(_feed_ref(i.dataset, i.snapshot, i.checksum_sha256) for i in transit.inputs),
+        _feed_ref(osm_name, walk.osm_snapshot, walk.osm_checksum_sha256),
+        *zones.inputs,
+    ]
+    inputs = {(r.dataset, r.snapshot): r for r in refs}  # OSM is used by walk and zones
+    commit, dirty = _git_state(Path(__file__).resolve().parents[2])
+    build = CityBuild(
+        city=config.city.id,
+        builder_version=__version__,
+        git_commit=commit,
+        git_dirty=dirty,
+        city_config_sha256=sha256_file(settings.city_config_path),
+        inputs=[inputs[k] for k in sorted(inputs)],
+        validation=validation,
+        stages=[
+            StageRecord(
+                stage=stage,
+                directory=directory.relative_to(base).as_posix(),
+                manifest_sha256=sha256_file(directory / "manifest.json"),
+            )
+            for stage, directory in (
+                ("transit", transit_dir),
+                ("walk", walk_dir),
+                ("zones", zones_dir),
+            )
+        ],
+    )
+    (base / BUILD_NAME).write_text(build.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    done("build", f"wrote {base / BUILD_NAME}")
+    return build
