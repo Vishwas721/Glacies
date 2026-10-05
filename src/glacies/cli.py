@@ -7,13 +7,18 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, NoReturn
 
+import polars as pl
 import typer
 
 from glacies.cities import CityConfig, CityConfigError, load_city
 from glacies.config import Settings, get_settings
 from glacies.ingest import archive, download
 from glacies.model.transit.build import FeedInput, TransitBuildError, build_transit
-from glacies.model.transit.writer import write_transit
+from glacies.model.transit.writer import MANIFEST_NAME as TRANSIT_MANIFEST
+from glacies.model.transit.writer import TransitManifest, write_transit
+from glacies.model.walk.build import build_walk
+from glacies.model.walk.extract import extract_walk_segments
+from glacies.model.walk.writer import write_walk
 from glacies.provenance import DatasetManifest
 from glacies.validate.gtfs.report import Severity, Thresholds, ValidationReport
 from glacies.validate.gtfs.validator import ValidationOptions, validate_feed
@@ -293,3 +298,66 @@ def build_transit_network(
         typer.echo(
             f"dropped from {dataset}: " + ", ".join(f"{r} {n:,}" for r, n in reasons.items())
         )
+
+
+@build_app.command("walk")
+def build_walk_network(
+    source: Annotated[
+        str | None, typer.Option(help="OSM source id (default: the only osm_pbf source).")
+    ] = None,
+    city: CityOption = None,
+) -> None:
+    """Build the pedestrian network from OSM and snap the transit stops onto it."""
+    settings, config = _load(city)
+    osm_sources = sorted(n for n, s in config.sources.items() if s.kind == "osm_pbf")
+    if source is None:
+        if len(osm_sources) != 1:
+            _fail(f"pass --source; osm_pbf sources in city.toml: {osm_sources or 'none'}")
+        source = osm_sources[0]
+    elif source not in osm_sources:
+        _fail(f"{source!r} is not an osm_pbf source; choose from {osm_sources}")
+
+    snapshots = archive.list_snapshots(settings.raw_dir, config.city.id, source)
+    if not snapshots:
+        _fail(f"no archived snapshot of {source!r}; run `glacies ingest register` first")
+    osm = max(snapshots, key=lambda m: (m.archived_at, m.snapshot))
+    data_dir = archive.dataset_dir(settings.raw_dir, config.city.id, source) / osm.snapshot
+    files = [f.path for f in osm.files]
+    if len(files) != 1:
+        _fail(f"expected exactly one OSM file in {source} @ {osm.snapshot}, found {files}")
+    osm_file = data_dir / archive.DATA_DIR_NAME / files[0]
+
+    transit_dir = settings.processed_dir / config.city.id / "transit"
+    if not (transit_dir / TRANSIT_MANIFEST).is_file():
+        _fail("no canonical transit network; run `glacies build transit` first")
+    transit = TransitManifest.model_validate_json(
+        (transit_dir / TRANSIT_MANIFEST).read_text(encoding="utf-8")
+    )
+    stops = pl.read_parquet(transit_dir / "stops.parquet")
+    boarding = stops.filter(pl.col("location_type") == 0)
+
+    typer.echo(f"reading {osm_file.name} ...")
+    segments, extract_stats = extract_walk_segments(osm_file, config.city.bbox, config.walk)
+    result = build_walk(segments, boarding, config.walk, config.city.crs_projected)
+    out_dir = settings.processed_dir / config.city.id / "walk"
+    write_walk(
+        result,
+        extract_stats,
+        out_dir,
+        city=config.city.id,
+        bbox=config.city.bbox,
+        osm_snapshot=osm.snapshot,
+        osm_checksum_sha256=osm.checksum_sha256,
+        transit_stops_sha256=transit.outputs["stops.parquet"],
+        walk=config.walk,
+        stop_names=stops.select("stop_idx", "source_stop_id", "name"),
+    )
+    s = result.stats
+    typer.echo(
+        f"walk network: {s['nodes']:,} nodes, {s['edges']:,} edges, "
+        f"{s['network_length_km']:,} km; largest component {s['largest_component_share']:.1%}"
+    )
+    typer.echo(
+        f"stops snapped: {s['stops_snapped']:,}, flagged > {config.walk.max_snap_m:g} m: "
+        f"{s['stops_flagged']:,} -> {out_dir}"
+    )
