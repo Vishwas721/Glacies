@@ -224,3 +224,21 @@ def test_build_zones_needs_every_input(env: Path) -> None:
 
     assert result.exit_code == 1
     assert "no archived snapshot of 'toy_population'" in result.output
+
+
+def test_load_postgis_reports_connection_failure(
+    env: Path, archived_feed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert runner.invoke(app, ["build", "transit"]).exit_code == 0
+    zones = env / "data" / "processed" / "toyville" / "zones"
+    zones.mkdir(parents=True)
+    pl.DataFrame({"zone_idx": [0], "h3_cell": ["8861892e17fffff"]}).write_parquet(
+        zones / "zones.parquet"
+    )
+    monkeypatch.setenv("GLACIES_DATABASE_URL", "postgresql://nobody:x@127.0.0.1:1/none")
+
+    result = runner.invoke(app, ["load", "postgis", "--connect-timeout", "1"])
+
+    assert result.exit_code == 1
+    assert "is `docker compose up -d` running?" in result.output
+    assert "nobody:x" not in result.output  # credentials are not echoed
