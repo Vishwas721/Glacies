@@ -88,12 +88,15 @@ def layers(transit: dict[str, pl.DataFrame], zones: pl.DataFrame) -> list[Layer]
     ]
 
 
-def load(database_url: str, schema: str, to_load: list[Layer]) -> dict[str, int]:
+def load(
+    database_url: str, schema: str, to_load: list[Layer], *, connect_timeout: int = 10
+) -> dict[str, int]:
     """Replace ``schema.<layer>`` tables; returns row counts."""
     if not _IDENTIFIER.fullmatch(schema):
         raise ValueError(f"invalid schema name {schema!r}")
     counts: dict[str, int] = {}
-    with psycopg.connect(database_url) as conn:
+    # Without a timeout, a refused connection on Windows is retried for minutes.
+    with psycopg.connect(database_url, connect_timeout=connect_timeout) as conn:
         conn.execute("CREATE EXTENSION IF NOT EXISTS postgis")
         conn.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(sql.Identifier(schema)))
         for layer in to_load:
