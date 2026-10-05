@@ -63,7 +63,7 @@ uv run glacies build transit              # canonical network in data/processed/
 uv run glacies build walk                 # OSM walk network + stop snapping in .../walk/
 
 # Infra
-docker compose up -d          # PostGIS :5432, Redis :6379
+docker compose up -d          # PostGIS :5433 (host), Redis :6379
 uv run uvicorn glacies.api.app:app --reload   # API on :8000
 
 # Everything the hooks check
