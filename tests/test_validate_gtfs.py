@@ -1,4 +1,3 @@
-import shutil
 from pathlib import Path
 
 import pytest
@@ -6,27 +5,14 @@ import pytest
 from glacies.cities import CoverageReference
 from glacies.validate.gtfs.report import Finding, Severity, ValidationReport
 from glacies.validate.gtfs.validator import ValidationOptions, validate_feed
+from tests.gtfs_edit import append, copy_toy_feed, replace
 
-TOY_FEED = Path(__file__).parent / "fixtures" / "gtfs" / "toy_feed"
 BBOX = (77.0, 12.0, 77.1, 12.1)
 
 
 @pytest.fixture
 def feed(tmp_path: Path) -> Path:
-    target = tmp_path / "feed"
-    shutil.copytree(TOY_FEED, target)
-    return target
-
-
-def append(feed: Path, file: str, *lines: str) -> None:
-    with (feed / file).open("a", encoding="utf-8", newline="\n") as handle:
-        handle.writelines(f"{line}\n" for line in lines)
-
-
-def replace(feed: Path, file: str, old: str, new: str) -> None:
-    text = (feed / file).read_text(encoding="utf-8")
-    assert old in text, f"{old!r} not in {file}"
-    (feed / file).write_text(text.replace(old, new), encoding="utf-8", newline="\n")
+    return copy_toy_feed(tmp_path / "feed")
 
 
 def run(feed: Path, **overrides: object) -> ValidationReport:
