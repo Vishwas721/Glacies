@@ -14,7 +14,7 @@ def test_loads_toy_city() -> None:
     assert city.city.id == "toyville"
     assert city.city.bbox == (77.0, 12.0, 77.1, 12.1)
     assert city.zoning.resolution == 8
-    assert sorted(city.sources) == ["toy_gtfs", "toy_population"]
+    assert sorted(city.sources) == ["toy_gtfs", "toy_osm", "toy_population"]
     assert city.sources["toy_population"].nature is DataNature.ESTIMATED
     assert city.sources["toy_gtfs"].download_url is None
 
@@ -23,7 +23,7 @@ def test_source_lookup_names_known_sources() -> None:
     city = load_city(FIXTURES / "toyville" / "city.toml")
 
     assert city.source("toy_gtfs").kind == "gtfs"
-    with pytest.raises(CityConfigError, match="toy_gtfs, toy_population"):
+    with pytest.raises(CityConfigError, match="toy_gtfs, toy_osm, toy_population"):
         city.source("nope")
 
 

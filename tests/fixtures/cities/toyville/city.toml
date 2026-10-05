@@ -37,3 +37,11 @@ url = "https://example.invalid/toy-pop"
 license = "CC0-1.0"
 verified = false
 nature = "estimated"
+
+[sources.toy_osm]
+kind = "osm_pbf"
+source = "Glacies test fixture"
+url = "https://example.invalid/toy-osm"
+license = "ODbL-1.0"
+verified = true
+nature = "observed"

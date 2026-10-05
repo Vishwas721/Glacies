@@ -1,6 +1,7 @@
 import shutil
 from pathlib import Path
 
+import polars as pl
 import pytest
 from typer.testing import CliRunner
 
@@ -162,3 +163,34 @@ def test_build_transit_refuses_feeds_with_errors(env: Path, archived_feed: Path)
     assert refused.exit_code == 1
     assert "unknown_route" in refused.output
     assert forced.exit_code == 0, forced.output
+
+
+def test_build_walk(env: Path, archived_feed: Path) -> None:
+    assert runner.invoke(app, ["build", "transit"]).exit_code == 0
+    osm = env / "downloads" / "toy.osm"
+    shutil.copy(FIXTURES / "osm" / "toy.osm", osm)
+    registered = runner.invoke(app, ["ingest", "register", "toy_osm", str(osm), "--snapshot", "v1"])
+    assert registered.exit_code == 0, registered.output
+
+    result = runner.invoke(app, ["build", "walk"])
+
+    assert result.exit_code == 0, result.output
+    assert "9 nodes, 8 edges" in result.output
+    out = env / "data" / "processed" / "toyville" / "walk"
+    links = pl.read_parquet(out / "stop_links.parquet")
+    assert links.height == 5  # boarding points A, B, C, D, P1
+    assert (out / "BUILD_REPORT.md").is_file()
+
+
+def test_build_walk_needs_transit_and_osm(env: Path) -> None:
+    no_osm = runner.invoke(app, ["build", "walk"])
+    assert no_osm.exit_code == 1
+    assert "no archived snapshot of 'toy_osm'" in no_osm.output
+
+    osm = env / "downloads" / "toy.osm"
+    osm.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(FIXTURES / "osm" / "toy.osm", osm)
+    runner.invoke(app, ["ingest", "register", "toy_osm", str(osm), "--snapshot", "v1"])
+    no_transit = runner.invoke(app, ["build", "walk"])
+    assert no_transit.exit_code == 1
+    assert "run `glacies build transit` first" in no_transit.output
