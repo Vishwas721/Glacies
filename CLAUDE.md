@@ -61,6 +61,8 @@ uv run glacies ingest list | register | fetch | verify
 uv run glacies validate gtfs <dataset>    # report in data/processed/<city>/reports/
 uv run glacies build transit              # canonical network in data/processed/<city>/transit/
 uv run glacies build walk                 # OSM walk network + stop snapping in .../walk/
+uv run glacies build zones                # H3 zones with population, buildings, land cover, POIs
+uv run glacies load postgis               # copy zones/stops/pattern lines to PostGIS for QGIS
 
 # Infra
 docker compose up -d          # PostGIS :5433 (host), Redis :6379
