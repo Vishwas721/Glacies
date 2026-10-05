@@ -31,6 +31,8 @@ dev = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "ruff>=0.8",
+    "scipy-stubs>=1.17.1.5",
+    "types-shapely>=2.1.0.20260728",
 ]
 
 [build-system]
