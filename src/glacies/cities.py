@@ -46,6 +46,17 @@ class CityInfo(_Strict):
 class Zoning(_Strict):
     system: Literal["h3"]
     resolution: int = Field(ge=0, le=15)
+    building_confidence_thresholds: list[float] = Field(
+        default_factory=lambda: [0.65, 0.75],
+        description="Open Buildings confidence cut-offs; zone totals are kept for each (Assumed).",
+    )
+
+    @model_validator(mode="after")
+    def _check_thresholds(self) -> Zoning:
+        ts = self.building_confidence_thresholds
+        if not ts or any(not 0 < t <= 1 for t in ts) or sorted(set(ts)) != ts:
+            raise ValueError("building_confidence_thresholds must be ascending, unique, in (0, 1]")
+        return self
 
 
 class CoverageReference(_Strict):

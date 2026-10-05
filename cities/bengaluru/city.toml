@@ -18,7 +18,9 @@ bbox = [77.14, 12.61, 77.96, 13.41]
 
 [zoning]
 system = "h3"
-resolution = 8      # Assumed (~0.74 km² cells). Decide in Phase 1.
+resolution = 8      # Assumed (~0.74 km² cells): 10,661 zones overlap the bbox.
+# Zone building totals are stored at each confidence cut-off so Phase 3 can test sensitivity.
+building_confidence_thresholds = [0.65, 0.75]
 
 [network]
 feeds = ["bmtc_gtfs", "bmrcl_gtfs"]
@@ -121,7 +123,7 @@ url = "https://sites.research.google/open-buildings/"
 license = "CC-BY-4.0 / ODbL-1.0"
 verified = true
 nature = "estimated"
-notes = "Current export covers only the OLD bbox [77.35, 12.75, 77.85, 13.20]; re-export for the enlarged bbox before M5."
+notes = "Use snapshot v3-2026-10-05 (exported for the enlarged bbox). Snapshot v3 covers only the old bbox."
 
 [sources.worldcover]
 kind = "landcover_raster"

@@ -83,7 +83,7 @@ Milestones. Do one PR per milestone.
    source IDs. Source-agnostic schema (PRD §17), with merged bus + metro feeds and a `mode` column.
 4. **M4 — OSM walk network:** clip with osmium, extract the pedestrian network to Parquet
    (`nodes`, `edges` with length in metres), snap stops to the network, and flag stops > 300 m away.
-5. **M5 — Spatial layers** (⚠️ needs an Open Buildings re-export for the enlarged bbox first, see `docs/data-sources.md`): H3 zones over the study area; WorldPop zonal sum per zone; Open
+5. **M5 — Spatial layers** (uses Open Buildings snapshot `v3-2026-10-05`, exported for the enlarged bbox): H3 zones over the study area; WorldPop zonal sum per zone; Open
    Buildings footprint area per zone; WorldCover built-up share per zone; OSM POIs by category per
    zone. Load zones + stops + routes into PostGIS.
 6. **M6 — Rebuild command:** `glacies build-city bengaluru` runs all of the above idempotently and

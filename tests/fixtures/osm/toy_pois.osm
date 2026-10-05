@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Points of interest inside Toyville's bbox [77.0, 12.0, 77.1, 12.1], one per category rule. -->
+<osm version="0.6" generator="glacies-test">
+  <node id="1" lat="12.0500" lon="77.0200" version="1"><tag k="office" v="company"/></node>
+  <node id="2" lat="12.0500" lon="77.0210" version="1"><tag k="shop" v="supermarket"/></node>
+  <node id="3" lat="12.0500" lon="77.0220" version="1"><tag k="amenity" v="hospital"/></node>
+  <node id="4" lat="12.0500" lon="77.0230" version="1"><tag k="amenity" v="bench"/></node>
+  <node id="5" lat="12.0500" lon="77.0240" version="1"><tag k="amenity" v="restaurant"/></node>
+  <node id="6" lat="12.0500" lon="77.0250" version="1"><tag k="craft" v="carpenter"/></node>
+  <node id="7" lat="12.5000" lon="77.5000" version="1"><tag k="shop" v="bakery"/></node>
+  <node id="8" lat="12.0500" lon="77.0260" version="1"><tag k="amenity" v="library"/></node>
+  <node id="9" lat="12.0500" lon="77.0270" version="1">
+    <tag k="office" v="it"/><tag k="shop" v="computer"/>
+  </node>
+  <node id="10" lat="12.0500" lon="77.0280" version="1"><tag k="healthcare" v="laboratory"/></node>
+  <!-- untagged corners of the two ways -->
+  <node id="20" lat="12.0800" lon="77.0800" version="1"/>
+  <node id="21" lat="12.0800" lon="77.0810" version="1"/>
+  <node id="22" lat="12.0810" lon="77.0810" version="1"/>
+  <node id="23" lat="12.0810" lon="77.0800" version="1"/>
+  <node id="30" lat="12.0300" lon="77.0700" version="1"/>
+  <node id="31" lat="12.0300" lon="77.0720" version="1"/>
+  <node id="32" lat="12.0320" lon="77.0720" version="1"/>
+  <way id="100" version="1">
+    <nd ref="20"/><nd ref="21"/><nd ref="22"/><nd ref="23"/><nd ref="20"/>
+    <tag k="amenity" v="school"/>
+  </way>
+  <way id="101" version="1">
+    <nd ref="30"/><nd ref="31"/><nd ref="32"/><nd ref="30"/>
+    <tag k="landuse" v="industrial"/>
+  </way>
+  <relation id="200" version="1">
+    <member type="way" ref="100" role="outer"/>
+    <tag k="type" v="multipolygon"/><tag k="amenity" v="university"/>
+  </relation>
+</osm>

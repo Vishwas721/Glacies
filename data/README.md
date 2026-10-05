@@ -27,6 +27,8 @@ Rules:
 
 1. `raw/` is append-only. New content goes into a new snapshot; identical content is detected by
    checksum and not archived twice; reusing a snapshot name for different content is refused.
+   **Never replace a file inside a snapshot folder by hand.** Put a new download anywhere else and
+   `register` it with a new snapshot name; `verify` reports any snapshot whose files changed.
 2. Pick snapshot names that identify the upstream version: the GTFS `feed_version`, the release
    (`2021-R2025A`), or the download date (`2026-10-04`).
 3. The engine never reads `raw/` directly, only `processed/`.

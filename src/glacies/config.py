@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     cities_dir: Path = Path("cities")
     city: str = "bengaluru"
-    database_url: str = "postgresql://glacies:glacies@localhost:5432/glacies"
+    database_url: str = "postgresql://glacies:glacies@localhost:5433/glacies"
     redis_url: str = "redis://localhost:6379/0"
     random_seed: int = 42
 

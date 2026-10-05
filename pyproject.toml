@@ -9,11 +9,14 @@ authors = [{ name = "Vishwas" }]
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
+    "h3>=4.2",
     "osmium>=4.0",
     "polars>=1.0",
+    "psycopg[binary]>=3.2",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "pyproj>=3.6",
+    "rasterio>=1.4",
     "scipy>=1.13",
     "shapely>=2.0",
     "typer>=0.12",
@@ -72,9 +75,18 @@ warn_unreachable = true
 plugins = ["pydantic.mypy"]
 files = ["src", "tests"]
 
+[[tool.mypy.overrides]]
+# These ship no type information and no stub package exists.
+module = ["h3", "h3.*", "rasterio", "rasterio.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
+filterwarnings = [
+    # Raised inside rasterio's own transform helpers, not by Glacies code.
+    'ignore:Use `@` matmul instead of `\*` mul operator:PendingDeprecationWarning',
+]
 markers = [
     "slow: long-running tests (city-scale data)",
     "integration: requires docker services or downloaded datasets",
