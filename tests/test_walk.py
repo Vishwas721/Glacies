@@ -1,5 +1,6 @@
 import math
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
@@ -31,7 +32,7 @@ def run(walk: Walk | None = None) -> tuple[WalkBuild, ExtractStats]:
     return build_walk(segments, STOPS, walk, UTM), stats
 
 
-def link(result: WalkBuild, stop_idx: int) -> dict[str, object]:
+def link(result: WalkBuild, stop_idx: int) -> dict[str, Any]:
     return result.tables["stop_links"].filter(pl.col("stop_idx") == stop_idx).row(0, named=True)
 
 
