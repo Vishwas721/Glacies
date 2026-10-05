@@ -19,6 +19,14 @@ from glacies.model.transit.writer import TransitManifest, write_transit
 from glacies.model.walk.build import build_walk
 from glacies.model.walk.extract import extract_walk_segments
 from glacies.model.walk.writer import write_walk
+from glacies.model.zones.build import (
+    InputRef,
+    ZoneInputs,
+    build_zones,
+    population_check,
+    stop_modes,
+    write_zones,
+)
 from glacies.provenance import DatasetManifest
 from glacies.validate.gtfs.report import Severity, Thresholds, ValidationReport
 from glacies.validate.gtfs.validator import ValidationOptions, validate_feed
@@ -298,6 +306,89 @@ def build_transit_network(
         typer.echo(
             f"dropped from {dataset}: " + ", ".join(f"{r} {n:,}" for r, n in reasons.items())
         )
+
+
+def _single_file_snapshot(
+    settings: Settings, config: CityConfig, kind: str
+) -> tuple[str, DatasetManifest, Path]:
+    """(source id, newest snapshot, its only file) of the single source of ``kind``."""
+    names = sorted(n for n, s in config.sources.items() if s.kind == kind)
+    if len(names) != 1:
+        _fail(f"expected exactly one {kind!r} source in city.toml, found {names or 'none'}")
+    name = names[0]
+    snapshots = archive.list_snapshots(settings.raw_dir, config.city.id, name)
+    if not snapshots:
+        _fail(f"no archived snapshot of {name!r}; run `glacies ingest register` first")
+    manifest = max(snapshots, key=lambda m: (m.archived_at, m.snapshot))
+    files = [f.path for f in manifest.files]
+    if len(files) != 1:
+        _fail(f"expected exactly one file in {name} @ {manifest.snapshot}, found {files}")
+    data_dir = archive.dataset_dir(settings.raw_dir, config.city.id, name) / manifest.snapshot
+    return name, manifest, data_dir / archive.DATA_DIR_NAME / files[0]
+
+
+def _transit_tables(settings: Settings, config: CityConfig) -> tuple[TransitManifest, Path]:
+    transit_dir = settings.processed_dir / config.city.id / "transit"
+    if not (transit_dir / TRANSIT_MANIFEST).is_file():
+        _fail("no canonical transit network; run `glacies build transit` first")
+    manifest = TransitManifest.model_validate_json(
+        (transit_dir / TRANSIT_MANIFEST).read_text(encoding="utf-8")
+    )
+    return manifest, transit_dir
+
+
+@build_app.command("zones")
+def build_zone_layers(city: CityOption = None) -> None:
+    """Build H3 zones with population, buildings, land cover, POIs and stop counts."""
+    settings, config = _load(city)
+    inputs: list[InputRef] = []
+    paths: dict[str, Path] = {}
+    for kind in ("population_raster", "landcover_raster", "buildings", "osm_pbf"):
+        name, manifest, path = _single_file_snapshot(settings, config, kind)
+        inputs.append(
+            InputRef(
+                dataset=name, snapshot=manifest.snapshot, checksum_sha256=manifest.checksum_sha256
+            )
+        )
+        paths[kind] = path
+    transit, transit_dir = _transit_tables(settings, config)
+    tables = {
+        name: pl.read_parquet(transit_dir / f"{name}.parquet")
+        for name in ("stops", "stop_times", "trips", "routes")
+    }
+    zoning = config.zoning
+    typer.echo("aggregating population, land cover, buildings and POIs ...")
+    result = build_zones(
+        ZoneInputs(
+            population_raster=paths["population_raster"],
+            landcover_raster=paths["landcover_raster"],
+            buildings_csv=paths["buildings"],
+            osm_file=paths["osm_pbf"],
+            transit_stops=tables["stops"],
+            transit_stop_modes=stop_modes(tables),
+        ),
+        bbox=config.city.bbox,
+        resolution=zoning.resolution,
+        thresholds=zoning.building_confidence_thresholds,
+    )
+    out_dir = settings.processed_dir / config.city.id / "zones"
+    write_zones(
+        result,
+        out_dir,
+        city=config.city.id,
+        bbox=config.city.bbox,
+        resolution=zoning.resolution,
+        thresholds=zoning.building_confidence_thresholds,
+        inputs=inputs,
+        transit_stops_sha256=transit.outputs["stops.parquet"],
+    )
+    s = result.stats
+    conservation, ratio = population_check(s)
+    typer.echo(
+        f"zones: {s['zones']:,} ({s['zones_populated']:,} populated); population "
+        f"{s['population_zones']:,.0f} (zones / bbox {ratio:.2%}, conservation error "
+        f"{conservation:.1e}); buildings {s['buildings_read']:,}; POIs {s['pois']:,} -> {out_dir}"
+    )
 
 
 @build_app.command("walk")
