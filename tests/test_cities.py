@@ -114,3 +114,17 @@ def test_walk_defaults_and_bengaluru_overrides() -> None:
     assert bengaluru.walk.highways == toy.walk.highways
     assert bengaluru.walk.exclude_access == ["no"]  # private ways are walkable in Bengaluru
     assert bengaluru.walk.snap_to_largest_component
+
+
+@pytest.mark.parametrize("thresholds", ["[]", "[0.75, 0.65]", "[0.0]", "[0.7, 0.7]", "[1.5]"])
+def test_rejects_bad_building_thresholds(tmp_path: Path, thresholds: str) -> None:
+    original = (FIXTURES / "toyville" / "city.toml").read_text(encoding="utf-8")
+    path = _write(
+        tmp_path,
+        original.replace(
+            "resolution = 8", f"resolution = 8\nbuilding_confidence_thresholds = {thresholds}"
+        ),
+    )
+
+    with pytest.raises(CityConfigError, match="building_confidence_thresholds"):
+        load_city(path)
