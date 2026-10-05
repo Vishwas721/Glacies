@@ -343,3 +343,13 @@ def test_writer_records_audit_trail_and_replaces_old_output(feed: Path, tmp_path
     assert "implausible_speed 1" in report
     audit = read_table(out, "dropped_trips")
     assert audit.select("source_trip_id", "reason").rows() == [("T2", "implausible_speed")]
+
+
+def test_single_stop_trips_are_not_reported_as_outside(feed: Path) -> None:
+    append(feed, "trips.txt", "R1,WK,T9,,0")
+    append(feed, "stop_times.txt", "T9,10:00:00,10:00:00,A,1")
+
+    result = build(feed)
+
+    assert dropped(result, "single_stop_trip")["source_trip_id"].to_list() == ["T9"]
+    assert dropped(result, "outside_study_area").is_empty()
