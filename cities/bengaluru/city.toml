@@ -28,6 +28,15 @@ license = "ODbL-1.0"
 verified = true
 nature = "observed"
 notes = "Unofficial; omits routes without live-tracking telematics. One service_id covers all 7 days."
+# GTFS route rows are variants ("255-J", "255-J KBS-HNS"); the route number is the text before
+# the first space, which is how official route counts are made.
+route_number_pattern = '^\S+'
+
+[sources.bmtc_gtfs.coverage_reference]
+route_count_min = 2200
+route_count_max = 2492
+source = "Web search summary, 2026-10-05; no primary BMTC source found"
+verified = false
 
 [sources.bmrcl_gtfs]
 kind = "gtfs"
