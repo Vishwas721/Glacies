@@ -5,6 +5,7 @@ The engine is city-agnostic: everything that differs between cities is read from
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 from typing import Literal
@@ -46,6 +47,21 @@ class Zoning(_Strict):
     resolution: int = Field(ge=0, le=15)
 
 
+class CoverageReference(_Strict):
+    """An external count of routes to compare a feed against. Usually Assumed, not Observed."""
+
+    route_count_min: int = Field(gt=0)
+    route_count_max: int = Field(gt=0)
+    source: str
+    verified: bool
+
+    @model_validator(mode="after")
+    def _check_range(self) -> CoverageReference:
+        if self.route_count_min > self.route_count_max:
+            raise ValueError("route_count_min must be <= route_count_max")
+        return self
+
+
 class Source(_Strict):
     kind: str
     mode: str | None = None
@@ -58,6 +74,21 @@ class Source(_Strict):
     download_url: str | None = Field(
         default=None, description="Direct file URL for `glacies ingest fetch`; None if manual."
     )
+    route_number_pattern: str | None = Field(
+        default=None,
+        description="GTFS feeds only: regex whose first match in route_short_name is the "
+        "customer-facing route number, so variants of one route are counted once.",
+    )
+    coverage_reference: CoverageReference | None = None
+
+    @model_validator(mode="after")
+    def _check_pattern(self) -> Source:
+        if self.route_number_pattern is not None:
+            try:
+                re.compile(self.route_number_pattern)
+            except re.error as exc:
+                raise ValueError(f"invalid route_number_pattern: {exc}") from exc
+        return self
 
 
 class CityConfig(_Strict):

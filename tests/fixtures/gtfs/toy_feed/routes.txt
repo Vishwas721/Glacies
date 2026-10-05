@@ -1,0 +1,4 @@
+route_id,agency_id,route_short_name,route_long_name,route_type
+R1,toy,10,A to C,3
+R2,toy,10 EXP,A to C express,3
+R3,toy,M1,Central to D,1
