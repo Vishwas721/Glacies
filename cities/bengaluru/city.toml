@@ -26,6 +26,25 @@ feeds = ["bmtc_gtfs", "bmrcl_gtfs"]
 service_date = 2026-10-13
 drop_implausible_speed_trips = true
 
+[walk]
+# Assumed (2026-10-05). Trunk roads are walkable: in Bengaluru, corridors such as Outer Ring Road
+# are tagged trunk and separate sidewalks are rarely mapped.
+highways = [
+    "residential", "service", "footway", "path", "pedestrian", "steps", "living_street",
+    "track", "unclassified", "tertiary", "tertiary_link", "secondary", "secondary_link",
+    "primary", "primary_link", "trunk", "trunk_link", "corridor", "cycleway", "bridleway",
+    "platform", "road",
+]
+# access/foot=private stay walkable (decided 2026-10-05): about 5,700 km of gated layouts,
+# apartment complexes and tech-park roads where trips actually start and end. Assumed; may let
+# shortest paths cut through campuses outsiders could not use.
+exclude_foot = ["no", "use_sidepath"]
+exclude_access = ["no"]
+allow_foot = ["yes", "designated", "permissive"]
+max_snap_m = 300.0
+# Avoid snapping stops onto isolated fragments (e.g. a lone footway inside a campus).
+snap_to_largest_component = true
+
 [sources.bmtc_gtfs]
 kind = "gtfs"
 mode = "bus"

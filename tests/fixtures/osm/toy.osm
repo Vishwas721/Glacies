@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Toy walk network inside Toyville's bbox [77.0, 12.0, 77.1, 12.1].
+
+  Main component: square 1-2-3-4 (residential), footway 3-5, trunk 3-13, private-but-foot=yes 2-12.
+  Excluded: motorway 5-6, primary foot=no 1-7, construction 2-6, private service 4-11.
+  Clipped: residential 5-8 (node 8 is outside the bbox).
+  Island: path 9-10 near the Central Station platform.
+  Duplicate: footway 1-2 repeats the square's first segment.
+-->
+<osm version="0.6" generator="glacies-test">
+  <node id="1" lat="12.0200" lon="77.0200" version="1"/>
+  <node id="2" lat="12.0200" lon="77.0300" version="1"/>
+  <node id="3" lat="12.0300" lon="77.0300" version="1"/>
+  <node id="4" lat="12.0300" lon="77.0200" version="1"/>
+  <node id="5" lat="12.0400" lon="77.0400" version="1"/>
+  <node id="6" lat="12.0500" lon="77.0500" version="1"/>
+  <node id="7" lat="12.0100" lon="77.0100" version="1"/>
+  <node id="8" lat="12.0400" lon="77.2000" version="1"/>
+  <node id="9" lat="12.0102" lon="77.0102" version="1"/>
+  <node id="10" lat="12.0105" lon="77.0105" version="1"/>
+  <node id="11" lat="12.0350" lon="77.0150" version="1"/>
+  <node id="12" lat="12.0250" lon="77.0350" version="1"/>
+  <node id="13" lat="12.0350" lon="77.0350" version="1"/>
+  <way id="100" version="1">
+    <nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/><nd ref="1"/>
+    <tag k="highway" v="residential"/>
+  </way>
+  <way id="101" version="1">
+    <nd ref="3"/><nd ref="5"/>
+    <tag k="highway" v="footway"/>
+  </way>
+  <way id="102" version="1">
+    <nd ref="5"/><nd ref="6"/>
+    <tag k="highway" v="motorway"/>
+  </way>
+  <way id="103" version="1">
+    <nd ref="1"/><nd ref="7"/>
+    <tag k="highway" v="primary"/>
+    <tag k="foot" v="no"/>
+  </way>
+  <way id="104" version="1">
+    <nd ref="5"/><nd ref="8"/>
+    <tag k="highway" v="residential"/>
+  </way>
+  <way id="105" version="1">
+    <nd ref="9"/><nd ref="10"/>
+    <tag k="highway" v="path"/>
+  </way>
+  <way id="106" version="1">
+    <nd ref="2"/><nd ref="6"/>
+    <tag k="highway" v="construction"/>
+  </way>
+  <way id="107" version="1">
+    <nd ref="4"/><nd ref="11"/>
+    <tag k="highway" v="service"/>
+    <tag k="access" v="private"/>
+  </way>
+  <way id="108" version="1">
+    <nd ref="2"/><nd ref="12"/>
+    <tag k="highway" v="residential"/>
+    <tag k="access" v="private"/>
+    <tag k="foot" v="yes"/>
+  </way>
+  <way id="109" version="1">
+    <nd ref="3"/><nd ref="13"/>
+    <tag k="highway" v="trunk"/>
+  </way>
+  <way id="110" version="1">
+    <nd ref="1"/><nd ref="2"/>
+    <tag k="highway" v="footway"/>
+  </way>
+</osm>

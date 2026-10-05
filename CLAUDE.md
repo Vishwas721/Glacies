@@ -60,6 +60,7 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm build
 uv run glacies ingest list | register | fetch | verify
 uv run glacies validate gtfs <dataset>    # report in data/processed/<city>/reports/
 uv run glacies build transit              # canonical network in data/processed/<city>/transit/
+uv run glacies build walk                 # OSM walk network + stop snapping in .../walk/
 
 # Infra
 docker compose up -d          # PostGIS :5432, Redis :6379

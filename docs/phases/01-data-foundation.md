@@ -135,7 +135,8 @@ Implement milestone M<N> only. Before coding, show me a short plan: modules, fil
   the headway for scenarios).
 - **Duplicate/near-duplicate stops** across bus and metro feeds. Don't merge; create footpaths
   later (Phase 2).
-- **Memory.** Do not load the whole Karnataka/zone PBF in Python. Clip with osmium first.
+- **Memory.** Do not load the whole Karnataka/zone PBF in Python. Stream it with pyosmium and keep only
+  clipped segment arrays (M4 reads the 532 MB southern-zone extract in about 80 s).
 - **CRS mistakes.** All areas and distances use EPSG:32643; storage stays EPSG:4326.
 - **Scope creep.** No GTFS-RT, no road speeds, no elevation.
 

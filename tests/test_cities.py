@@ -14,7 +14,7 @@ def test_loads_toy_city() -> None:
     assert city.city.id == "toyville"
     assert city.city.bbox == (77.0, 12.0, 77.1, 12.1)
     assert city.zoning.resolution == 8
-    assert sorted(city.sources) == ["toy_gtfs", "toy_population"]
+    assert sorted(city.sources) == ["toy_gtfs", "toy_osm", "toy_population"]
     assert city.sources["toy_population"].nature is DataNature.ESTIMATED
     assert city.sources["toy_gtfs"].download_url is None
 
@@ -23,7 +23,7 @@ def test_source_lookup_names_known_sources() -> None:
     city = load_city(FIXTURES / "toyville" / "city.toml")
 
     assert city.source("toy_gtfs").kind == "gtfs"
-    with pytest.raises(CityConfigError, match="toy_gtfs, toy_population"):
+    with pytest.raises(CityConfigError, match="toy_gtfs, toy_osm, toy_population"):
         city.source("nope")
 
 
@@ -102,3 +102,15 @@ def test_rejects_bad_network_feeds(tmp_path: Path, feeds: str, message: str) -> 
 
     with pytest.raises(CityConfigError, match=message):
         load_city(path)
+
+
+def test_walk_defaults_and_bengaluru_overrides() -> None:
+    toy = load_city(FIXTURES / "toyville" / "city.toml")
+    bengaluru = load_city(Path(__file__).parents[1] / "cities" / "bengaluru" / "city.toml")
+
+    assert "trunk" in toy.walk.highways
+    assert "motorway" not in toy.walk.highways
+    assert toy.walk.max_snap_m == 300.0
+    assert bengaluru.walk.highways == toy.walk.highways
+    assert bengaluru.walk.exclude_access == ["no"]  # private ways are walkable in Bengaluru
+    assert bengaluru.walk.snap_to_largest_component
