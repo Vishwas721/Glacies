@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import tomllib
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
@@ -79,22 +80,50 @@ class Source(_Strict):
         description="GTFS feeds only: regex whose first match in route_short_name is the "
         "customer-facing route number, so variants of one route are counted once.",
     )
+    exclude_route_pattern: str | None = Field(
+        default=None,
+        description="GTFS feeds only: routes whose short or long name matches this regex are "
+        "non-revenue (e.g. test runs) and are left out of the canonical network.",
+    )
     coverage_reference: CoverageReference | None = None
 
     @model_validator(mode="after")
-    def _check_pattern(self) -> Source:
-        if self.route_number_pattern is not None:
-            try:
-                re.compile(self.route_number_pattern)
-            except re.error as exc:
-                raise ValueError(f"invalid route_number_pattern: {exc}") from exc
+    def _check_patterns(self) -> Source:
+        for name in ("route_number_pattern", "exclude_route_pattern"):
+            pattern = getattr(self, name)
+            if pattern is not None:
+                try:
+                    re.compile(pattern)
+                except re.error as exc:
+                    raise ValueError(f"invalid {name}: {exc}") from exc
         return self
+
+
+class Network(_Strict):
+    """Which feeds form the canonical transit network, and for which day."""
+
+    feeds: list[str] = Field(min_length=1)
+    service_date: date = Field(description="The single day whose timetable is modelled.")
+    drop_implausible_speed_trips: bool = True
 
 
 class CityConfig(_Strict):
     city: CityInfo
     zoning: Zoning
+    network: Network | None = None
     sources: dict[str, Source]
+
+    @model_validator(mode="after")
+    def _check_network_feeds(self) -> CityConfig:
+        if self.network is not None:
+            for feed in self.network.feeds:
+                if feed not in self.sources:
+                    raise ValueError(f"network feed {feed!r} is not a source")
+                if self.sources[feed].kind != "gtfs":
+                    raise ValueError(f"network feed {feed!r} is not a GTFS source")
+            if len(set(self.network.feeds)) != len(self.network.feeds):
+                raise ValueError("network feeds must be unique")
+        return self
 
     def source(self, dataset: str) -> Source:
         try:
