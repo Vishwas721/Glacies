@@ -96,3 +96,47 @@ def test_unknown_city_is_reported(env: Path) -> None:
 
     assert result.exit_code == 1
     assert "city config not found" in result.output
+
+
+@pytest.fixture
+def archived_feed(env: Path) -> Path:
+    feed = env / "downloads" / "toy_feed"
+    shutil.copytree(FIXTURES / "gtfs" / "toy_feed", feed)
+    result = runner.invoke(app, ["ingest", "register", "toy_gtfs", str(feed), "--snapshot", "v1"])
+    assert result.exit_code == 0, result.output
+    return env / "data" / "processed" / "toyville" / "reports" / "toy_gtfs" / "v1"
+
+
+def test_validate_gtfs_writes_reports(archived_feed: Path) -> None:
+    result = runner.invoke(app, ["validate", "gtfs", "toy_gtfs"])
+
+    assert result.exit_code == 0, result.output
+    assert "0 errors, 0 warnings, 1 info" in result.output
+    assert "coverage ratio vs reference: 50% to 100%" in result.output
+    assert (archived_feed / "gtfs_validation.json").is_file()
+    assert (
+        (archived_feed / "gtfs_validation.md")
+        .read_text(encoding="utf-8")
+        .startswith("# GTFS validation")
+    )
+
+
+def test_validate_gtfs_fail_on(env: Path, archived_feed: Path) -> None:
+    stops = env / "data" / "raw" / "toyville" / "toy_gtfs" / "v1" / "data" / "stops.txt"
+    stops.write_text(stops.read_text(encoding="utf-8") + "Q,Lonely,12.06,77.06,,\n", "utf-8")
+
+    lenient = runner.invoke(app, ["validate", "gtfs", "toy_gtfs", "--fail-on", "error"])
+    strict = runner.invoke(app, ["validate", "gtfs", "toy_gtfs", "--fail-on", "warning"])
+
+    assert lenient.exit_code == 0, lenient.output
+    assert strict.exit_code == 1
+
+
+def test_validate_gtfs_requires_archived_gtfs(env: Path) -> None:
+    missing = runner.invoke(app, ["validate", "gtfs", "toy_gtfs"])
+    wrong_kind = runner.invoke(app, ["validate", "gtfs", "toy_population"])
+
+    assert missing.exit_code == 1
+    assert "no archived snapshot" in missing.output
+    assert wrong_kind.exit_code == 1
+    assert "not GTFS" in wrong_kind.output
