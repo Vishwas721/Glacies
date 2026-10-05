@@ -107,10 +107,33 @@ class Network(_Strict):
     drop_implausible_speed_trips: bool = True
 
 
+DEFAULT_WALK_HIGHWAYS = (
+    "residential", "service", "footway", "path", "pedestrian", "steps", "living_street",
+    "track", "unclassified", "tertiary", "tertiary_link", "secondary", "secondary_link",
+    "primary", "primary_link", "trunk", "trunk_link", "corridor", "cycleway", "bridleway",
+    "platform", "road",
+)  # fmt: skip
+
+
+class Walk(_Strict):
+    """Which OSM ways pedestrians can use, and how stops attach to them. All Assumed."""
+
+    highways: list[str] = Field(default_factory=lambda: list(DEFAULT_WALK_HIGHWAYS))
+    exclude_foot: list[str] = Field(default_factory=lambda: ["no", "private", "use_sidepath"])
+    exclude_access: list[str] = Field(default_factory=lambda: ["no", "private"])
+    allow_foot: list[str] = Field(
+        default_factory=lambda: ["yes", "designated", "permissive"],
+        description="foot= values that override an excluded access= value.",
+    )
+    max_snap_m: float = Field(default=300.0, gt=0)
+    snap_to_largest_component: bool = True
+
+
 class CityConfig(_Strict):
     city: CityInfo
     zoning: Zoning
     network: Network | None = None
+    walk: Walk = Field(default_factory=Walk)
     sources: dict[str, Source]
 
     @model_validator(mode="after")

@@ -102,3 +102,14 @@ def test_rejects_bad_network_feeds(tmp_path: Path, feeds: str, message: str) -> 
 
     with pytest.raises(CityConfigError, match=message):
         load_city(path)
+
+
+def test_walk_defaults_and_bengaluru_overrides() -> None:
+    toy = load_city(FIXTURES / "toyville" / "city.toml")
+    bengaluru = load_city(Path(__file__).parents[1] / "cities" / "bengaluru" / "city.toml")
+
+    assert "trunk" in toy.walk.highways
+    assert "motorway" not in toy.walk.highways
+    assert toy.walk.max_snap_m == 300.0
+    assert bengaluru.walk.highways == toy.walk.highways
+    assert bengaluru.walk.snap_to_largest_component
