@@ -25,7 +25,16 @@ Single source of truth for every external dataset. The machine-readable copy for
 | BMRCL | 3 | 3,279 | 488 (incl. platforms/entrances) | `weekday` (Tue–Sat), separate Monday, Sunday and holiday services |
 
 GTFS route rows are **not** a coverage measure: one BMTC route number can appear as several GTFS
-routes (directions/variants). Coverage is measured by the M2 validator.
+routes (directions/variants).
+
+### Validation results (`glacies validate gtfs`, validator 0.1.0)
+
+| Feed | Errors | Warnings | Notes |
+|---|---:|---:|---|
+| BMTC 20260907 | 0 | 6 rules | 2,693 distinct route numbers vs. 2,200–2,492 reference (**unverified**) → 108–122 %; 358 of 57,836 trips (0.6 %) have impossible speeds between stops; 1,885 of 9,948 stops lie outside the study bbox (stops reach lat 17.8°, lon 75.1°) |
+| BMRCL 20260817 | 0 | 0 | 25 after-midnight trips (info) |
+
+Full reports: `data/processed/bengaluru/reports/<dataset>/<snapshot>/gtfs_validation.md`.
 
 ## Known risks
 
