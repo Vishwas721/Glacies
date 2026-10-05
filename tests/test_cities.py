@@ -60,3 +60,28 @@ def test_rejects_unknown_keys(tmp_path: Path) -> None:
 def test_missing_file_is_a_config_error(tmp_path: Path) -> None:
     with pytest.raises(CityConfigError, match="not found"):
         load_city(tmp_path / "missing.toml")
+
+
+def test_rejects_inverted_coverage_reference(tmp_path: Path) -> None:
+    original = (FIXTURES / "toyville" / "city.toml").read_text(encoding="utf-8")
+    reference = (
+        "\n[sources.toy_gtfs.coverage_reference]\n"
+        'route_count_min = 10\nroute_count_max = 5\nsource = "test"\nverified = false\n'
+    )
+    path = _write(
+        tmp_path,
+        original.replace("[sources.toy_population]", reference + "\n[sources.toy_population]"),
+    )
+
+    with pytest.raises(CityConfigError, match="route_count_min"):
+        load_city(path)
+
+
+def test_rejects_invalid_route_number_pattern(tmp_path: Path) -> None:
+    original = (FIXTURES / "toyville" / "city.toml").read_text(encoding="utf-8")
+    path = _write(
+        tmp_path, original.replace('kind = "gtfs"', "kind = \"gtfs\"\nroute_number_pattern = '(['")
+    )
+
+    with pytest.raises(CityConfigError, match="route_number_pattern"):
+        load_city(path)
