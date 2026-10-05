@@ -35,8 +35,11 @@ highways = [
     "primary", "primary_link", "trunk", "trunk_link", "corridor", "cycleway", "bridleway",
     "platform", "road",
 ]
-exclude_foot = ["no", "private", "use_sidepath"]
-exclude_access = ["no", "private"]
+# access/foot=private stay walkable (decided 2026-10-05): about 5,700 km of gated layouts,
+# apartment complexes and tech-park roads where trips actually start and end. Assumed; may let
+# shortest paths cut through campuses outsiders could not use.
+exclude_foot = ["no", "use_sidepath"]
+exclude_access = ["no"]
 allow_foot = ["yes", "designated", "permissive"]
 max_snap_m = 300.0
 # Avoid snapping stops onto isolated fragments (e.g. a lone footway inside a campus).

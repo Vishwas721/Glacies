@@ -112,4 +112,5 @@ def test_walk_defaults_and_bengaluru_overrides() -> None:
     assert "motorway" not in toy.walk.highways
     assert toy.walk.max_snap_m == 300.0
     assert bengaluru.walk.highways == toy.walk.highways
+    assert bengaluru.walk.exclude_access == ["no"]  # private ways are walkable in Bengaluru
     assert bengaluru.walk.snap_to_largest_component
