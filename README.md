@@ -61,6 +61,9 @@ uv sync && uv run pre-commit install
 (cd web && pnpm install)
 docker compose up -d                            # PostGIS + Redis
 
+uv run glacies ingest verify                    # raw archive matches its manifests
+uv run glacies build-city bengaluru --clean     # rebuild every processed dataset (~5 min)
+
 uv run uvicorn glacies.api.app:app --reload     # http://localhost:8000/api/health
 (cd web && pnpm dev)                             # http://localhost:5173
 ```
