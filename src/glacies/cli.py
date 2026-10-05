@@ -12,7 +12,10 @@ import typer
 from glacies.cities import CityConfig, CityConfigError, load_city
 from glacies.config import Settings, get_settings
 from glacies.ingest import archive, download
-from glacies.validate.gtfs.report import Severity
+from glacies.model.transit.build import FeedInput, TransitBuildError, build_transit
+from glacies.model.transit.writer import write_transit
+from glacies.provenance import DatasetManifest
+from glacies.validate.gtfs.report import Severity, Thresholds, ValidationReport
 from glacies.validate.gtfs.validator import ValidationOptions, validate_feed
 
 app = typer.Typer(help="Glacies — urban transit digital twin.", no_args_is_help=True)
@@ -22,6 +25,8 @@ ingest_app = typer.Typer(
 app.add_typer(ingest_app, name="ingest")
 validate_app = typer.Typer(help="Validate archived datasets.", no_args_is_help=True)
 app.add_typer(validate_app, name="validate")
+build_app = typer.Typer(help="Build canonical datasets from archived inputs.", no_args_is_help=True)
+app.add_typer(build_app, name="build")
 
 CityOption = Annotated[
     str | None, typer.Option("--city", help="City id under cities/ (default: GLACIES_CITY).")
@@ -149,19 +154,10 @@ class FailOn(StrEnum):
     WARNING = "warning"
 
 
-@validate_app.command("gtfs")
-def validate_gtfs(
-    dataset: Annotated[str, typer.Argument(help="GTFS source id from city.toml.")],
-    snapshot: Annotated[
-        str | None, typer.Option(help="Snapshot to validate (default: most recently archived).")
-    ] = None,
-    fail_on: Annotated[
-        FailOn, typer.Option(help="Exit with status 1 if findings of this severity exist.")
-    ] = FailOn.NEVER,
-    city: CityOption = None,
-) -> None:
-    """Validate an archived GTFS snapshot and write JSON + Markdown reports."""
-    settings, config = _load(city)
+def _gtfs_snapshot(
+    settings: Settings, config: CityConfig, dataset: str, snapshot: str | None
+) -> tuple[DatasetManifest, Path]:
+    """The requested (or most recently archived) snapshot of a GTFS source, and its data dir."""
     try:
         source = config.source(dataset)
     except CityConfigError as exc:
@@ -177,9 +173,15 @@ def validate_gtfs(
     snapshot_dir = (
         archive.dataset_dir(settings.raw_dir, config.city.id, dataset) / manifest.snapshot
     )
+    return manifest, snapshot_dir / archive.DATA_DIR_NAME
 
-    report = validate_feed(
-        snapshot_dir / archive.DATA_DIR_NAME,
+
+def _validate(
+    config: CityConfig, dataset: str, manifest: DatasetManifest, data_dir: Path
+) -> ValidationReport:
+    source = config.source(dataset)
+    return validate_feed(
+        data_dir,
         ValidationOptions(
             dataset=dataset,
             city=config.city.id,
@@ -190,6 +192,23 @@ def validate_gtfs(
             coverage_reference=source.coverage_reference,
         ),
     )
+
+
+@validate_app.command("gtfs")
+def validate_gtfs(
+    dataset: Annotated[str, typer.Argument(help="GTFS source id from city.toml.")],
+    snapshot: Annotated[
+        str | None, typer.Option(help="Snapshot to validate (default: most recently archived).")
+    ] = None,
+    fail_on: Annotated[
+        FailOn, typer.Option(help="Exit with status 1 if findings of this severity exist.")
+    ] = FailOn.NEVER,
+    city: CityOption = None,
+) -> None:
+    """Validate an archived GTFS snapshot and write JSON + Markdown reports."""
+    settings, config = _load(city)
+    manifest, data_dir = _gtfs_snapshot(settings, config, dataset, snapshot)
+    report = _validate(config, dataset, manifest, data_dir)
     out_dir = settings.processed_dir / config.city.id / "reports" / dataset / manifest.snapshot
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "gtfs_validation.json").write_text(report.to_json(), encoding="utf-8")
@@ -205,3 +224,72 @@ def validate_gtfs(
         typer.echo(f"coverage ratio vs reference: {cov.ratio_min:.0%} to {cov.ratio_max:.0%}")
     if (fail_on is FailOn.ERROR and errors) or (fail_on is FailOn.WARNING and errors + warnings):
         raise typer.Exit(1)
+
+
+@build_app.command("transit")
+def build_transit_network(
+    force: Annotated[
+        bool, typer.Option("--force", help="Build even if a feed has validation errors.")
+    ] = False,
+    city: CityOption = None,
+) -> None:
+    """Build the canonical transit network from the feeds in city.toml [network]."""
+    settings, config = _load(city)
+    network = config.network
+    if network is None:
+        _fail(f"city {config.city.id!r} has no [network] section in city.toml")
+
+    inputs: list[FeedInput] = []
+    for dataset in network.feeds:
+        snapshot, data_dir = _gtfs_snapshot(settings, config, dataset, None)
+        errors = _validate(config, dataset, snapshot, data_dir).errors
+        if errors and not force:
+            rules = ", ".join(sorted({f.rule for f in errors}))
+            _fail(
+                f"{dataset} @ {snapshot.snapshot} has validation errors ({rules}); "
+                "fix them or pass --force"
+            )
+        source = config.source(dataset)
+        inputs.append(
+            FeedInput(
+                dataset=dataset,
+                snapshot=snapshot.snapshot,
+                checksum_sha256=snapshot.checksum_sha256,
+                directory=data_dir,
+                route_number_pattern=source.route_number_pattern,
+                exclude_route_pattern=source.exclude_route_pattern,
+            )
+        )
+
+    thresholds = Thresholds()
+    try:
+        result = build_transit(
+            inputs,
+            service_date=network.service_date,
+            bbox=config.city.bbox,
+            thresholds=thresholds,
+            drop_implausible_speed_trips=network.drop_implausible_speed_trips,
+        )
+    except TransitBuildError as exc:
+        _fail(str(exc))
+    out_dir = settings.processed_dir / config.city.id / "transit"
+    manifest = write_transit(
+        result,
+        out_dir,
+        city=config.city.id,
+        service_date=network.service_date.isoformat(),
+        bbox=config.city.bbox,
+        drop_implausible_speed_trips=network.drop_implausible_speed_trips,
+        exclude_route_patterns={d: config.source(d).exclude_route_pattern for d in network.feeds},
+        thresholds=thresholds,
+    )
+    counts = manifest.row_counts
+    typer.echo(
+        f"transit network for {network.service_date.isoformat()}: {counts['stops']:,} stops, "
+        f"{counts['routes']:,} routes, {counts['patterns']:,} patterns, {counts['trips']:,} trips, "
+        f"{counts['stop_times']:,} stop times -> {out_dir}"
+    )
+    for dataset, reasons in manifest.dropped_by_reason.items():
+        typer.echo(
+            f"dropped from {dataset}: " + ", ".join(f"{r} {n:,}" for r, n in reasons.items())
+        )

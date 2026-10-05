@@ -140,3 +140,25 @@ def test_validate_gtfs_requires_archived_gtfs(env: Path) -> None:
     assert "no archived snapshot" in missing.output
     assert wrong_kind.exit_code == 1
     assert "not GTFS" in wrong_kind.output
+
+
+def test_build_transit(env: Path, archived_feed: Path) -> None:
+    result = runner.invoke(app, ["build", "transit"])
+
+    assert result.exit_code == 0, result.output
+    assert "3 trips" in result.output
+    out = env / "data" / "processed" / "toyville" / "transit"
+    assert (out / "stop_times.parquet").is_file()
+    assert (out / "manifest.json").is_file()
+
+
+def test_build_transit_refuses_feeds_with_errors(env: Path, archived_feed: Path) -> None:
+    trips = env / "data" / "raw" / "toyville" / "toy_gtfs" / "v1" / "data" / "trips.txt"
+    trips.write_text(trips.read_text(encoding="utf-8") + "R9,WK,T9,,0\n", "utf-8")
+
+    refused = runner.invoke(app, ["build", "transit"])
+    forced = runner.invoke(app, ["build", "transit", "--force"])
+
+    assert refused.exit_code == 1
+    assert "unknown_route" in refused.output
+    assert forced.exit_code == 0, forced.output

@@ -78,3 +78,27 @@ def test_rejects_invalid_route_number_pattern(tmp_path: Path) -> None:
 
     with pytest.raises(CityConfigError, match="route_number_pattern"):
         load_city(path)
+
+
+def test_network_section(tmp_path: Path) -> None:
+    city = load_city(FIXTURES / "toyville" / "city.toml")
+
+    assert city.network is not None
+    assert city.network.feeds == ["toy_gtfs"]
+    assert city.network.service_date.isoformat() == "2026-10-13"
+
+
+@pytest.mark.parametrize(
+    ("feeds", "message"),
+    [
+        ('["nope"]', "not a source"),
+        ('["toy_population"]', "not a GTFS source"),
+        ('["toy_gtfs", "toy_gtfs"]', "unique"),
+    ],
+)
+def test_rejects_bad_network_feeds(tmp_path: Path, feeds: str, message: str) -> None:
+    original = (FIXTURES / "toyville" / "city.toml").read_text(encoding="utf-8")
+    path = _write(tmp_path, original.replace('feeds = ["toy_gtfs"]', f"feeds = {feeds}"))
+
+    with pytest.raises(CityConfigError, match=message):
+        load_city(path)

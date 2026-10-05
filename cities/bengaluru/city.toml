@@ -12,12 +12,19 @@ timezone = "Asia/Kolkata"
 crs_projected = "EPSG:32643"   # UTM zone 43N, metres — used for distances/areas
 
 # Study area bounding box, WGS84 [min_lon, min_lat, max_lon, max_lat].
-# Assumed: roughly BBMP + periphery. Refine to an official boundary in Phase 1.
-bbox = [77.35, 12.75, 77.85, 13.20]
+# Assumed: the extent of every BMTC stop within 50 km of Majestic (97.8 % of stops), chosen
+# 2026-10-05 from the M2 validation. Refine to an official boundary later.
+bbox = [77.14, 12.61, 77.96, 13.41]
 
 [zoning]
 system = "h3"
 resolution = 8      # Assumed (~0.74 km² cells). Decide in Phase 1.
+
+[network]
+feeds = ["bmtc_gtfs", "bmrcl_gtfs"]
+# A non-holiday Tuesday inside both feeds' calendars (BMRCL 2026-10-20 is a holiday).
+service_date = 2026-10-13
+drop_implausible_speed_trips = true
 
 [sources.bmtc_gtfs]
 kind = "gtfs"
@@ -31,6 +38,8 @@ notes = "Unofficial; omits routes without live-tracking telematics. One service_
 # GTFS route rows are variants ("255-J", "255-J KBS-HNS"); the route number is the text before
 # the first space, which is how official route counts are made.
 route_number_pattern = '^\S+'
+# Ticketing-system test runs ("EXP Test AFCS", "O TEST AFCS 258", ...) are not revenue service.
+exclude_route_pattern = '(?i)\btest\b'
 
 [sources.bmtc_gtfs.coverage_reference]
 route_count_min = 2200
@@ -93,7 +102,7 @@ url = "https://sites.research.google/open-buildings/"
 license = "CC-BY-4.0 / ODbL-1.0"
 verified = true
 nature = "estimated"
-notes = "Exported for a custom WKT polygon; confirm it covers the bbox before use (M5)."
+notes = "Current export covers only the OLD bbox [77.35, 12.75, 77.85, 13.20]; re-export for the enlarged bbox before M5."
 
 [sources.worldcover]
 kind = "landcover_raster"

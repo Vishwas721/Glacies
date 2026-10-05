@@ -268,7 +268,7 @@ def test_final_rename_retries_transient_lock(
         return real_rename(self, target)
 
     monkeypatch.setattr(Path, "rename", flaky_rename)
-    monkeypatch.setattr("glacies.ingest.archive._RENAME_DELAY_SECONDS", 0)
+    monkeypatch.setattr("glacies.fsutil.RENAME_DELAY_SECONDS", 0)
 
     result = register(
         raw_dir=tmp_path / "raw", city=city, dataset="toy_gtfs", source_path=toy_gtfs, snapshot="v1"
@@ -285,7 +285,7 @@ def test_persistent_lock_leaves_complete_staging_and_explains(
         raise PermissionError("locked by antivirus")
 
     monkeypatch.setattr(Path, "rename", locked)
-    monkeypatch.setattr("glacies.ingest.archive._RENAME_DELAY_SECONDS", 0)
+    monkeypatch.setattr("glacies.fsutil.RENAME_DELAY_SECONDS", 0)
 
     with pytest.raises(ArchiveError, match="staging directory"):
         register(
