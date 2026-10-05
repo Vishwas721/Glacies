@@ -102,7 +102,7 @@ url = "https://sites.research.google/open-buildings/"
 license = "CC-BY-4.0 / ODbL-1.0"
 verified = true
 nature = "estimated"
-notes = "Exported for a custom WKT polygon; confirm it covers the bbox before use (M5)."
+notes = "Current export covers only the OLD bbox [77.35, 12.75, 77.85, 13.20]; re-export for the enlarged bbox before M5."
 
 [sources.worldcover]
 kind = "landcover_raster"
