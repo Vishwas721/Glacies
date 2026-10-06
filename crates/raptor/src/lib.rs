@@ -6,6 +6,7 @@ mod journey;
 mod range;
 mod raptor;
 mod timetable;
+mod walkgraph;
 
 pub use journey::{plan, Journey, Leg};
 pub use range::{range_search, RangeProfile};
@@ -13,6 +14,7 @@ pub use raptor::{search, Access, Params, Profile};
 pub use timetable::{
     BuildError, BuildReport, Footpath, RouteView, Timetable, TimetableBuilder, TripInput,
 };
+pub use walkgraph::{Attachment, WalkGraph, WalkGraphError};
 
 /// Seconds since midnight of the service day. GTFS allows times past 24:00:00.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

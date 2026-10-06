@@ -9,6 +9,7 @@ authors = [{ name = "Vishwas" }]
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
+    "glacies-raptor",
     "h3>=4.2",
     "osmium>=4.0",
     "polars>=1.0",
@@ -37,6 +38,10 @@ dev = [
     "scipy-stubs>=1.17.1.5",
     "types-shapely>=2.1.0.20260728",
 ]
+
+[tool.uv.sources]
+# The Rust core, built with maturin on `uv sync` (needs a Rust toolchain).
+glacies-raptor = { path = "crates/raptor-py" }
 
 [build-system]
 requires = ["hatchling>=1.26"]
@@ -73,7 +78,7 @@ python_version = "3.11"
 strict = true
 warn_unreachable = true
 plugins = ["pydantic.mypy"]
-files = ["src", "tests"]
+files = ["src", "tests", "crates/raptor-py/glacies_raptor.pyi"]
 
 [[tool.mypy.overrides]]
 # These ship no type information and no stub package exists.

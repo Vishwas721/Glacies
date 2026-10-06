@@ -1,0 +1,24 @@
+[package]
+name = "glacies-raptor-py"
+description = "Python bindings for the Glacies RAPTOR core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "glacies_raptor"
+crate-type = ["cdylib"]
+# A Python extension module cannot link a Rust test harness; it is tested from Python.
+test = false
+doctest = false
+
+[dependencies]
+glacies-raptor = { path = "../raptor" }
+numpy = "0.29.0"
+pyo3 = { version = "0.29.3", features = ["abi3-py311"] }
+rayon = "1.12.0"
+
+[lints]
+workspace = true

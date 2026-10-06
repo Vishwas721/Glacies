@@ -1,0 +1,25 @@
+[project]
+name = "glacies-raptor"
+version = "0.1.0"
+description = "Python bindings for the Glacies RAPTOR core (Rust)"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["numpy>=1.26"]
+
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+module-name = "glacies_raptor"
+features = ["pyo3/extension-module"]
+
+[tool.uv]
+# Rebuild the extension whenever the Rust sources change, not only this file.
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "Cargo.toml" },
+    { file = "src/**/*.rs" },
+    { file = "../raptor/Cargo.toml" },
+    { file = "../raptor/src/**/*.rs" },
+]

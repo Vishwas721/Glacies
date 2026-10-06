@@ -491,6 +491,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "glacies-raptor" },
     { name = "h3" },
     { name = "osmium" },
     { name = "polars" },
@@ -524,6 +525,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "glacies-raptor", directory = "crates/raptor-py" },
     { name = "h3", specifier = ">=4.2" },
     { name = "osmium", specifier = ">=4.0" },
     { name = "polars", specifier = ">=1.0" },
@@ -549,6 +551,18 @@ dev = [
     { name = "scipy-stubs", specifier = ">=1.17.1.5" },
     { name = "types-shapely", specifier = ">=2.1.0.20260728" },
 ]
+
+[[package]]
+name = "glacies-raptor"
+version = "0.1.0"
+source = { directory = "crates/raptor-py" }
+dependencies = [
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "numpy", specifier = ">=1.26" }]
 
 [[package]]
 name = "h11"

@@ -73,6 +73,7 @@ _Decisions recorded 2026-10-06 from the Phase 2 handoff; all Assumed. Toy networ
 7. **M7 — Python integration**: build the timetable from Phase 1 Parquet; transfers/footpaths from
    the walk network (stop-to-stop shortest walks ≤ max transfer walk, computed in Rust or with
    a CSR graph + Dijkstra, never NetworkX); zone-centroid → stop access times.
+   _M6–M7 were built together (one PR); see ADR 0006._
 8. **M8 — Benchmarks & validation**: criterion benchmarks; compare against your sanity set and R5
    references; write `docs/validation/routing.md`.
 
