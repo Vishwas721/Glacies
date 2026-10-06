@@ -32,13 +32,15 @@ with stops snapped.
 
 | Decision | Guidance | Your choice |
 |---|---|---|
-| Max rounds (transfers) | 4–5 rounds (= 3–4 transfers) is typical | |
-| Walking speed | 1.2–1.3 m/s (Assumed) | |
-| Max access/egress walk | 800–1000 m | |
-| Max transfer walk | 300–500 m | |
-| Min transfer time | 60–120 s (Assumed, per mode?) | |
-| Optimisation criteria (v1) | earliest arrival with a Pareto on transfers (standard RAPTOR) | |
-| Validation reference | R5 via r5py (Python, free) or OTP 2, run once offline | |
+| Max rounds (transfers) | 4–5 rounds (= 3–4 transfers) is typical | **4 rounds (3 transfers)** |
+| Walking speed | 1.2–1.3 m/s (Assumed) | **1.2 m/s** |
+| Max access/egress walk | 800–1000 m | **800 m** |
+| Max transfer walk | 300–500 m | **400 m** (one walking leg between vehicles, shortest path on the M4 network) |
+| Min transfer time | 60–120 s (Assumed, per mode?) | **60 s**, all modes |
+| Optimisation criteria (v1) | earliest arrival with a Pareto on transfers (standard RAPTOR) | **as guided** |
+| Validation reference | R5 via r5py (Python, free) or OTP 2, run once offline | **20-pair sanity set** (`docs/validation/`, Estimated); no R5/OTP |
+
+_Decisions recorded 2026-10-06 from the Phase 2 handoff; all Assumed. Toy networks: `docs/validation/raptor-toy-networks.md`._
 
 ## 5. Your hands-on tasks
 
