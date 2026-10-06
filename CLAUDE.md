@@ -10,7 +10,8 @@ asked to work on before writing code.**
 | Path | What lives there |
 |---|---|
 | `src/glacies/` | Python package: `ingest`, `validate`, `model`, `demand`, `assignment`, `scenario`, `analytics`, `api` |
-| `crates/raptor/` | Rust RAPTOR core (PyO3 bindings added in Phase 2 as a separate crate) |
+| `crates/raptor/` | Rust RAPTOR core and walking distances (no PyO3) |
+| `crates/raptor-py/` | PyO3 bindings, packaged as `glacies-raptor` (maturin); `uv sync` builds it |
 | `web/` | React + TypeScript + Vite frontend (MapLibre/deck.gl from Phase 7) |
 | `cities/<city>/city.toml` | Everything city-specific: bbox, CRS, timezone, data sources |
 | `data/` | Local only, gitignored: `raw/` → `interim/` → `processed/` |
@@ -64,6 +65,7 @@ uv run glacies build transit              # canonical network in data/processed/
 uv run glacies build walk                 # OSM walk network + stop snapping in .../walk/
 uv run glacies build zones                # H3 zones with population, buildings, land cover, POIs
 uv run glacies load postgis               # copy zones/stops/pattern lines to PostGIS for QGIS
+uv run glacies route LAT,LON LAT,LON --at 08:30   # plan journeys (Simulated)
 
 # Infra
 docker compose up -d          # PostGIS :5433 (host), Redis :6379
