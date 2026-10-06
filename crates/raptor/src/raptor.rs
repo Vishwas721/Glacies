@@ -171,6 +171,8 @@ struct Search<'a> {
     /// Earliest arrival at any destination so far (target pruning).
     bound: Time,
     marked: Vec<bool>,
+    /// Stops whose ride arrival improved in the current round (for footpath relaxation).
+    rode: Vec<bool>,
     /// Per route: earliest marked position, or `u32::MAX` if not queued.
     queue: Vec<u32>,
     queued: Vec<usize>,
@@ -190,6 +192,7 @@ impl<'a> Search<'a> {
             egress_at,
             bound: Time::UNREACHED,
             marked: vec![false; n],
+            rode: vec![false; n],
             queue: vec![u32::MAX; tt.route_count()],
             queued: Vec::new(),
         }
@@ -253,7 +256,8 @@ impl<'a> Search<'a> {
                 if let Some((trip, board_pos, via)) = boarded {
                     let arrival = route.arrival(trip, pos);
                     if arrival < cur.ride[s] && arrival < self.bound {
-                        if cur.ride_label[s] == Label::None {
+                        if !self.rode[s] {
+                            self.rode[s] = true;
                             rode.push(s);
                         }
                         cur.ride[s] = arrival;
@@ -292,6 +296,7 @@ impl<'a> Search<'a> {
     fn relax_footpaths(&mut self, cur: &mut Round, mut rode: Vec<usize>) {
         rode.sort_unstable();
         for s in rode {
+            self.rode[s] = false;
             let arrival = cur.ride[s];
             for footpath in self.tt.footpaths(StopIdx(to_u32(s))) {
                 let to = footpath.to.0 as usize;
