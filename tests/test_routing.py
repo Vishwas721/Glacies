@@ -178,3 +178,17 @@ def test_bench_routing_writes_a_report(city_dir: Path, tmp_path: Path) -> None:
     text = out.read_text(encoding="utf-8")
     assert "one origin per populated zone\n(2 zones)" in text
     assert "| range search, 120 departures 07:30-09:29 | 1 |" in text
+
+
+def test_parallel_range_search_matches_serial(city_dir: Path) -> None:
+    import numpy as np
+
+    tt = router(city_dir).timetable
+    departures = np.arange(parse_clock("07:50"), parse_clock("08:20"), 60, dtype=np.uint32)
+    origins = [(np.array([s], dtype=np.uint32), np.array([0], dtype=np.uint32)) for s in range(6)]
+
+    parallel = tt.range_arrivals_many(origins, departures, 4, 60)
+    serial = [tt.range_arrivals(s, sec, departures, 4, 60) for s, sec in origins]
+
+    for p, s in zip(parallel, serial, strict=True):
+        assert np.array_equal(p, s)
