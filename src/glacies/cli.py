@@ -385,7 +385,7 @@ def validate_routing(
     )
     text, passed = report(results, share=share, minutes=minutes, header=header)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(text, encoding="utf-8")
+    out.write_text(text, encoding="utf-8", newline="\n")  # same bytes on every OS
     typer.echo(f"{passed} of {len(results)} pairs within tolerance -> {out}")
 
 
@@ -406,7 +406,7 @@ def bench_routing(
         _fail(str(exc))
     header = f"City `{config.city.id}`, {samples} seeded random stops (seed {seed})."
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(bench.markdown(result, header), encoding="utf-8")
+    out.write_text(bench.markdown(result, header), encoding="utf-8", newline="\n")
     for timing in result.timings:
         typer.echo(f"{timing.name}: median {timing.median_ms} ms, p95 {timing.p95_ms} ms")
     typer.echo(
