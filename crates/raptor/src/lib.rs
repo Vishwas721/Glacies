@@ -1,7 +1,12 @@
 //! RAPTOR (Round-bAsed Public Transit Optimized Router) core for Glacies.
 //!
-//! Phase 0 skeleton: only the primitive types the timetable will be built on.
 //! See `docs/phases/02-routing-engine.md` for the implementation plan.
+
+mod timetable;
+
+pub use timetable::{
+    BuildError, BuildReport, Footpath, RouteView, Timetable, TimetableBuilder, TripInput,
+};
 
 /// Seconds since midnight of the service day. GTFS allows times past 24:00:00.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
