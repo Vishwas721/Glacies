@@ -2,8 +2,10 @@
 //!
 //! See `docs/phases/02-routing-engine.md` for the implementation plan.
 
+mod raptor;
 mod timetable;
 
+pub use raptor::{search, Access, Params, Profile};
 pub use timetable::{
     BuildError, BuildReport, Footpath, RouteView, Timetable, TimetableBuilder, TripInput,
 };
