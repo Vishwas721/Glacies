@@ -219,3 +219,25 @@ fn circular_routes_list_every_position_of_a_repeated_stop() {
     assert_eq!(tt.route(RouteIdx(0)).stops(), &[A, B, A]);
     assert_eq!(tt.routes_serving(A), &[(RouteIdx(0), 0), (RouteIdx(0), 2)]);
 }
+
+#[test]
+fn earliest_trip_finds_the_first_catchable_departure() {
+    let (tt, _) = builder(
+        2,
+        vec![
+            trip(1, &[(A, "08:00"), (B, "08:10")]),
+            trip(2, &[(A, "08:15"), (B, "08:25")]),
+            trip(3, &[(A, "08:30"), (B, "08:40")]),
+        ],
+    )
+    .build();
+    let route = tt.route(RouteIdx(0));
+    let all = route.trip_count();
+
+    assert_eq!(route.earliest_trip(0, t("07:00"), all), Some(0));
+    assert_eq!(route.earliest_trip(0, t("08:00"), all), Some(0)); // departing exactly then
+    assert_eq!(route.earliest_trip(0, t("08:01"), all), Some(1));
+    assert_eq!(route.earliest_trip(1, t("08:26"), all), Some(2));
+    assert_eq!(route.earliest_trip(0, t("08:31"), all), None);
+    assert_eq!(route.earliest_trip(0, t("08:01"), 1), None); // only trips before index 1
+}

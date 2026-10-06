@@ -146,6 +146,24 @@ impl RouteView<'_> {
         self.stop_time(trip, position).departure
     }
 
+    /// The first trip among `0..before` that departs `position` at or after `ready`.
+    ///
+    /// Routes are FIFO, so departures at any position are sorted by trip and a binary search
+    /// suffices.
+    #[must_use]
+    pub fn earliest_trip(&self, position: usize, ready: Time, before: usize) -> Option<usize> {
+        let (mut lo, mut hi) = (0, before.min(self.trip_count()));
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if self.departure(mid, position) < ready {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        (lo < before.min(self.trip_count())).then_some(lo)
+    }
+
     fn stop_time(&self, trip: usize, position: usize) -> StopTime {
         let stops = self.info.stop_count as usize;
         debug_assert!(trip < self.trip_count() && position < stops);
