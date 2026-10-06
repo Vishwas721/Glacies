@@ -16,7 +16,9 @@ from glacies.config import Settings, get_settings
 from glacies.ingest import archive, download
 from glacies.model.zones.build import population_check
 from glacies.pipeline import PipelineError, StageDone
+from glacies.routing import bench
 from glacies.routing.network import RouterError, clock, load_router, parse_clock
+from glacies.routing.validate import read_pairs, report, run_pairs
 from glacies.validate.gtfs.report import Severity
 
 app = typer.Typer(help="Glacies — urban transit digital twin.", no_args_is_help=True)
@@ -30,6 +32,8 @@ build_app = typer.Typer(help="Build canonical datasets from archived inputs.", n
 app.add_typer(build_app, name="build")
 load_app = typer.Typer(help="Copy canonical layers into databases.", no_args_is_help=True)
 app.add_typer(load_app, name="load")
+bench_app = typer.Typer(help="Measure performance on the real network.", no_args_is_help=True)
+app.add_typer(bench_app, name="bench")
 
 CityOption = Annotated[
     str | None, typer.Option("--city", help="City id under cities/ (default: GLACIES_CITY).")
@@ -347,3 +351,65 @@ def route(
         )
         for line in router.describe(journey):
             typer.echo(f"  {line}")
+
+
+@validate_app.command("routing")
+def validate_routing(
+    sanity: Annotated[
+        Path, typer.Option(help="CSV of reference journeys with coordinates.")
+    ] = Path("docs/validation/bengaluru-sanity-set.csv"),
+    out: Annotated[Path, typer.Option(help="Where to write the Markdown report.")] = Path(
+        "docs/validation/routing.md"
+    ),
+    share: Annotated[float, typer.Option(help="Allowed relative difference.")] = 0.2,
+    minutes: Annotated[int, typer.Option(help="Allowed absolute difference (minutes).")] = 5,
+    city: CityOption = None,
+) -> None:
+    """Run reference journeys through the router and compare with their expected times."""
+    settings, config = _load(city)
+    try:
+        router = load_router(
+            pipeline.city_dir(settings, config), config.routing, config.city.crs_projected
+        )
+        pairs = read_pairs(sanity)
+    except (RouterError, OSError, ValueError) as exc:
+        _fail(str(exc))
+    results = run_pairs(router, pairs)
+    network = config.network
+    service_day = network.service_date.isoformat() if network else "?"
+    header = (
+        f"City `{config.city.id}`, timetable of {service_day}, max {config.routing.max_rounds} "
+        f"vehicles, {config.routing.min_transfer_time_s} s minimum transfer, walking "
+        f"{config.routing.walking_speed_m_s} m/s (access ≤ {config.routing.max_access_walk_m:g} m, "
+        f"transfers ≤ {config.routing.max_transfer_walk_m:g} m)."
+    )
+    text, passed = report(results, share=share, minutes=minutes, header=header)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    typer.echo(f"{passed} of {len(results)} pairs within tolerance -> {out}")
+
+
+@bench_app.command("routing")
+def bench_routing(
+    samples: Annotated[int, typer.Option(help="Random stops per query type.")] = 200,
+    seed: Annotated[int, typer.Option(help="Seed for the stop sample.")] = 2026,
+    out: Annotated[Path, typer.Option(help="Where to write the Markdown report.")] = Path(
+        "docs/validation/routing-benchmark.md"
+    ),
+    city: CityOption = None,
+) -> None:
+    """Time router build, one-to-one, one-to-all and range searches; estimate a zone matrix."""
+    settings, config = _load(city)
+    try:
+        result = bench.run(pipeline.city_dir(settings, config), config, samples=samples, seed=seed)
+    except (RouterError, OSError) as exc:
+        _fail(str(exc))
+    header = f"City `{config.city.id}`, {samples} seeded random stops (seed {seed})."
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(bench.markdown(result, header), encoding="utf-8")
+    for timing in result.timings:
+        typer.echo(f"{timing.name}: median {timing.median_ms} ms, p95 {timing.p95_ms} ms")
+    typer.echo(
+        f"all-zones 120-min matrix estimate: {result.all_zones_estimate_min} min; "
+        f"peak memory {result.peak_rss_mb:,.0f} MB -> {out}"
+    )
