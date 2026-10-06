@@ -114,3 +114,22 @@ def test_city_config_routing_is_used() -> None:
     config = load_city(FIXTURES / "cities" / "toyville" / "city.toml")
 
     assert config.routing.max_rounds == 4
+
+
+def test_route_command(city_dir: Path) -> None:
+    result = runner.invoke(app, ["route", "12.02,77.02", "12.04,77.04", "--at", "07:59"])
+
+    assert result.exit_code == 0, result.output
+    assert "arrive 08:06 · 7 min · 0 transfer(s)" in result.output
+    assert "[Simulated]" in result.output
+    assert "08:00 ride 10 from Stop A to Stop C, arrive 08:06" in result.output
+
+
+def test_route_command_reports_bad_input(city_dir: Path) -> None:
+    bad_point = runner.invoke(app, ["route", "north", "12.04,77.04", "--at", "08:00"])
+    bad_time = runner.invoke(app, ["route", "12.02,77.02", "12.04,77.04", "--at", "8"])
+
+    assert bad_point.exit_code == 1
+    assert "invalid point" in bad_point.output
+    assert bad_time.exit_code == 1
+    assert "invalid time" in bad_time.output
