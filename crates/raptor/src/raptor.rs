@@ -160,11 +160,7 @@ pub fn search<'a>(
             break;
         }
     }
-    Profile {
-        tt,
-        departure,
-        rounds,
-    }
+    Profile { tt, departure, rounds }
 }
 
 /// Working state shared by the steps of one search.
@@ -214,9 +210,7 @@ impl<'a> Search<'a> {
             let arrival = departure.saturating_add(o.duration);
             if arrival < first.walk[s] {
                 first.walk[s] = arrival;
-                first.walk_label[s] = Label::Access {
-                    duration: o.duration,
-                };
+                first.walk_label[s] = Label::Access { duration: o.duration };
             }
         }
         for s in 0..first.walk.len() {
@@ -304,10 +298,8 @@ impl<'a> Search<'a> {
                 let walked = arrival.saturating_add(footpath.duration);
                 if walked < cur.walk[to] && walked < self.bound {
                     cur.walk[to] = walked;
-                    cur.walk_label[to] = Label::Walk {
-                        from: StopIdx(to_u32(s)),
-                        duration: footpath.duration,
-                    };
+                    cur.walk_label[to] =
+                        Label::Walk { from: StopIdx(to_u32(s)), duration: footpath.duration };
                     self.reached(to, walked);
                 }
             }

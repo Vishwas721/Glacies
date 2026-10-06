@@ -36,25 +36,16 @@ impl fmt::Display for BuildError {
         match self {
             Self::TooFewStops { trip_id } => write!(f, "trip {trip_id} has fewer than 2 stops"),
             Self::LengthMismatch { trip_id } => {
-                write!(
-                    f,
-                    "trip {trip_id}: stops, arrivals and departures differ in length"
-                )
+                write!(f, "trip {trip_id}: stops, arrivals and departures differ in length")
             }
             Self::UnknownStop { trip_id, stop } => {
                 write!(f, "trip {trip_id} visits unknown stop {}", stop.0)
             }
             Self::ArrivalAfterDeparture { trip_id, position } => {
-                write!(
-                    f,
-                    "trip {trip_id}: arrival after departure at position {position}"
-                )
+                write!(f, "trip {trip_id}: arrival after departure at position {position}")
             }
             Self::TimeGoesBackwards { trip_id, position } => {
-                write!(
-                    f,
-                    "trip {trip_id}: time goes backwards at position {position}"
-                )
+                write!(f, "trip {trip_id}: time goes backwards at position {position}")
             }
             Self::DuplicateTripId { trip_id } => write!(f, "trip id {trip_id} added twice"),
             Self::UnknownFootpathStop { stop } => {
@@ -191,10 +182,7 @@ impl Timetable {
     /// If `route` is out of range.
     #[must_use]
     pub fn route(&self, route: RouteIdx) -> RouteView<'_> {
-        RouteView {
-            tt: self,
-            info: self.routes[route.0 as usize],
-        }
+        RouteView { tt: self, info: self.routes[route.0 as usize] }
     }
 
     /// `(route, position)` for every route calling at `stop`, ordered by route then position.
@@ -231,10 +219,7 @@ pub struct TimetableBuilder {
 impl TimetableBuilder {
     #[must_use]
     pub fn new(stop_count: u32) -> Self {
-        Self {
-            stop_count,
-            ..Self::default()
-        }
+        Self { stop_count, ..Self::default() }
     }
 
     /// Validate and add one trip.
@@ -300,10 +285,7 @@ impl TimetableBuilder {
         // Group by stop sequence; BTreeMap keeps routes in a deterministic order.
         let mut by_sequence: BTreeMap<Vec<StopIdx>, Vec<TripInput>> = BTreeMap::new();
         for trip in self.trips {
-            by_sequence
-                .entry(trip.stops.clone())
-                .or_default()
-                .push(trip);
+            by_sequence.entry(trip.stops.clone()).or_default().push(trip);
         }
 
         let mut routes = Vec::new();
@@ -345,9 +327,8 @@ impl TimetableBuilder {
         let mut serving: Vec<Vec<(RouteIdx, u32)>> = vec![Vec::new(); n];
         for (r, info) in routes.iter().enumerate() {
             let start = info.stops_start as usize;
-            for (position, stop) in route_stops[start..start + info.stop_count as usize]
-                .iter()
-                .enumerate()
+            for (position, stop) in
+                route_stops[start..start + info.stop_count as usize].iter().enumerate()
             {
                 serving[stop.0 as usize].push((RouteIdx(to_u32(r)), to_u32(position)));
             }
@@ -387,15 +368,8 @@ fn split_fifo(trips: Vec<TripInput>) -> Vec<Vec<TripInput>> {
     for trip in trips {
         let fits = |group: &Vec<TripInput>| {
             group.last().is_some_and(|last| {
-                last.departures
-                    .iter()
-                    .zip(&trip.departures)
-                    .all(|(a, b)| a <= b)
-                    && last
-                        .arrivals
-                        .iter()
-                        .zip(&trip.arrivals)
-                        .all(|(a, b)| a <= b)
+                last.departures.iter().zip(&trip.departures).all(|(a, b)| a <= b)
+                    && last.arrivals.iter().zip(&trip.arrivals).all(|(a, b)| a <= b)
             })
         };
         match groups.iter_mut().find(|g| fits(g)) {

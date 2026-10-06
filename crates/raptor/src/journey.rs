@@ -9,20 +9,9 @@ pub enum Leg {
     /// Walk from the origin to the first stop.
     Access { to: StopIdx, duration: u32 },
     /// Ride one trip from `from` to `to`.
-    Ride {
-        route: RouteIdx,
-        trip_id: u32,
-        from: StopIdx,
-        to: StopIdx,
-        board: Time,
-        alight: Time,
-    },
+    Ride { route: RouteIdx, trip_id: u32, from: StopIdx, to: StopIdx, board: Time, alight: Time },
     /// Walk between two stops while changing vehicles.
-    Transfer {
-        from: StopIdx,
-        to: StopIdx,
-        duration: u32,
-    },
+    Transfer { from: StopIdx, to: StopIdx, duration: u32 },
     /// Walk from the last stop to the destination.
     Egress { from: StopIdx, duration: u32 },
 }
@@ -43,10 +32,7 @@ impl Journey {
 
     #[must_use]
     pub fn rides(&self) -> usize {
-        self.legs
-            .iter()
-            .filter(|l| matches!(l, Leg::Ride { .. }))
-            .count()
+        self.legs.iter().filter(|l| matches!(l, Leg::Ride { .. })).count()
     }
 
     /// Changes of vehicle (0 for a direct trip or a walk-only journey).
@@ -139,18 +125,11 @@ impl Profile<'_> {
     fn journey(&self, round: usize, stop: StopIdx, egress: u32, arrival: Time) -> Journey {
         let mut legs = Vec::new();
         if egress > 0 {
-            legs.push(Leg::Egress {
-                from: stop,
-                duration: egress,
-            });
+            legs.push(Leg::Egress { from: stop, duration: egress });
         }
         let s = stop.0 as usize;
         let last = &self.rounds[round];
-        let mut via = if last.ride[s] <= last.walk[s] {
-            Via::Ride
-        } else {
-            Via::Walk
-        };
+        let mut via = if last.ride[s] <= last.walk[s] { Via::Ride } else { Via::Walk };
         let (mut round, mut stop) = (round, stop);
         loop {
             let (r, label) = self.label(round, stop, via);
@@ -161,13 +140,7 @@ impl Profile<'_> {
                     }
                     break;
                 }
-                Label::Ride {
-                    route,
-                    trip,
-                    board_pos,
-                    alight_pos,
-                    boarded_via,
-                } => {
+                Label::Ride { route, trip, board_pos, alight_pos, boarded_via } => {
                     let view = self.tt.route(route);
                     let (trip, board, alight) =
                         (trip as usize, board_pos as usize, alight_pos as usize);
@@ -183,22 +156,14 @@ impl Profile<'_> {
                     (round, stop, via) = (r - 1, from, boarded_via);
                 }
                 Label::Walk { from, duration } => {
-                    legs.push(Leg::Transfer {
-                        from,
-                        to: stop,
-                        duration,
-                    });
+                    legs.push(Leg::Transfer { from, to: stop, duration });
                     (round, stop, via) = (r, from, Via::Ride);
                 }
                 Label::None => unreachable!("labels on a reached stop lead back to an origin"),
             }
         }
         legs.reverse();
-        Journey {
-            departure: self.departure,
-            arrival,
-            legs,
-        }
+        Journey { departure: self.departure, arrival, legs }
     }
 
     /// The label that set `stop`'s `via` arrival in `round` or, if inherited, the latest
@@ -214,9 +179,6 @@ impl Profile<'_> {
                 return (r, label);
             }
         }
-        unreachable!(
-            "stop {} has no {via:?} label up to round {round}",
-            to_u32(s)
-        )
+        unreachable!("stop {} has no {via:?} label up to round {round}", to_u32(s))
     }
 }

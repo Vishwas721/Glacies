@@ -5,10 +5,7 @@ mod common;
 use common::{builder, t, toy1, toy2, toy3, trip, A, B, C, D};
 use glacies_raptor::{search, Access, Params, StopIdx, Time, Timetable, TripInput};
 
-const PARAMS: Params = Params {
-    max_rounds: 4,
-    min_transfer_time: 60,
-};
+const PARAMS: Params = Params { max_rounds: 4, min_transfer_time: 60 };
 
 fn from(stop: StopIdx) -> Vec<Access> {
     vec![Access { stop, duration: 0 }]
@@ -53,10 +50,7 @@ fn missing_the_first_departure_means_no_journey() {
 #[test]
 fn round_limit_is_respected() {
     let (tt, _) = toy2().build();
-    let one_vehicle = Params {
-        max_rounds: 1,
-        ..PARAMS
-    };
+    let one_vehicle = Params { max_rounds: 1, ..PARAMS };
 
     let profile = search(&tt, &one_vehicle, &from(A), t("08:00"), &[]);
 
@@ -70,10 +64,7 @@ fn minimum_transfer_time_applies_after_riding() {
     let tight = || {
         builder(
             3,
-            vec![
-                trip(1, &[(A, "08:00"), (B, "08:10")]),
-                trip(2, &[(B, "08:10"), (C, "08:20")]),
-            ],
+            vec![trip(1, &[(A, "08:00"), (B, "08:10")]), trip(2, &[(B, "08:10"), (C, "08:20")])],
         )
         .build()
         .0
@@ -81,10 +72,7 @@ fn minimum_transfer_time_applies_after_riding() {
     let tt = tight();
 
     assert_eq!(earliest(&tt, A, "08:00", C), None);
-    let instant = Params {
-        min_transfer_time: 0,
-        ..PARAMS
-    };
+    let instant = Params { min_transfer_time: 0, ..PARAMS };
     let profile = search(&tt, &instant, &from(A), t("08:00"), &[]);
     assert_eq!(profile.earliest_arrival(C), Some(t("08:20")));
 }
@@ -101,10 +89,7 @@ fn no_transfer_time_is_needed_at_the_origin() {
 fn a_later_trip_is_taken_when_the_first_is_missed() {
     let (tt, _) = builder(
         2,
-        vec![
-            trip(1, &[(A, "08:00"), (B, "08:10")]),
-            trip(2, &[(A, "08:30"), (B, "08:40")]),
-        ],
+        vec![trip(1, &[(A, "08:00"), (B, "08:10")]), trip(2, &[(A, "08:30"), (B, "08:40")])],
     )
     .build();
 
@@ -117,10 +102,7 @@ fn footpaths_carry_one_walk_after_a_ride() {
     let x = StopIdx(3);
     let mut b = builder(
         4,
-        vec![
-            trip(1, &[(A, "08:00"), (B, "08:10")]),
-            trip(2, &[(x, "08:15"), (C, "08:25")]),
-        ],
+        vec![trip(1, &[(A, "08:00"), (B, "08:10")]), trip(2, &[(x, "08:15"), (C, "08:25")])],
     );
     b.add_footpath(B, x, 120).unwrap();
     let (tt, _) = b.build();
@@ -151,10 +133,7 @@ fn walking_in_beats_waiting_out_the_transfer_time() {
     let x = StopIdx(3);
     let mut b = builder(
         4,
-        vec![
-            trip(1, &[(A, "08:00"), (x, "08:10")]),
-            trip(2, &[(A, "08:00"), (B, "08:09")]),
-        ],
+        vec![trip(1, &[(A, "08:00"), (x, "08:10")]), trip(2, &[(A, "08:00"), (B, "08:09")])],
     );
     let at_08_10_45 = Time(8 * 3600 + 10 * 60 + 45);
     b.add_trip(TripInput {
@@ -181,11 +160,7 @@ fn after_midnight_trips_are_reachable() {
 
 #[test]
 fn circular_routes_can_be_ridden_back_to_the_start() {
-    let (tt, _) = builder(
-        2,
-        vec![trip(1, &[(A, "08:00"), (B, "08:10"), (A, "08:20")])],
-    )
-    .build();
+    let (tt, _) = builder(2, vec![trip(1, &[(A, "08:00"), (B, "08:10"), (A, "08:20")])]).build();
 
     let profile = search(&tt, &PARAMS, &from(B), t("08:05"), &[]);
     assert_eq!(profile.earliest_arrival(A), Some(t("08:20")));
