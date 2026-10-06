@@ -136,3 +136,23 @@ def test_rejects_bad_building_thresholds(tmp_path: Path, thresholds: str) -> Non
 
     with pytest.raises(CityConfigError, match="building_confidence_thresholds"):
         load_city(path)
+
+
+def test_routing_parameters() -> None:
+    bengaluru = load_city(Path(__file__).parents[1] / "cities" / "bengaluru" / "city.toml")
+
+    routing = bengaluru.routing
+    assert (routing.max_rounds, routing.walking_speed_m_s, routing.min_transfer_time_s) == (
+        4,
+        1.2,
+        60,
+    )
+    assert (routing.max_access_walk_m, routing.max_transfer_walk_m) == (800.0, 400.0)
+
+
+def test_rejects_zero_rounds(tmp_path: Path) -> None:
+    original = (FIXTURES / "toyville" / "city.toml").read_text(encoding="utf-8")
+    path = _write(tmp_path, original + "\n[routing]\nmax_rounds = 0\n")
+
+    with pytest.raises(CityConfigError, match="max_rounds"):
+        load_city(path)

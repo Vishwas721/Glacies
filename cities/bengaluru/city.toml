@@ -47,6 +47,14 @@ max_snap_m = 300.0
 # Avoid snapping stops onto isolated fragments (e.g. a lone footway inside a campus).
 snap_to_largest_component = true
 
+[routing]
+# Assumed, Phase 2 handoff (2026-10-06).
+max_rounds = 4               # vehicles per journey, i.e. up to 3 transfers
+walking_speed_m_s = 1.2
+max_access_walk_m = 800.0    # origin -> first stop, last stop -> destination
+max_transfer_walk_m = 400.0  # one walking leg between vehicles
+min_transfer_time_s = 60     # alighting and reaching the next boarding point
+
 [sources.bmtc_gtfs]
 kind = "gtfs"
 mode = "bus"

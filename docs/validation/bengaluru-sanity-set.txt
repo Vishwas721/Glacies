@@ -1,0 +1,141 @@
+1.
+Origin: Doddaballapur
+Destination: Majestic
+Departure: 11.35
+Expected Time: 150 min
+
+2.
+Origin: Yelhanka Old Town
+Destination: Bellahalli Cross
+Departure: 8.30
+Expected Time: 18 min
+
+3.
+Origin: NES Office
+Destination: Hebbala
+Departure: 11.50
+Expected Time: 26 min
+
+
+4.
+Origin: Majestic
+Destination: Yeshwanthpur
+Departure: 08:30
+Expected Time: 25 min
+Source: Google Maps Transit
+
+5.
+Origin: Majestic
+Destination: Shivajinagar
+Departure: 09:00
+Expected Time: 12 min
+Source: Google Maps Transit
+
+6.
+Origin: Majestic
+Destination: Nelmangala
+Departure: 09:30
+Expected Time: 90 min
+Source: Google Maps Transit
+
+7.
+Origin: Indiranagar
+Destination: MG Road
+Departure: 08:30
+Expected Time: 15 min
+Source: Google Maps Transit
+
+8.
+Origin: Banashankari
+Destination: Jayanagar
+Departure: 09:00
+Expected Time: 25 min
+Source: Google Maps Transit
+
+
+9.
+Origin: Majestic
+Destination: Electronic City
+Departure: 08:30
+Expected Time: 73 min
+Source: Google Maps Transit
+
+10.
+Origin: Majestic
+Destination: Whitefield
+Departure: 08:30
+Expected Time: 80 min
+Source: Google Maps Transit
+
+11.
+Origin: Yeshwanthpur
+Destination: Electronic City
+Departure: 08:30
+Expected Time: 140 min
+Source: Google Maps Transit
+
+
+12.
+Origin: Whitefield
+Destination: Silk Board
+Departure: 08:30
+Expected Time: 65 min
+Source: Google Maps Transit
+
+13.
+Origin: Kengeri
+Destination: Indiranagar
+Departure: 08:30
+Expected Time: 95 min
+Source: Google Maps Transit
+
+
+14.
+Origin: Whitefield
+Destination: Yeshwanthpur
+Departure: 08:30
+Expected Time: 105 min
+Source: Google Maps Transit
+
+15.
+Origin: Banashankari
+Destination: Whitefield
+Departure: 08:30
+Expected Time: 100 min
+Source: Google Maps Transit
+
+
+16.
+Origin: KR Puram
+Destination: Majestic
+Departure: 08:30
+Expected Time: 60 min
+Source: Google Maps Transit
+
+17.
+Origin: Marathahalli
+Destination: Majestic
+Departure: 08:30
+Expected Time: 50 min
+Source: Google Maps Transit
+
+18.
+Origin: HSR Layout
+Destination: Majestic
+Departure: 08:30
+Expected Time: 62 min
+Source: Google Maps Transit
+
+19.
+Origin: Silk Board
+Destination: Yeshwanthpur
+Departure: 08:30
+Expected Time: 66 min
+Source: Google Maps Transit
+
+20.
+Origin: Electronic City
+Destination: Indiranagar
+Departure: 08:30
+Expected Time: 80 min
+Source: Google Maps Transit
