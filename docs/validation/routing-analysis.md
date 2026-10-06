@@ -21,8 +21,9 @@ Likely causes, in order:
   a stop is boarded as soon as its platform is reached on the walk network.
 - **The reference may predate the Yellow line** (opened 2025) or reflect a bus-only choice.
 
-→ **Decision needed:** add an Assumed station access time for metro boarding (and alighting),
-e.g. 3–5 min, configured in `city.toml [routing]`. Re-run `glacies validate routing` after.
+→ **Decided 2026-10-06: 4 minutes** (Assumed) of station access per metro boarding. Not yet
+implemented; it needs a mode-aware boarding penalty in the Rust router, configured in
+`city.toml [routing]`. Re-run `glacies validate routing` after implementing it.
 
 ### 2. Bus timetables do not include traffic (#1, #8)
 
@@ -53,6 +54,6 @@ more of the network than peripheral ones.
 
 ## Next steps
 
-1. Review the flagged stop matches in `bengaluru-sanity-set.csv` (rows with `review_note`).
-2. Decide on a metro station access time; re-run the sanity check.
+1. ~~Review the stop matches~~: done, all 20 accepted (2026-10-06).
+2. Implement the 4-minute metro station access time; re-run the sanity check.
 3. Treat the sanity set as a plausibility check, not ground truth: its times are Estimated.
