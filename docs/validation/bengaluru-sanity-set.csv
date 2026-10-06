@@ -1,0 +1,21 @@
+id,origin,origin_stop,origin_source_stop_id,origin_lat,origin_lon,destination,destination_stop,destination_source_stop_id,destination_lat,destination_lon,departure,expected_min,source,nature,review_note
+1,Doddaballapur,Doddaballapura Bus Stand,25068,13.29346,77.54224,Majestic,Kempegowda Bus Station,20922,12.97749,77.57327,11:35,150,Local knowledge,estimated,
+2,Yelhanka Old Town,Yelahanka Santhe Circle,22643,13.09919,77.59731,Bellahalli Cross,Bellahalli Cross,21739,13.10124,77.63492,08:30,18,Local knowledge,estimated,REVIEW: no stop named 'Old Town'; Santhe Circle is the old-town hub
+3,NES Office,NES Office,22357,13.09784,77.59167,Hebbala,Hebbala,20820,13.03851,77.58928,11:50,26,Local knowledge,estimated,
+4,Majestic,Kempegowda Bus Station,20922,12.97749,77.57327,Yeshwanthpur,Yeshawanthapura Bus Station,21288,13.01801,77.55662,08:30,25,Google Maps Transit,estimated,BMTC spelling
+5,Majestic,Kempegowda Bus Station,20922,12.97749,77.57327,Shivajinagar,Shivajinagara Bus Station,21172,12.98396,77.60323,09:00,12,Google Maps Transit,estimated,
+6,Majestic,Kempegowda Bus Station,20922,12.97749,77.57327,Nelmangala,Nelamangala Bus Station,22353,13.09796,77.39438,09:30,90,Google Maps Transit,estimated,
+7,Indiranagar,Indiranagara 100ft Road,22073,12.96658,77.64141,MG Road,MG Road,21572,12.97779,77.60204,08:30,15,Google Maps Transit,estimated,"REVIEW: a different 'Indiranagara' exists in NW Bengaluru (13.028, 77.494)"
+8,Banashankari,Banashankari Bus Station,20623,12.91779,77.57272,Jayanagar,Jayanagara Bus Station - Platform 1,21544_PF1,12.92847,77.584435,09:00,25,Google Maps Transit,estimated,
+9,Majestic,Kempegowda Bus Station,20922,12.97749,77.57327,Electronic City,Electronic City,21934,12.84756,77.6707,08:30,73,Google Maps Transit,estimated,
+10,Majestic,Kempegowda Bus Station,20922,12.97749,77.57327,Whitefield,Kadugodi Bus Station,20902,12.99563,77.75855,08:30,80,Google Maps Transit,estimated,REVIEW: Whitefield TTMC is at Kadugodi; ITPL is the other candidate
+11,Yeshwanthpur,Yeshawanthapura Bus Station,21288,13.01801,77.55662,Electronic City,Electronic City,21934,12.84756,77.6707,08:30,140,Google Maps Transit,estimated,BMTC spelling
+12,Whitefield,Kadugodi Bus Station,20902,12.99563,77.75855,Silk Board,Central Silk Board,20707,12.91803,77.62355,08:30,65,Google Maps Transit,estimated,REVIEW: Whitefield TTMC is at Kadugodi; ITPL is the other candidate
+13,Kengeri,Kengeri Bus Station - Platform 1,20925_PF1,12.913793,77.48708,Indiranagar,Indiranagara 100ft Road,22073,12.96658,77.64141,08:30,95,Google Maps Transit,estimated,"REVIEW: a different 'Indiranagara' exists in NW Bengaluru (13.028, 77.494)"
+14,Whitefield,Kadugodi Bus Station,20902,12.99563,77.75855,Yeshwanthpur,Yeshawanthapura Bus Station,21288,13.01801,77.55662,08:30,105,Google Maps Transit,estimated,REVIEW: Whitefield TTMC is at Kadugodi; ITPL is the other candidate; BMTC spelling
+15,Banashankari,Banashankari Bus Station,20623,12.91779,77.57272,Whitefield,Kadugodi Bus Station,20902,12.99563,77.75855,08:30,100,Google Maps Transit,estimated,REVIEW: Whitefield TTMC is at Kadugodi; ITPL is the other candidate
+16,KR Puram,KR Pura Bus Stand,20946,13.00798,77.69271,Majestic,Kempegowda Bus Station,20922,12.97749,77.57327,08:30,60,Google Maps Transit,estimated,REVIEW: KR Pura Railway Station is the busier stop
+17,Marathahalli,Kalamandira Marathahalli Bridge,22670,12.96038,77.70135,Majestic,Kempegowda Bus Station,20922,12.97749,77.57327,08:30,50,Google Maps Transit,estimated,REVIEW: Multiplex Marathahalli is the other main stop
+18,HSR Layout,HSR Layout 14th Main,20569,12.91619,77.63521,Majestic,Kempegowda Bus Station,20922,12.97749,77.57327,08:30,62,Google Maps Transit,estimated,REVIEW: HSR Layout has no single hub stop
+19,Silk Board,Central Silk Board,20707,12.91803,77.62355,Yeshwanthpur,Yeshawanthapura Bus Station,21288,13.01801,77.55662,08:30,66,Google Maps Transit,estimated,BMTC spelling
+20,Electronic City,Electronic City,21934,12.84756,77.6707,Indiranagar,Indiranagara 100ft Road,22073,12.96658,77.64141,08:30,80,Google Maps Transit,estimated,"REVIEW: a different 'Indiranagara' exists in NW Bengaluru (13.028, 77.494)"

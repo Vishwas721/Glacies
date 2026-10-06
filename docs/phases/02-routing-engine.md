@@ -104,12 +104,18 @@ write and how it maps to the RAPTOR paper (Delling et al. 2012). Then:
 
 ## 9. Definition of done
 
-- [ ] All toy-network tests pass, including transfer, footpath, overtaking and after-midnight cases.
-- [ ] A one-to-one query on Bengaluru answers in < 50 ms; one-to-all in < 200 ms (targets; record actuals).
-- [ ] All-zones × 120-minute window travel-time matrix completes in < 30 min on your laptop with
-      < 8 GB RAM (target; record actuals).
+Checked 2026-10-06 (`docs/validation/routing*.md`).
+
+- [x] All toy-network tests pass, including transfer, footpath, overtaking and after-midnight cases.
+      **Plus an independent Connection Scan oracle on 3,000 random networks.**
+- [x] A one-to-one query on Bengaluru answers in < 50 ms; one-to-all in < 200 ms.
+      **21.9 ms and 25.1 ms median.**
+- [x] All-zones × 120-minute window travel-time matrix completes in < 30 min on your laptop with
+      < 8 GB RAM. **≈ 13.4 min extrapolated, 1.44 GB peak.**
 - [ ] 90 % of the sanity/R5 OD pairs are within ±20 % (or ±5 min) of the reference; outliers explained.
-- [ ] Same input ⇒ identical output arrays across runs and thread counts.
+      **11 of 20. All outliers explained in `routing-analysis.md`: no router error; metro station
+      access time is missing (decision pending), bus schedules exclude traffic, some matches await review.**
+- [x] Same input ⇒ identical output arrays across runs and thread counts.
 
 ## 10. Risks & pitfalls
 

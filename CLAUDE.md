@@ -66,6 +66,7 @@ uv run glacies build walk                 # OSM walk network + stop snapping in 
 uv run glacies build zones                # H3 zones with population, buildings, land cover, POIs
 uv run glacies load postgis               # copy zones/stops/pattern lines to PostGIS for QGIS
 uv run glacies route LAT,LON LAT,LON --at 08:30   # plan journeys (Simulated)
+uv run glacies validate routing | bench routing   # sanity set / performance reports in docs/validation
 
 # Infra
 docker compose up -d          # PostGIS :5433 (host), Redis :6379
