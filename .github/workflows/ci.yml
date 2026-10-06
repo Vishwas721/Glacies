@@ -30,6 +30,11 @@ jobs:
         with:
           filters: |
             python:
+              # The Python package depends on the Rust core through glacies-raptor.
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
               - 'src/**'
               - 'tests/**'
               - 'cities/**'
@@ -82,6 +87,9 @@ jobs:
       GLACIES_TEST_DATABASE_URL: postgresql://glacies:glacies@localhost:5432/glacies_test
     steps:
       - uses: actions/checkout@v7
+      - name: Install Rust toolchain (uv sync builds the glacies-raptor extension)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
