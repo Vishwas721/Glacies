@@ -114,7 +114,8 @@ Checked 2026-10-06 (`docs/validation/routing*.md`).
       < 8 GB RAM. **≈ 13.4 min extrapolated, 1.44 GB peak.**
 - [ ] 90 % of the sanity/R5 OD pairs are within ±20 % (or ±5 min) of the reference; outliers explained.
       **11 of 20. All outliers explained in `routing-analysis.md`: no router error; metro station
-      access time is missing (decision pending), bus schedules exclude traffic, some matches await review.**
+      access time is missing (decided: 4 min, not yet implemented), bus schedules exclude traffic.
+      All 20 stop matches were reviewed and accepted.**
 - [x] Same input ⇒ identical output arrays across runs and thread counts.
 
 ## 10. Risks & pitfalls
