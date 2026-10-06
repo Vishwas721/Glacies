@@ -16,6 +16,7 @@ from glacies.config import Settings, get_settings
 from glacies.ingest import archive, download
 from glacies.model.zones.build import population_check
 from glacies.pipeline import PipelineError, StageDone
+from glacies.routing.network import RouterError, clock, load_router, parse_clock
 from glacies.validate.gtfs.report import Severity
 
 app = typer.Typer(help="Glacies — urban transit digital twin.", no_args_is_help=True)
@@ -302,3 +303,47 @@ def build_city(
     except PipelineError as exc:
         _fail(str(exc))
     typer.echo(f"city {config.city.id!r} built in {time.perf_counter() - started:.0f} s")
+
+
+def _point(text: str) -> tuple[float, float]:
+    try:
+        lat, lon = (float(part) for part in text.split(","))
+    except ValueError:
+        _fail(f"invalid point {text!r}; use LAT,LON e.g. 12.9766,77.5713")
+    return lat, lon
+
+
+@app.command()
+def route(
+    origin: Annotated[str, typer.Argument(help="Origin as LAT,LON.")],
+    destination: Annotated[str, typer.Argument(help="Destination as LAT,LON.")],
+    at: Annotated[str, typer.Option("--at", help="Departure time HH:MM on the service day.")],
+    city: CityOption = None,
+) -> None:
+    """Plan journeys between two points on the canonical network (results are Simulated)."""
+    settings, config = _load(city)
+    started = time.perf_counter()
+    try:
+        router = load_router(
+            pipeline.city_dir(settings, config), config.routing, config.city.crs_projected
+        )
+        built = time.perf_counter()
+        journeys = router.plan(_point(origin), _point(destination), parse_clock(at))
+    except RouterError as exc:
+        _fail(str(exc))
+    typer.echo(
+        f"router: {router.timetable.route_count:,} routes, {router.timetable.trip_count:,} trips, "
+        f"{router.transfer_count:,} transfer walks (built in {built - started:.1f} s)"
+    )
+    if not journeys:
+        typer.echo("no journey found")
+        return
+    for journey in journeys:
+        typer.echo()
+        typer.echo(
+            f"arrive {clock(journey.arrival)} · {journey.travel_time // 60} min · "
+            f"{journey.transfers} transfer(s) · walk {journey.walking_time // 60} min · "
+            f"wait {journey.waiting_time // 60} min  [Simulated]"
+        )
+        for line in router.describe(journey):
+            typer.echo(f"  {line}")
