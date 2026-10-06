@@ -43,12 +43,12 @@ model inherits that. Fixing it needs observed running times (out of scope for Ph
 
 | Target (phase doc §9) | Result |
 |---|---|
-| one-to-one < 50 ms | 22.6 ms median, 33.7 ms p95 |
+| one-to-one < 50 ms | 21.9 ms median, 31.9 ms p95 |
 | one-to-all < 200 ms | 25.1 ms median |
-| all-zones × 120-min matrix < 30 min | ≈ 14.3 min (extrapolated from 200 parallel origins) |
-| < 8 GB | 1.44 GB peak |
+| all-zones × 120-min matrix < 30 min | ≈ 13.4 min (extrapolated from 200 parallel origins) |
+| < 8 GB | 1.44 GB peak (router alone: 681 MB, built in 2.8 s) |
 
-Range searches vary widely by origin (median 110 ms, p95 805 ms): central origins reach far
+Range searches vary widely by origin (median 113 ms, p95 812 ms): central origins reach far
 more of the network than peripheral ones.
 
 ## Next steps
