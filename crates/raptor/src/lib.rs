@@ -3,10 +3,12 @@
 //! See `docs/phases/02-routing-engine.md` for the implementation plan.
 
 mod journey;
+mod range;
 mod raptor;
 mod timetable;
 
 pub use journey::{plan, Journey, Leg};
+pub use range::{range_search, RangeProfile};
 pub use raptor::{search, Access, Params, Profile};
 pub use timetable::{
     BuildError, BuildReport, Footpath, RouteView, Timetable, TimetableBuilder, TripInput,

@@ -64,7 +64,7 @@ pub(crate) struct Round {
 }
 
 impl Round {
-    fn unreached(stops: usize) -> Self {
+    pub(crate) fn unreached(stops: usize) -> Self {
         Self {
             ride: vec![Time::UNREACHED; stops],
             walk: vec![Time::UNREACHED; stops],
@@ -164,20 +164,24 @@ pub fn search<'a>(
 }
 
 /// Working state shared by the steps of one search.
-struct Search<'a> {
+pub(crate) struct Search<'a> {
     tt: &'a Timetable,
     params: Params,
     egress_at: Vec<u32>,
     /// Earliest arrival at any destination so far (target pruning).
     bound: Time,
-    marked: Vec<bool>,
+    pub(crate) marked: Vec<bool>,
+    /// Earliest arrival per stop over all rounds (and, in range searches, later departures).
+    pub(crate) best: Vec<Time>,
+    /// Stops whose ride arrival improved in the current round (for footpath relaxation).
+    rode: Vec<bool>,
     /// Per route: earliest marked position, or `u32::MAX` if not queued.
     queue: Vec<u32>,
-    queued: Vec<usize>,
+    pub(crate) queued: Vec<usize>,
 }
 
 impl<'a> Search<'a> {
-    fn new(tt: &'a Timetable, params: Params, egress: &[Access]) -> Self {
+    pub(crate) fn new(tt: &'a Timetable, params: Params, egress: &[Access]) -> Self {
         let n = tt.stop_count();
         let mut egress_at = vec![u32::MAX; n];
         for e in egress {
@@ -190,13 +194,16 @@ impl<'a> Search<'a> {
             egress_at,
             bound: Time::UNREACHED,
             marked: vec![false; n],
+            best: vec![Time::UNREACHED; n],
+            rode: vec![false; n],
             queue: vec![u32::MAX; tt.route_count()],
             queued: Vec::new(),
         }
     }
 
-    fn reached(&mut self, stop: usize, arrival: Time) {
+    pub(crate) fn reached(&mut self, stop: usize, arrival: Time) {
         self.marked[stop] = true;
+        self.best[stop] = self.best[stop].min(arrival);
         if self.egress_at[stop] != u32::MAX {
             self.bound = self.bound.min(arrival.saturating_add(self.egress_at[stop]));
         }
@@ -222,7 +229,7 @@ impl<'a> Search<'a> {
     }
 
     /// Queue each route serving a marked stop, from the earliest marked position on it.
-    fn collect_routes(&mut self) {
+    pub(crate) fn collect_routes(&mut self) {
         for s in 0..self.marked.len() {
             if !self.marked[s] {
                 continue;
@@ -240,7 +247,7 @@ impl<'a> Search<'a> {
     }
 
     /// Ride every queued route; returns the stops whose ride arrival improved.
-    fn scan_routes(&mut self, prev: &Round, cur: &mut Round) -> Vec<usize> {
+    pub(crate) fn scan_routes(&mut self, prev: &Round, cur: &mut Round) -> Vec<usize> {
         let mut rode = Vec::new();
         let queued = std::mem::take(&mut self.queued);
         for &r in &queued {
@@ -253,7 +260,8 @@ impl<'a> Search<'a> {
                 if let Some((trip, board_pos, via)) = boarded {
                     let arrival = route.arrival(trip, pos);
                     if arrival < cur.ride[s] && arrival < self.bound {
-                        if cur.ride_label[s] == Label::None {
+                        if !self.rode[s] {
+                            self.rode[s] = true;
                             rode.push(s);
                         }
                         cur.ride[s] = arrival;
@@ -289,9 +297,10 @@ impl<'a> Search<'a> {
     }
 
     /// One walking leg after each ride (never after another walk).
-    fn relax_footpaths(&mut self, cur: &mut Round, mut rode: Vec<usize>) {
+    pub(crate) fn relax_footpaths(&mut self, cur: &mut Round, mut rode: Vec<usize>) {
         rode.sort_unstable();
         for s in rode {
+            self.rode[s] = false;
             let arrival = cur.ride[s];
             for footpath in self.tt.footpaths(StopIdx(to_u32(s))) {
                 let to = footpath.to.0 as usize;
