@@ -140,11 +140,22 @@ class Walk(_Strict):
     snap_to_largest_component: bool = True
 
 
+class Routing(_Strict):
+    """Journey-planning parameters (Phase 2). All Assumed."""
+
+    max_rounds: int = Field(default=4, ge=1, le=10, description="Vehicles per journey.")
+    walking_speed_m_s: float = Field(default=1.2, gt=0)
+    max_access_walk_m: float = Field(default=800.0, gt=0)
+    max_transfer_walk_m: float = Field(default=400.0, ge=0)
+    min_transfer_time_s: int = Field(default=60, ge=0)
+
+
 class CityConfig(_Strict):
     city: CityInfo
     zoning: Zoning
     network: Network | None = None
     walk: Walk = Field(default_factory=Walk)
+    routing: Routing = Field(default_factory=Routing)
     sources: dict[str, Source]
 
     @model_validator(mode="after")
