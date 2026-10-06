@@ -133,3 +133,48 @@ def test_route_command_reports_bad_input(city_dir: Path) -> None:
     assert "invalid point" in bad_point.output
     assert bad_time.exit_code == 1
     assert "invalid time" in bad_time.output
+
+
+SANITY_HEADER = (
+    "id,origin,origin_stop,origin_lat,origin_lon,destination,destination_stop,"
+    "destination_lat,destination_lon,departure,expected_min,source,review_note\n"
+)
+
+
+def test_validate_routing_compares_with_expected_times(city_dir: Path, tmp_path: Path) -> None:
+    sanity = tmp_path / "sanity.csv"
+    sanity.write_text(
+        SANITY_HEADER
+        + "1,A,Stop A,12.02,77.02,C,Stop C,12.04,77.04,07:59,7,fixture,\n"
+        + "2,A,Stop A,12.02,77.02,C,Stop C,12.04,77.04,07:59,30,fixture,check me\n"
+        + "3,Far,nowhere,12.095,77.095,C,Stop C,12.04,77.04,07:59,10,fixture,\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "routing.md"
+
+    result = runner.invoke(app, ["validate", "routing", "--sanity", str(sanity), "--out", str(out)])
+
+    assert result.exit_code == 0, result.output
+    assert "1 of 3 pairs within tolerance" in result.output
+    report = out.read_text(encoding="utf-8")
+    assert "| 1 | A → C | 07:59 | 7 min | 7 min | 0 | 7 min | ✅ |" in report
+    assert "| 2 | A → C | 07:59 | 30 min | 7 min | 0 | 7 min | ❌ | check me |" in report
+    assert "no stop within 800 m" in report
+
+
+def test_bench_routing_writes_a_report(city_dir: Path, tmp_path: Path) -> None:
+    import polars as pl
+
+    (city_dir / "zones").mkdir()
+    pl.DataFrame({"population": [10.0, 0.0, 5.0]}).write_parquet(
+        city_dir / "zones" / "zones.parquet"
+    )
+    out = tmp_path / "bench.md"
+
+    result = runner.invoke(app, ["bench", "routing", "--samples", "4", "--out", str(out)])
+
+    assert result.exit_code == 0, result.output
+    assert "one-to-one plan" in result.output
+    text = out.read_text(encoding="utf-8")
+    assert "one origin per populated zone\n(2 zones)" in text
+    assert "| range search, 120 departures 07:30-09:29 | 1 |" in text
