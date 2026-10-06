@@ -35,21 +35,12 @@ pub fn builder(stop_count: u32, trips: Vec<TripInput>) -> TimetableBuilder {
 
 /// Toy 1: A 08:00 -> B 08:10 -> C 08:20 on T1.
 pub fn toy1() -> TimetableBuilder {
-    builder(
-        3,
-        vec![trip(1, &[(A, "08:00"), (B, "08:10"), (C, "08:20")])],
-    )
+    builder(3, vec![trip(1, &[(A, "08:00"), (B, "08:10"), (C, "08:20")])])
 }
 
 /// Toy 2: T1 A 08:00 -> B 08:10, then T2 B 08:15 -> C 08:25.
 pub fn toy2() -> TimetableBuilder {
-    builder(
-        3,
-        vec![
-            trip(1, &[(A, "08:00"), (B, "08:10")]),
-            trip(2, &[(B, "08:15"), (C, "08:25")]),
-        ],
-    )
+    builder(3, vec![trip(1, &[(A, "08:00"), (B, "08:10")]), trip(2, &[(B, "08:15"), (C, "08:25")])])
 }
 
 /// Toy 3: Fast A 08:00 -> B 08:05 -> D 08:15; Slow A 08:00 -> C 08:10 -> D 08:30.

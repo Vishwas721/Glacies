@@ -62,6 +62,9 @@ _Decisions recorded 2026-10-06 from the Phase 2 handoff; all Assumed. Toy networ
    alighting stops, trip id, times); compute walking/waiting/in-vehicle/transfer breakdown.
 4. **M4 — Access/egress**: multiple origin stops with initial walk times; target pruning for
    one-to-one queries.
+
+   _M2–M4 were built together (one PR): the search, reconstruction and access/egress share one
+   loop. Ride and walk arrivals are kept separately so the transfer rule is exact (ADR 0005)._
 5. **M5 — Range RAPTOR**: departures across a window (e.g. 07:00–09:00, every minute), reusing labels
    between iterations; outputs travel-time distributions per destination stop.
 6. **M6 — PyO3 bindings** (`crates/raptor-py`, maturin): `Timetable.from_arrow(...)`,

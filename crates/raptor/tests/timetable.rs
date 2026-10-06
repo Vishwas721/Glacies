@@ -9,10 +9,7 @@ use glacies_raptor::{BuildError, RouteIdx, StopIdx, Time, TimetableBuilder, Trip
 fn toy1_is_one_route_with_one_trip() {
     let (tt, report) = toy1().build();
 
-    assert_eq!(
-        (tt.stop_count(), tt.route_count(), tt.trip_count()),
-        (3, 1, 1)
-    );
+    assert_eq!((tt.stop_count(), tt.route_count(), tt.trip_count()), (3, 1, 1));
     let route = tt.route(RouteIdx(0));
     assert_eq!(route.stops(), &[A, B, C]);
     assert_eq!(route.trip_count(), 1);
@@ -60,14 +57,8 @@ fn trips_of_a_route_are_ordered_by_departure_whatever_the_input_order() {
     let (reversed, _) = builder(2, trips().into_iter().rev().collect()).build();
 
     let route = forward.route(RouteIdx(0));
-    assert_eq!(
-        (0..3).map(|i| route.trip_id(i)).collect::<Vec<_>>(),
-        [10, 20, 30]
-    );
-    assert_eq!(
-        forward, reversed,
-        "the build must not depend on input order"
-    );
+    assert_eq!((0..3).map(|i| route.trip_id(i)).collect::<Vec<_>>(), [10, 20, 30]);
+    assert_eq!(forward, reversed, "the build must not depend on input order");
 }
 
 #[test]
@@ -75,10 +66,7 @@ fn overtaking_trips_are_split_into_separate_routes() {
     // The express leaves later but arrives earlier: one route would break "earliest trip".
     let (tt, report) = builder(
         2,
-        vec![
-            trip(1, &[(A, "08:00"), (B, "09:00")]),
-            trip(2, &[(A, "08:10"), (B, "08:30")]),
-        ],
+        vec![trip(1, &[(A, "08:00"), (B, "09:00")]), trip(2, &[(A, "08:10"), (B, "08:30")])],
     )
     .build();
 
@@ -121,10 +109,7 @@ fn every_route_is_fifo_after_splitting() {
 fn identical_trips_stay_in_one_route() {
     let (tt, report) = builder(
         2,
-        vec![
-            trip(1, &[(A, "08:00"), (B, "08:10")]),
-            trip(2, &[(A, "08:00"), (B, "08:10")]),
-        ],
+        vec![trip(1, &[(A, "08:00"), (B, "08:10")]), trip(2, &[(A, "08:00"), (B, "08:10")])],
     )
     .build();
 
@@ -177,24 +162,15 @@ fn invalid_trips_are_rejected() {
     );
     assert_eq!(
         b.add_trip(input(&[0, 9], &ok, &ok)),
-        Err(BuildError::UnknownStop {
-            trip_id: 7,
-            stop: StopIdx(9)
-        })
+        Err(BuildError::UnknownStop { trip_id: 7, stop: StopIdx(9) })
     );
     assert_eq!(
         b.add_trip(input(&[0, 1], &["08:00", "08:20"], &["08:00", "08:10"])),
-        Err(BuildError::ArrivalAfterDeparture {
-            trip_id: 7,
-            position: 1
-        })
+        Err(BuildError::ArrivalAfterDeparture { trip_id: 7, position: 1 })
     );
     assert_eq!(
         b.add_trip(input(&[0, 1], &["08:00", "07:59"], &["08:00", "07:59"])),
-        Err(BuildError::TimeGoesBackwards {
-            trip_id: 7,
-            position: 1
-        })
+        Err(BuildError::TimeGoesBackwards { trip_id: 7, position: 1 })
     );
     b.add_trip(input(&[0, 1], &ok, &ok)).unwrap();
     assert_eq!(
@@ -210,12 +186,30 @@ fn invalid_trips_are_rejected() {
 #[test]
 fn circular_routes_list_every_position_of_a_repeated_stop() {
     // Circular services start and end at the same stop (common in the BMTC feed).
-    let (tt, _) = builder(
-        2,
-        vec![trip(1, &[(A, "08:00"), (B, "08:10"), (A, "08:20")])],
-    )
-    .build();
+    let (tt, _) = builder(2, vec![trip(1, &[(A, "08:00"), (B, "08:10"), (A, "08:20")])]).build();
 
     assert_eq!(tt.route(RouteIdx(0)).stops(), &[A, B, A]);
     assert_eq!(tt.routes_serving(A), &[(RouteIdx(0), 0), (RouteIdx(0), 2)]);
+}
+
+#[test]
+fn earliest_trip_finds_the_first_catchable_departure() {
+    let (tt, _) = builder(
+        2,
+        vec![
+            trip(1, &[(A, "08:00"), (B, "08:10")]),
+            trip(2, &[(A, "08:15"), (B, "08:25")]),
+            trip(3, &[(A, "08:30"), (B, "08:40")]),
+        ],
+    )
+    .build();
+    let route = tt.route(RouteIdx(0));
+    let all = route.trip_count();
+
+    assert_eq!(route.earliest_trip(0, t("07:00"), all), Some(0));
+    assert_eq!(route.earliest_trip(0, t("08:00"), all), Some(0)); // departing exactly then
+    assert_eq!(route.earliest_trip(0, t("08:01"), all), Some(1));
+    assert_eq!(route.earliest_trip(1, t("08:26"), all), Some(2));
+    assert_eq!(route.earliest_trip(0, t("08:31"), all), None);
+    assert_eq!(route.earliest_trip(0, t("08:01"), 1), None); // only trips before index 1
 }
