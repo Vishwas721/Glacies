@@ -6,6 +6,8 @@
 | `bengaluru-sanity-set.txt` | 20 real Bengaluru OD pairs with expected transit times | **Estimated** | Phase 2 M8 |
 | `bengaluru-sanity-set.csv` | The same 20 pairs matched to canonical stops (coordinates, source stop ids, review notes) | **Estimated** | `glacies validate routing` |
 | `routing.md` | Latest sanity-set comparison, written by `glacies validate routing` | Simulated vs Estimated | Phase 2 DoD |
+| `employment-proxy.md` | Employment proxy hub check, sensitivity table and analysis (copy of the `glacies build attraction` report) | Estimated (weights Assumed) | Phase 3 M1 |
+| `../../cities/bengaluru/validation/employment_hubs.geojson` | 8 hand-drawn employment hub polygons (QGIS, 2026-10-07) | Assumed (hand-drawn) | Phase 3 hub check |
 
 ## About the Bengaluru sanity set
 
