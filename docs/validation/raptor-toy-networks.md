@@ -46,3 +46,20 @@ A ────┤                     ├──→ D
 | Slow | 08:00 | | 08:10 | 08:30 |
 
 Query A → D departing 08:00: **arrive 08:15 · 15 min · 0 transfers · via B (Fast)**.
+
+## Toy 4 — boarding time (station access)
+
+```
+A ──T1/T2──→ C        boarding at A takes 4 min (240 s)
+```
+
+| Trip | A | C |
+|---|---|---|
+| T1 | 08:02 | 08:12 |
+| T2 | 08:06 | 08:16 |
+
+Query A → C departing 08:00: without boarding time **arrive 08:12** (T1). With 240 s the
+passenger is ready to board at 08:04, misses T1 and **arrives 08:16** (T2).
+Boarding time is added to the minimum transfer time after a ride (Toy 2 with 240 s at B: ready
+08:10 + 60 s + 240 s = 08:15, T2 still caught; with 241 s it is missed). Staying seated or
+alighting at a stop with a boarding time costs nothing.

@@ -9,6 +9,9 @@
 //! Keeping only the earlier of the two would be wrong: a stop reached by vehicle at 08:10 and
 //! on foot at 08:10:30 is ready for boarding at 08:10:30, not 08:11. Footpaths are relaxed only
 //! from `ride` arrivals, so a journey never has two walking legs in a row.
+//!
+//! A stop's boarding time (e.g. metro station access) is added on top of either label, on every
+//! boarding there. It is not an arrival: a passenger may still alight at or walk through the stop.
 
 use crate::{RouteIdx, StopIdx, Time, Timetable};
 
@@ -285,6 +288,7 @@ impl<'a> Search<'a> {
                 if ready == Time::UNREACHED {
                     continue;
                 }
+                let ready = ready.saturating_add(self.tt.boarding_time(*stop));
                 let before = boarded.map_or(route.trip_count(), |(trip, _, _)| trip);
                 if let Some(trip) = route.earliest_trip(pos, ready, before) {
                     boarded = Some((trip, pos, via));

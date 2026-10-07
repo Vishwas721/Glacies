@@ -29,6 +29,7 @@ pub enum BuildError {
     TimeGoesBackwards { trip_id: u32, position: usize },
     DuplicateTripId { trip_id: u32 },
     UnknownFootpathStop { stop: StopIdx },
+    UnknownBoardingStop { stop: StopIdx },
 }
 
 impl fmt::Display for BuildError {
@@ -50,6 +51,9 @@ impl fmt::Display for BuildError {
             Self::DuplicateTripId { trip_id } => write!(f, "trip id {trip_id} added twice"),
             Self::UnknownFootpathStop { stop } => {
                 write!(f, "footpath references unknown stop {}", stop.0)
+            }
+            Self::UnknownBoardingStop { stop } => {
+                write!(f, "boarding time set for unknown stop {}", stop.0)
             }
         }
     }
@@ -100,6 +104,8 @@ pub struct Timetable {
     stop_routes: Vec<(RouteIdx, u32)>,
     footpaths_start: Vec<u32>,
     footpaths: Vec<Footpath>,
+    /// Per stop: seconds between reaching the stop and being able to board there.
+    boarding_time: Vec<u32>,
 }
 
 /// Read-only view of one route.
@@ -205,6 +211,16 @@ impl Timetable {
         let s = stop.0 as usize;
         &self.footpaths[self.footpaths_start[s] as usize..self.footpaths_start[s + 1] as usize]
     }
+
+    /// Seconds needed at `stop` before boarding (e.g. a metro station's entrance, security
+    /// check and stairs); 0 unless set with [`TimetableBuilder::set_boarding_time`].
+    ///
+    /// # Panics
+    /// If `stop` is out of range.
+    #[must_use]
+    pub fn boarding_time(&self, stop: StopIdx) -> u32 {
+        self.boarding_time[stop.0 as usize]
+    }
 }
 
 /// Collects trips and footpaths, then lays them out as a [`Timetable`].
@@ -214,6 +230,7 @@ pub struct TimetableBuilder {
     trips: Vec<TripInput>,
     trip_ids: std::collections::BTreeSet<u32>,
     footpaths: Vec<(StopIdx, Footpath)>,
+    boarding_time: BTreeMap<StopIdx, u32>,
 }
 
 impl TimetableBuilder {
@@ -270,6 +287,18 @@ impl TimetableBuilder {
             }
         }
         self.footpaths.push((from, Footpath { to, duration }));
+        Ok(())
+    }
+
+    /// Require `seconds` at `stop` before every boarding there; a later call replaces it.
+    ///
+    /// # Errors
+    /// If the stop is unknown.
+    pub fn set_boarding_time(&mut self, stop: StopIdx, seconds: u32) -> Result<(), BuildError> {
+        if stop.0 >= self.stop_count {
+            return Err(BuildError::UnknownBoardingStop { stop });
+        }
+        self.boarding_time.insert(stop, seconds);
         Ok(())
     }
 
@@ -344,6 +373,11 @@ impl TimetableBuilder {
         }
         let (footpaths_start, footpaths) = to_csr(walks);
 
+        let mut boarding_time = vec![0; n];
+        for (stop, seconds) in self.boarding_time {
+            boarding_time[stop.0 as usize] = seconds;
+        }
+
         let timetable = Timetable {
             stop_count: self.stop_count,
             routes,
@@ -354,6 +388,7 @@ impl TimetableBuilder {
             stop_routes,
             footpaths_start,
             footpaths,
+            boarding_time,
         };
         (timetable, report)
     }

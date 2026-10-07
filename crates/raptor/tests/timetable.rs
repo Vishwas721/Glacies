@@ -181,6 +181,20 @@ fn invalid_trips_are_rejected() {
         b.add_footpath(StopIdx(0), StopIdx(5), 60),
         Err(BuildError::UnknownFootpathStop { stop: StopIdx(5) })
     );
+    assert_eq!(
+        b.set_boarding_time(StopIdx(3), 240),
+        Err(BuildError::UnknownBoardingStop { stop: StopIdx(3) })
+    );
+}
+
+#[test]
+fn boarding_times_default_to_zero_and_the_last_setting_wins() {
+    let mut b = toy1();
+    b.set_boarding_time(B, 120).unwrap();
+    b.set_boarding_time(B, 240).unwrap();
+    let (tt, _) = b.build();
+
+    assert_eq!([A, B, C].map(|s| tt.boarding_time(s)), [0, 240, 0]);
 }
 
 #[test]

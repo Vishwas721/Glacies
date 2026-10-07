@@ -165,3 +165,47 @@ fn circular_routes_can_be_ridden_back_to_the_start() {
     let profile = search(&tt, &PARAMS, &from(B), t("08:05"), &[]);
     assert_eq!(profile.earliest_arrival(A), Some(t("08:20")));
 }
+
+/// Toy 4: T1 A 08:02 -> C 08:12, T2 A 08:06 -> C 08:16; boarding at A takes `seconds`.
+fn toy4(seconds: u32) -> Timetable {
+    let mut b = builder(
+        3,
+        vec![trip(1, &[(A, "08:02"), (C, "08:12")]), trip(2, &[(A, "08:06"), (C, "08:16")])],
+    );
+    b.set_boarding_time(A, seconds).unwrap();
+    b.build().0
+}
+
+#[test]
+fn boarding_time_delays_the_first_boarding() {
+    // Reaching A at 08:00 with a 4-minute station access: ready at 08:04, so T1 (08:02) is
+    // missed and T2 (08:06) is taken.
+    assert_eq!(earliest(&toy4(0), A, "08:00", C), Some(t("08:12")));
+    assert_eq!(earliest(&toy4(240), A, "08:00", C), Some(t("08:16")));
+}
+
+#[test]
+fn boarding_time_adds_to_the_transfer_time() {
+    // Toy 2 with boarding time at B: T1 arrives 08:10, T2 leaves 08:15. 60 s transfer + 240 s
+    // boarding = ready 08:15 (caught); 60 s + 241 s misses it.
+    let with_boarding = |seconds| {
+        let mut b = toy2();
+        b.set_boarding_time(B, seconds).unwrap();
+        b.build().0
+    };
+
+    assert_eq!(earliest(&with_boarding(240), A, "08:00", C), Some(t("08:25")));
+    assert_eq!(earliest(&with_boarding(241), A, "08:00", C), None);
+}
+
+#[test]
+fn boarding_time_does_not_delay_riding_through_or_alighting() {
+    let mut b = toy1();
+    b.set_boarding_time(B, 600).unwrap();
+    b.set_boarding_time(C, 600).unwrap();
+    let (tt, _) = b.build();
+
+    let profile = search(&tt, &PARAMS, &from(A), t("08:00"), &[]);
+    assert_eq!(profile.earliest_arrival(B), Some(t("08:10")));
+    assert_eq!(profile.earliest_arrival(C), Some(t("08:20")));
+}
