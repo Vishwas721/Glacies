@@ -68,11 +68,18 @@ def _strips(
 
 def population_by_zone(
     path: str, zones: pl.DataFrame, bbox: Bbox
-) -> tuple[pl.Series, dict[str, float]]:
-    """Population per zone, plus totals used to check that nothing is lost or double-counted."""
+) -> tuple[pl.DataFrame, dict[str, float]]:
+    """Population per zone and its population-weighted point, plus conservation totals.
+
+    The weighted point (``pop_lat``/``pop_lon``) is where a zone's residents live on average;
+    it is null for zones without residents. Accessibility starts trips there rather than at
+    the cell centre, which may fall in a lake or a field far from any street.
+    """
     n = zones.height
     min_lon, min_lat, max_lon, max_lat = bbox
     sums = np.zeros(n + 1, dtype=np.float64)
+    lat_sums = np.zeros(n + 1, dtype=np.float64)
+    lon_sums = np.zeros(n + 1, dtype=np.float64)
     total_read = in_bbox = 0.0
     for labels, values, nodata, transform in _strips(path, zones):
         data = values.astype(np.float64)
@@ -84,9 +91,18 @@ def population_by_zone(
         rows, cols = data.shape
         xs = transform.c + (np.arange(cols) + 0.5) * transform.a
         ys = transform.f + (np.arange(rows) + 0.5) * transform.e
+        flat = labels.ravel()
+        lat_sums += np.bincount(flat, weights=(data * ys[:, None]).ravel(), minlength=n + 1)
+        lon_sums += np.bincount(flat, weights=(data * xs[None, :]).ravel(), minlength=n + 1)
         inside = np.outer((ys >= min_lat) & (ys <= max_lat), (xs >= min_lon) & (xs <= max_lon))
         in_bbox += float(data[inside].sum())
-    population = pl.Series("population", sums[1:])
+    people = sums[1:]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        pop_lat = np.where(people > 0, lat_sums[1:] / people, np.nan)
+        pop_lon = np.where(people > 0, lon_sums[1:] / people, np.nan)
+    population = pl.DataFrame(
+        {"population": people, "pop_lat": pop_lat, "pop_lon": pop_lon}
+    ).with_columns(pl.col("pop_lat", "pop_lon").fill_nan(None))
     stats = {
         "population_zones": round(float(sums[1:].sum()), 1),
         "population_bbox": round(in_bbox, 1),
