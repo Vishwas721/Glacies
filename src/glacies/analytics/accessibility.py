@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 from glacies import __version__
 from glacies.cities import Accessibility
+from glacies.demand.attraction import POPULATION_REFERENCE
 from glacies.fsutil import rename_with_retry
 from glacies.provenance import DataNature, sha256_file
 
@@ -34,6 +35,7 @@ MANIFEST_NAME = "manifest.json"
 REPORT_NAME = "BUILD_REPORT.md"
 ZONES_TABLE = "accessibility.parquet"
 SUMMARY_TABLE = "summary.parquet"
+SENSITIVITY_TABLE = "sensitivity.parquet"
 MEASURES = ("est_jobs", "population")
 QUANTILES = (0.10, 0.25, 0.50, 0.75, 0.90)
 METRES_PER_DEGREE_LAT = 110_574.0
@@ -175,6 +177,62 @@ def summaries(table: pl.DataFrame, population: F64, edge: npt.NDArray[np.bool_])
     return pl.DataFrame(rows)
 
 
+def headline_sensitivity(
+    matrix: pl.LazyFrame,
+    zone_idx: npt.NDArray[np.uint32],
+    population: F64,
+    opportunity_sets: dict[str, F64],
+    settings: Accessibility,
+) -> pl.DataFrame:
+    """Headline-percentile reach of each opportunity set, per threshold (Phase 3 M5).
+
+    Every set (e.g. the employment proxy under different weights) is aggregated in one lazy
+    pass over the matrix. The first set is the baseline that changes are measured against.
+    ``opportunity_sets`` values are shares per zone, in ``zone_idx`` order.
+    """
+    column = f"p{settings.headline_percentile}_s"
+    names = list(opportunity_sets)
+    opp = pl.DataFrame(
+        {"dest_zone": pl.Series(zone_idx, dtype=pl.UInt32)}
+        | {f"o{i}": opportunity_sets[name] for i, name in enumerate(names)}
+    )
+    reached = (
+        matrix.filter(pl.col(column) <= settings.thresholds_min[-1] * 60)
+        .select("origin_zone", "dest_zone", column)
+        .join(opp.lazy(), on="dest_zone")
+        .group_by("origin_zone")
+        .agg(
+            pl.col(f"o{i}").filter(pl.col(column) <= t * 60).sum().alias(f"o{i}_{t}")
+            for i in range(len(names))
+            for t in settings.thresholds_min
+        )
+        .collect()
+    )
+    full = (
+        pl.DataFrame({"origin_zone": pl.Series(zone_idx, dtype=pl.UInt32)})
+        .join(reached, on="origin_zone", how="left", maintain_order="left")
+        .fill_null(0.0)
+    )
+    rows = []
+    baseline: dict[int, float] = {}
+    for i, name in enumerate(names):
+        for t in settings.thresholds_min:
+            values = full[f"o{i}_{t}"].to_numpy()
+            mean = float((values * population).sum() / population.sum())
+            baseline.setdefault(t, mean)
+            rows.append(
+                {
+                    "weighting": name,
+                    "threshold_min": t,
+                    "population_weighted_mean": mean,
+                    "q50": weighted_quantile(values, population, 0.5),
+                    "gini": weighted_gini(values, population),
+                    "change_vs_baseline": mean - baseline[t],
+                }
+            )
+    return pl.DataFrame(rows)
+
+
 # --- build ------------------------------------------------------------------------------------
 
 
@@ -184,6 +242,7 @@ class AccessibilityBuild:
     summary: pl.DataFrame
     headline: float
     edge_count: int
+    sensitivity: pl.DataFrame | None = None
 
 
 def build_accessibility(
@@ -194,7 +253,10 @@ def build_accessibility(
     *,
     bbox: Bbox,
     index_total: int,
+    alternatives: dict[str, F64] | None = None,
 ) -> AccessibilityBuild:
+    """``alternatives``: estimated-job shares per zone under each proxy weighting, baseline
+    first, for the headline sensitivity table; population is added as a reference."""
     zones = zones.sort("zone_idx")
     has_point = pl.col("pop_lat").is_not_null()
     lat = zones.select(pl.when(has_point).then("pop_lat").otherwise("lat")).to_series()
@@ -226,8 +288,19 @@ def build_accessibility(
         & (pl.col("threshold_min") == settings.headline_threshold_min)
         & (pl.col("measure") == "est_jobs")
     )["population_weighted_mean"]
+    sensitivity = None
+    if alternatives:
+        population = zones["population"].to_numpy().astype(np.float64)
+        sets = dict(alternatives) | {POPULATION_REFERENCE: population / population.sum()}
+        sensitivity = headline_sensitivity(
+            matrix, zones["zone_idx"].to_numpy(), population, sets, settings
+        )
     return AccessibilityBuild(
-        zones=table, summary=summary, headline=float(head[0]), edge_count=int(edge.sum())
+        zones=table,
+        summary=summary,
+        headline=float(head[0]),
+        edge_count=int(edge.sum()),
+        sensitivity=sensitivity,
     )
 
 
@@ -244,6 +317,7 @@ class AccessibilityManifest(BaseModel):
     settings: Accessibility
     opportunity_index_total: int
     headline_est_jobs_share: float
+    headline_by_weighting: dict[str, float]
     edge_zones: int
     column_nature: dict[str, DataNature]
     outputs: dict[str, str]
@@ -264,9 +338,19 @@ def write_accessibility(
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
     outputs = {}
-    for name, frame in ((ZONES_TABLE, build.zones), (SUMMARY_TABLE, build.summary)):
+    tables = [(ZONES_TABLE, build.zones), (SUMMARY_TABLE, build.summary)]
+    if build.sensitivity is not None:
+        tables.append((SENSITIVITY_TABLE, build.sensitivity))
+    for name, frame in tables:
         frame.write_parquet(staging / name, compression="zstd", statistics=True)
         outputs[name] = sha256_file(staging / name)
+    by_weighting = {}
+    if build.sensitivity is not None:
+        head = build.sensitivity.filter(pl.col("threshold_min") == settings.headline_threshold_min)
+        by_weighting = {
+            str(w): round(float(v), 6)
+            for w, v in head.select("weighting", "population_weighted_mean").iter_rows()
+        }
     manifest = AccessibilityManifest(
         city=city,
         scenario=scenario,
@@ -275,6 +359,7 @@ def write_accessibility(
         settings=settings,
         opportunity_index_total=index_total,
         headline_est_jobs_share=round(build.headline, 6),
+        headline_by_weighting=by_weighting,
         edge_zones=build.edge_count,
         column_nature=COLUMN_NATURE,
         outputs=outputs,
@@ -283,7 +368,9 @@ def write_accessibility(
         manifest.model_dump_json(indent=2) + "\n", encoding="utf-8", newline="\n"
     )
     (staging / REPORT_NAME).write_text(
-        report(manifest, build.summary, build.zones.height), encoding="utf-8", newline="\n"
+        report(manifest, build.summary, build.zones.height, build.sensitivity),
+        encoding="utf-8",
+        newline="\n",
     )
     if out_dir.exists():
         shutil.rmtree(out_dir)
@@ -296,7 +383,30 @@ def _pct(value: float) -> str:
     return f"{value:.1%}" if value >= 0.001 or value == 0 else f"{value:.2%}"
 
 
-def report(m: AccessibilityManifest, summary: pl.DataFrame, rows: int) -> str:
+def sensitivity_rows(table: pl.DataFrame, thresholds: list[int], headline: int) -> list[list[str]]:
+    """Report rows: weighting, mean share per threshold, change and Gini at the headline."""
+    rows = []
+    for name in table["weighting"].unique(maintain_order=True):
+        part = table.filter(pl.col("weighting") == name).sort("threshold_min")
+        means = dict(part.select("threshold_min", "population_weighted_mean").iter_rows())
+        at_headline = part.filter(pl.col("threshold_min") == headline)
+        rows.append(
+            [
+                str(name),
+                *(_pct(means[t]) for t in thresholds),
+                f"{float(at_headline['change_vs_baseline'][0]) * 100:+.2f} pp",
+                f"{float(at_headline['gini'][0]):.2f}",
+            ]
+        )
+    return rows
+
+
+def report(
+    m: AccessibilityManifest,
+    summary: pl.DataFrame,
+    rows: int,
+    sensitivity: pl.DataFrame | None = None,
+) -> str:
     s = m.settings
     hp, ht = s.headline_percentile, s.headline_threshold_min
 
@@ -347,6 +457,24 @@ def report(m: AccessibilityManifest, summary: pl.DataFrame, rows: int) -> str:
                 f"{_pct(row['population_weighted_mean'])} | {quantiles} | {row['gini']:.2f} | "
                 f"{_pct(row['population_share_below_1pct'])} |"
             )
+    if sensitivity is not None:
+        lines += [
+            "",
+            f"## Sensitivity to the employment-proxy weights (p{hp}, weights Assumed)",
+            "",
+            "Population-weighted mean share of estimated jobs reachable under each weighting of "
+            "the proxy (see the attraction report). The population row is a reference, not a "
+            "proxy.",
+            "",
+            "| Weighting | "
+            + " | ".join(f"{t} min" for t in s.thresholds_min)
+            + f" | Change at {ht} min | Gini at {ht} min |",
+            "|---|" + "---:|" * (len(s.thresholds_min) + 2),
+            *(
+                "| " + " | ".join(row) + " |"
+                for row in sensitivity_rows(sensitivity, s.thresholds_min, ht)
+            ),
+        ]
     lines += [
         "",
         "## Notes and labels",
