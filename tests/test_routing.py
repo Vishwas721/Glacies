@@ -41,7 +41,7 @@ def city_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path / "data" / "processed" / "toyville"
 
 
-def router(city_dir: Path, **overrides: float) -> Router:
+def router(city_dir: Path, **overrides: object) -> Router:
     routing = Routing().model_copy(update=overrides)
     return load_router(city_dir, routing, "EPSG:32643")
 
@@ -55,6 +55,25 @@ def test_journey_between_two_points(city_dir: Path) -> None:
     (journey,) = journeys
     assert (clock(journey.arrival), journey.transfers) == ("08:06", 0)
     assert r.describe(journey) == ["08:00 ride 10 from Stop A to Stop C, arrive 08:06"]
+
+
+def test_boarding_time_applies_to_stops_of_the_configured_mode(city_dir: Path) -> None:
+    metro = router(city_dir, boarding_time_s={"metro": 240})
+    seconds = metro.timetable.boarding_times()
+    stop_ids = metro.stops.sort("stop_idx")["source_stop_id"].to_list()
+
+    # The metro route M1 (trip T4) serves platform P1 and Stop D; bus stops need no time.
+    assert {stop_ids[i]: int(seconds[i]) for i in seconds.nonzero()[0]} == {"P1": 240, "D": 240}
+
+
+def test_boarding_time_delays_the_journey(city_dir: Path) -> None:
+    # Reaching Stop A just before 08:00 and needing 5 min to board: T1 (08:00) is missed and
+    # T2 (08:10, arriving 08:16) is taken.
+    slow = router(city_dir, boarding_time_s={"bus": 300})
+
+    (journey,) = slow.plan(STOP_A, STOP_C, parse_clock("07:59"))
+
+    assert clock(journey.arrival) == "08:16"
 
 
 def test_access_walks_follow_the_network(city_dir: Path) -> None:
