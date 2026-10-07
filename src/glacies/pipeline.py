@@ -18,6 +18,13 @@ import psycopg
 from pydantic import BaseModel
 
 from glacies import __version__
+from glacies.analytics.accessibility import (
+    AccessibilityError,
+    AccessibilityInput,
+    AccessibilityManifest,
+    build_accessibility,
+    write_accessibility,
+)
 from glacies.analytics.travel_times import (
     MatrixError,
     MatrixInput,
@@ -368,6 +375,51 @@ def run_matrix(
         )
     except (RouterError, MatrixError) as exc:
         raise PipelineError(str(exc)) from exc
+
+
+def run_accessibility(
+    settings: Settings, config: CityConfig, *, scenario: str = "baseline"
+) -> tuple[AccessibilityManifest, Path]:
+    """Cumulative accessibility per zone and city summaries (Phase 3 M3)."""
+    if config.attraction is None:
+        raise PipelineError(f"city {config.city.id!r} has no [attraction] section in city.toml")
+    base = city_dir(settings, config)
+    stages = {
+        "zones": base / "zones",
+        "attraction": base / "attraction",
+        "tt_matrix": base / "tt_matrix" / scenario,
+    }
+    commands = {"zones": "zones", "attraction": "attraction", "tt_matrix": "tt-matrix"}
+    for stage, directory in stages.items():
+        if not (directory / "manifest.json").is_file():
+            raise PipelineError(f"missing {directory}; run `glacies build {commands[stage]}` first")
+    try:
+        result = build_accessibility(
+            pl.read_parquet(stages["zones"] / "zones.parquet"),
+            pl.read_parquet(stages["attraction"] / "attraction.parquet"),
+            pl.scan_parquet(stages["tt_matrix"] / "*.parquet"),
+            config.accessibility,
+            bbox=config.city.bbox,
+            index_total=config.attraction.opportunity_index_total,
+        )
+    except AccessibilityError as exc:
+        raise PipelineError(str(exc)) from exc
+    out_dir = base / "accessibility" / scenario
+    manifest = write_accessibility(
+        result,
+        out_dir,
+        city=config.city.id,
+        scenario=scenario,
+        settings=config.accessibility,
+        index_total=config.attraction.opportunity_index_total,
+        inputs=[
+            AccessibilityInput(
+                stage=stage, manifest_sha256=sha256_file(directory / "manifest.json")
+            )
+            for stage, directory in stages.items()
+        ],
+    )
+    return manifest, out_dir
 
 
 def run_postgis(
