@@ -1,0 +1,3 @@
+{"type": "FeatureCollection", "features": [
+{"type": "Feature", "properties": {"name": "Toy Tech Park"}, "geometry": {"type": "Polygon", "coordinates": [[[77.045, 12.045], [77.055, 12.045], [77.055, 12.055], [77.045, 12.055], [77.045, 12.045]]]}}
+]}

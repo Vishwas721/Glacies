@@ -55,6 +55,57 @@ max_access_walk_m = 800.0    # origin -> first stop, last stop -> destination
 max_transfer_walk_m = 400.0  # one walking leg between vehicles
 min_transfer_time_s = 60     # alighting and reaching the next boarding point
 
+[attraction]
+# Employment proxy, Phase 3 handoff (2026-10-07). Its output is Estimated ("estimated jobs");
+# every value below is Assumed. Each part is a share of the city total before weighting.
+# All job-type POI categories count; amenity_other (worship, parking, ...) does not.
+job_poi_categories = ["office", "shop", "food", "health", "education", "industrial", "craft"]
+# Results are reported as shares of the city's estimated employment. For display only, shares
+# are scaled to this base as an "Estimated Opportunity Index"; it is not a job count.
+opportunity_index_total = 5_000_000
+# Eight hand-drawn hubs (QGIS, 2026-10-07). Pass rule: >= 80 % of hub zones rank in the top
+# 20 % of zones; the top 5 % is reported alongside it to tune the weights.
+validation_hubs = "validation/employment_hubs.geojson"
+hub_pass_rank = 0.20
+hub_report_rank = 0.05
+hub_pass_share = 0.80
+
+[attraction.baseline]
+name = "baseline"
+building_area = 0.70   # bias towards large tech campuses
+job_pois = 0.30        # keeps street retail and services
+building_confidence = 0.65
+
+[[attraction.sensitivity]]
+name = "equal"
+building_area = 0.50
+job_pois = 0.50
+building_confidence = 0.65
+
+[[attraction.sensitivity]]
+name = "poi-led"
+building_area = 0.30
+job_pois = 0.70
+building_confidence = 0.65
+
+[[attraction.sensitivity]]
+name = "pois-only"
+building_area = 0.0
+job_pois = 1.0
+building_confidence = 0.65
+
+[[attraction.sensitivity]]
+name = "area-only"
+building_area = 1.0
+job_pois = 0.0
+building_confidence = 0.65
+
+[[attraction.sensitivity]]
+name = "baseline-c75"
+building_area = 0.70
+job_pois = 0.30
+building_confidence = 0.75
+
 [sources.bmtc_gtfs]
 kind = "gtfs"
 mode = "bus"

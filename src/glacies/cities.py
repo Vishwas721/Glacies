@@ -150,12 +150,57 @@ class Routing(_Strict):
     min_transfer_time_s: int = Field(default=60, ge=0)
 
 
+class ProxyWeights(_Strict):
+    """One weighting of the employment proxy (Phase 3). Assumed."""
+
+    name: str = Field(min_length=1)
+    building_area: float = Field(ge=0, le=1, description="Weight of the footprint-area share.")
+    job_pois: float = Field(ge=0, le=1, description="Weight of the job-POI share.")
+    building_confidence: float = Field(
+        description="Open Buildings confidence cut-off; one of [zoning] thresholds."
+    )
+
+    @model_validator(mode="after")
+    def _check_sum(self) -> ProxyWeights:
+        if abs(self.building_area + self.job_pois - 1) > 1e-9:
+            raise ValueError(f"weights of {self.name!r} must sum to 1")
+        return self
+
+
+class Attraction(_Strict):
+    """Employment proxy per zone (Phase 3; reused by Phase 5 demand).
+
+    The proxy's output is Estimated; every value configured here is Assumed.
+    """
+
+    baseline: ProxyWeights
+    sensitivity: list[ProxyWeights] = Field(default_factory=list)
+    job_poi_categories: list[str] = Field(min_length=1)
+    opportunity_index_total: int = Field(
+        gt=0, description="Display base of the Estimated Opportunity Index; never a job count."
+    )
+    validation_hubs: str | None = Field(
+        default=None, description="GeoJSON of known employment hubs, relative to the city folder."
+    )
+    hub_pass_rank: float = Field(default=0.20, gt=0, le=1)
+    hub_report_rank: float = Field(default=0.05, gt=0, le=1)
+    hub_pass_share: float = Field(default=0.80, gt=0, le=1)
+
+    @model_validator(mode="after")
+    def _check_names(self) -> Attraction:
+        names = [w.name for w in (self.baseline, *self.sensitivity)]
+        if len(set(names)) != len(names):
+            raise ValueError("attraction weighting names must be unique")
+        return self
+
+
 class CityConfig(_Strict):
     city: CityInfo
     zoning: Zoning
     network: Network | None = None
     walk: Walk = Field(default_factory=Walk)
     routing: Routing = Field(default_factory=Routing)
+    attraction: Attraction | None = None
     sources: dict[str, Source]
 
     @model_validator(mode="after")
@@ -168,6 +213,18 @@ class CityConfig(_Strict):
                     raise ValueError(f"network feed {feed!r} is not a GTFS source")
             if len(set(self.network.feeds)) != len(self.network.feeds):
                 raise ValueError("network feeds must be unique")
+        return self
+
+    @model_validator(mode="after")
+    def _check_attraction_confidence(self) -> CityConfig:
+        if self.attraction is not None:
+            kept = self.zoning.building_confidence_thresholds
+            for w in (self.attraction.baseline, *self.attraction.sensitivity):
+                if w.building_confidence not in kept:
+                    raise ValueError(
+                        f"weighting {w.name!r}: building_confidence {w.building_confidence} is "
+                        f"not one of [zoning] building_confidence_thresholds {kept}"
+                    )
         return self
 
     def source(self, dataset: str) -> Source:

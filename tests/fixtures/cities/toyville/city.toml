@@ -61,3 +61,20 @@ url = "https://example.invalid/toy-buildings"
 license = "CC-BY-4.0"
 verified = true
 nature = "estimated"
+
+[attraction]
+job_poi_categories = ["office", "shop", "food", "health", "education", "industrial", "craft"]
+opportunity_index_total = 1000
+validation_hubs = "validation/hubs.geojson"
+
+[attraction.baseline]
+name = "baseline"
+building_area = 0.7
+job_pois = 0.3
+building_confidence = 0.65
+
+[[attraction.sensitivity]]
+name = "equal"
+building_area = 0.5
+job_pois = 0.5
+building_confidence = 0.75
