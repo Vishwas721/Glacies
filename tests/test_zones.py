@@ -1,3 +1,4 @@
+import math
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -103,6 +104,21 @@ def test_population_is_conserved(built: ZonesBuild) -> None:
 
 def test_hot_pixel_lands_in_its_zone(built: ZonesBuild) -> None:
     assert zone_at(built, *HOT)["population"] >= 1000
+
+
+def test_population_weighted_points(built: ZonesBuild) -> None:
+    zones = built.tables["zones"]
+    populated = zones.filter(pl.col("population") > 0)
+    # Every weighted point lies in its own cell; empty zones have none.
+    for cell, lat, lon in populated.select("h3_cell", "pop_lat", "pop_lon").iter_rows():
+        assert h3.latlng_to_cell(lat, lon, 8) == cell
+    assert zones.filter(pl.col("population") == 0)["pop_lat"].null_count() == (
+        zones.height - populated.height
+    )
+    # The 1000-person pixel pulls its zone's point most of the way from the centre to it.
+    hot = zone_at(built, *HOT)
+    to_hot = math.dist((hot["lat"], hot["lon"]), HOT)
+    assert math.dist((hot["pop_lat"], hot["pop_lon"]), HOT) < 0.25 * to_hot
 
 
 def test_population_matches_an_independent_pixel_assignment(

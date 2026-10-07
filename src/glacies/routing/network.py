@@ -57,16 +57,26 @@ class Router:
 
     # --- points ---------------------------------------------------------------------------
 
+    def attach(
+        self, lat: npt.ArrayLike, lon: npt.ArrayLike
+    ) -> tuple[U32, npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+        """Where points join the walk network: (edge, fraction along it, straight-line metres)."""
+        x, y = self._to_xy.transform(np.asarray(lon, dtype=np.float64), np.asarray(lat))
+        snap_m, nearest = self._tree.query(np.column_stack([np.atleast_1d(x), np.atleast_1d(y)]))
+        return (
+            self._node_edge[nearest],
+            self._node_fraction[nearest],
+            np.asarray(snap_m, dtype=np.float64),
+        )
+
     def access(self, lat: float, lon: float, max_m: float | None = None) -> Access:
         """Stops within ``max_m`` (default: max access walk) of a point, via the walk network."""
         limit = self.routing.max_access_walk_m if max_m is None else max_m
-        x, y = self._to_xy.transform(lon, lat)
-        snap_m, nearest = self._tree.query([x, y])
-        node = int(nearest)
+        edge, fraction, snap_m = self.attach([lat], [lon])
         stops, metres = self.walk.stops_within(
-            int(self._node_edge[node]), float(self._node_fraction[node]), float(snap_m), limit
+            int(edge[0]), float(fraction[0]), float(snap_m[0]), limit
         )
-        return Access(stops, walk_seconds(metres, self.routing.walking_speed_m_s), float(snap_m))
+        return Access(stops, walk_seconds(metres, self.routing.walking_speed_m_s), float(snap_m[0]))
 
     def plan(
         self, origin: tuple[float, float], destination: tuple[float, float], departure: int

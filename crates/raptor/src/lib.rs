@@ -3,12 +3,14 @@
 //! See `docs/phases/02-routing-engine.md` for the implementation plan.
 
 mod journey;
+mod matrix;
 mod range;
 mod raptor;
 mod timetable;
 mod walkgraph;
 
 pub use journey::{plan, Journey, Leg};
+pub use matrix::{zone_travel_times, MatrixError, ZoneEgress, ZoneTimes, NOT_REACHED};
 pub use range::{range_search, RangeProfile};
 pub use raptor::{search, Access, Params, Profile};
 pub use timetable::{

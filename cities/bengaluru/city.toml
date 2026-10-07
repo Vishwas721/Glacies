@@ -59,6 +59,16 @@ min_transfer_time_s = 60     # alighting and reaching the next boarding point
 # interchange (e.g. RV Road) are free: no repeated security or ticketing (decided 2026-10-07).
 station_entry_s = { metro = 240 }
 
+[accessibility]
+# Phase 3 handoff (2026-10-07) and M2 decisions (2026-10-07). All Assumed.
+window_start = "07:30"        # weekday AM peak; departures every minute, 07:30 ... 09:29
+window_end = "09:30"
+departure_step_s = 60
+percentiles = [25, 50, 75]    # p50 is the headline; p25/p75 show reliability
+max_travel_time_min = 120     # longer trips count as not reached
+max_walk_only_m = 2000.0      # zone to zone on foot without transit (~28 min)
+thresholds_min = [15, 30, 45, 60]
+
 [attraction]
 # Employment proxy, Phase 3 handoff (2026-10-07). Its output is Estimated ("estimated jobs");
 # every value below is Assumed. Each part is a share of the city total before weighting.

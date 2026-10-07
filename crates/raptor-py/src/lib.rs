@@ -339,6 +339,114 @@ impl Timetable {
         Ok(array.into_pyarray(py))
     }
 
+    /// Travel-time percentiles from many origins to zones, in parallel (Phase 3 M2).
+    ///
+    /// Each origin is `(access stops, access seconds, walk-only zones, walk-only seconds)`.
+    /// Zone egress walks are `(zone, stop, seconds)` triples. Returns `(origin, zone, times)`:
+    /// the origin's position in `origins`, the zone, and one row of `percentiles` seconds per
+    /// reached zone (`UNREACHED` = above `max_travel_time`), ordered by origin then zone.
+    #[pyo3(signature = (
+        origins, departures, zone_count, egress_zones, egress_stops, egress_seconds,
+        percentiles, max_travel_time, max_rounds, min_transfer_time,
+    ))]
+    #[allow(clippy::too_many_arguments)] // mirrors the columnar layout of the inputs
+    #[allow(clippy::type_complexity)] // one tuple of arrays per origin
+    fn zone_travel_times_many<'py>(
+        &self,
+        py: Python<'py>,
+        origins: Vec<(
+            PyReadonlyArray1<'py, u32>,
+            PyReadonlyArray1<'py, u32>,
+            PyReadonlyArray1<'py, u32>,
+            PyReadonlyArray1<'py, u32>,
+        )>,
+        departures: PyReadonlyArray1<'_, u32>,
+        zone_count: usize,
+        egress_zones: PyReadonlyArray1<'_, u32>,
+        egress_stops: PyReadonlyArray1<'_, u32>,
+        egress_seconds: PyReadonlyArray1<'_, u32>,
+        percentiles: PyReadonlyArray1<'_, u8>,
+        max_travel_time: u32,
+        max_rounds: usize,
+        min_transfer_time: u32,
+    ) -> PyResult<(U32Array<'py>, U32Array<'py>, Bound<'py, PyArray2<u32>>)> {
+        let (ez, es, esec) = (
+            slice(&egress_zones, "egress_zones")?,
+            slice(&egress_stops, "egress_stops")?,
+            slice(&egress_seconds, "egress_seconds")?,
+        );
+        if es.len() != ez.len() || esec.len() != ez.len() {
+            return Err(value_error("egress arrays differ in length"));
+        }
+        let stop_count = self.inner.stop_count();
+        if let Some(&stop) = es.iter().find(|&&s| s as usize >= stop_count) {
+            return Err(value_error(format!("egress references unknown stop {stop}")));
+        }
+        let walks: Vec<(u32, core::StopIdx, u32)> = ez
+            .iter()
+            .zip(es)
+            .zip(esec)
+            .map(|((&zone, &stop), &seconds)| (zone, core::StopIdx(stop), seconds))
+            .collect();
+        let egress = core::ZoneEgress::new(zone_count, &walks).map_err(value_error)?;
+        let sets = origins
+            .iter()
+            .map(|(stops, seconds, zones, walk_seconds)| {
+                let access = accesses(
+                    slice(stops, "access stops")?,
+                    slice(seconds, "access seconds")?,
+                    "origins",
+                )?;
+                if let Some(&stop) = access.iter().find(|a| a.stop.0 as usize >= stop_count) {
+                    return Err(value_error(format!(
+                        "origin references unknown stop {}",
+                        stop.stop.0
+                    )));
+                }
+                let (zones, walk_seconds) =
+                    (slice(zones, "walk-only zones")?, slice(walk_seconds, "walk-only seconds")?);
+                if zones.len() != walk_seconds.len() {
+                    return Err(value_error("walk-only zones and seconds differ in length"));
+                }
+                Ok((access, zones.iter().copied().zip(walk_seconds.iter().copied()).collect()))
+            })
+            .collect::<PyResult<Vec<(Vec<core::Access>, Vec<(u32, u32)>)>>>()?;
+        let times: Vec<core::Time> =
+            slice(&departures, "departures")?.iter().map(|&d| core::Time(d)).collect();
+        let wanted = slice(&percentiles, "percentiles")?.to_vec();
+        let p = params(max_rounds, min_transfer_time);
+        let results = py
+            .detach(|| {
+                sets.par_iter()
+                    .map(|(access, walk_only)| {
+                        core::zone_travel_times(
+                            &self.inner,
+                            &p,
+                            access,
+                            &times,
+                            &egress,
+                            walk_only,
+                            &wanted,
+                            max_travel_time,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(value_error)?;
+        let (mut origin, mut zone, mut flat) = (Vec::new(), Vec::new(), Vec::new());
+        for (i, result) in results.into_iter().enumerate() {
+            let i = u32::try_from(i).map_err(value_error)?;
+            origin.extend(std::iter::repeat_n(i, result.zones.len()));
+            zone.extend(result.zones);
+            flat.extend(result.times);
+        }
+        let rows = zone.len();
+        let matrix = Array2::from_shape_vec((rows, wanted.len()), flat)
+            .map_err(value_error)?
+            .into_pyarray(py);
+        Ok((origin.into_pyarray(py), zone.into_pyarray(py), matrix))
+    }
+
     /// `range_arrivals` for many origins in parallel: shape `(origins, departures, stops)`
     /// returned as a list of 2-D arrays in the order of `origins`.
     #[pyo3(signature = (origins, departures, max_rounds, min_transfer_time))]

@@ -25,6 +25,7 @@ TABLES = ("zones", "pois")
 # Provenance label of each zones column family (PRD §56).
 COLUMN_NATURE: dict[str, DataNature] = {
     "population": DataNature.ESTIMATED,  # WorldPop is a modelled raster
+    "pop_": DataNature.ESTIMATED,  # population-weighted point of each zone
     "building_": DataNature.ESTIMATED,  # ML-detected footprints
     "landcover_": DataNature.ESTIMATED,  # classified imagery
     "poi_": DataNature.OBSERVED,  # mapped features (category rules are Assumed)
@@ -96,7 +97,9 @@ def build_zones(
 
     table = (
         # Every layer has one row per zone in zone_idx order; with_columns enforces equal length.
-        zones.with_columns(population, *buildings.get_columns(), *landcover.get_columns())
+        zones.with_columns(
+            *population.get_columns(), *buildings.get_columns(), *landcover.get_columns()
+        )
         .join(poi_counts, on="zone_idx", how="left")
         .join(stop_counts, on="zone_idx", how="left")
         .with_columns(pl.col("^(poi|stops)_.*$").fill_null(0).cast(pl.UInt32))
