@@ -315,6 +315,8 @@ def build_report(
     proxy = pl.read_parquet(base / "attraction" / "attraction.parquet").sort("zone_idx")
     long = pl.read_parquet(acc_dir / "accessibility.parquet")
     summary = pl.read_parquet(acc_dir / "summary.parquet")
+    sensitivity_path = acc_dir / "sensitivity.parquet"
+    sensitivity = pl.read_parquet(sensitivity_path) if sensitivity_path.is_file() else None
     manifest = json.loads((acc_dir / "manifest.json").read_text(encoding="utf-8"))
     matrix = json.loads(
         (base / "tt_matrix" / scenario / "manifest.json").read_text(encoding="utf-8")
@@ -408,7 +410,9 @@ def build_report(
         f"As a multiple of the average zone; {source_names(config, 'population_raster')}",
     )
 
-    blocks = report_blocks(config, scenario, manifest, matrix, proxy_manifest, summary, maps)
+    blocks = report_blocks(
+        config, scenario, manifest, matrix, proxy_manifest, summary, maps, sensitivity
+    )
     (staging / "report.md").write_text(to_markdown(blocks), encoding="utf-8", newline="\n")
     title = f"Accessibility - {config.city.name} ({scenario})"
     (staging / "report.html").write_text(
@@ -420,6 +424,68 @@ def build_report(
     return ReportResult(out_dir=out, maps=[m for m, _ in maps], zones=n)
 
 
+def sensitivity_blocks(
+    config: CityConfig, sensitivity: pl.DataFrame, proxy_manifest: dict[str, object]
+) -> list[Block]:
+    """How the headline and the hub check move under each employment-proxy weighting."""
+    s = config.accessibility
+    ht = s.headline_threshold_min
+    hubs: dict[str, dict[str, object]] = {}
+    rows_in = proxy_manifest.get("sensitivity")
+    if isinstance(rows_in, list):
+        for row in rows_in:
+            if isinstance(row, dict) and isinstance(row.get("hub_check"), dict):
+                hubs[str(row["weighting"])] = row["hub_check"]
+    weights = (
+        {w.name: w for w in (config.attraction.baseline, *config.attraction.sensitivity)}
+        if (config.attraction)
+        else {}
+    )
+    head = sensitivity.filter(pl.col("threshold_min") == ht)
+    rows = []
+    for name, mean, change, gini in head.select(
+        "weighting", "population_weighted_mean", "change_vs_baseline", "gini"
+    ).iter_rows():
+        w = weights.get(name)
+        hub = hubs.get(name, {})
+        rows.append(
+            [
+                name,
+                f"{w.building_area:g} / {w.job_pois:g} / {w.building_confidence:g}" if w else "-",
+                _pct(mean),
+                f"{change * 100:+.2f} pp",
+                f"{gini:.2f}",
+                _pct(float(hub["share_in_pass_rank"])) if hub else "-",  # type: ignore[arg-type]
+                _pct(float(hub["share_in_report_rank"])) if hub else "-",  # type: ignore[arg-type]
+                f"{float(hub['concentration']):.2f}x" if hub else "-",  # type: ignore[arg-type]
+            ]
+        )
+    a = config.attraction
+    top, report_top = (_pct(a.hub_pass_rank), _pct(a.hub_report_rank)) if a else ("?", "?")
+    return [
+        Heading(2, "Sensitivity to the employment-proxy weights"),
+        Para(
+            f"The headline (p{s.headline_percentile}, {ht} min) recomputed with each weighting "
+            "of the employment proxy (weights Assumed), next to that weighting's hub check. The "
+            "population row is a reference, not a proxy."
+        ),
+        Table(
+            [
+                "Weighting",
+                "Area / POIs / confidence",
+                f"Headline ({ht} min)",
+                "Change",
+                "Gini",
+                f"Hub zones in top {top}",
+                f"in top {report_top}",
+                "Hub concentration",
+            ],
+            rows,
+            [False, False, True, True, True, True, True, True],
+        ),
+    ]
+
+
 def report_blocks(
     config: CityConfig,
     scenario: str,
@@ -428,6 +494,7 @@ def report_blocks(
     proxy_manifest: dict[str, object],
     summary: pl.DataFrame,
     maps: Sequence[tuple[str, str]],
+    sensitivity: pl.DataFrame | None = None,
 ) -> list[Block]:
     s = config.accessibility
     r = config.routing
@@ -544,8 +611,8 @@ def report_blocks(
         f"Zones within {s.edge_buffer_m:g} m of the study-area edge are flagged (dashed line on "
         "the maps): their destinations outside the area are missing.",
     ]
-    sensitivity = proxy_manifest.get("sensitivity")
-    hub = sensitivity[0].get("hub_check") if isinstance(sensitivity, list) and sensitivity else None
+    proxy_rows = proxy_manifest.get("sensitivity")
+    hub = proxy_rows[0].get("hub_check") if isinstance(proxy_rows, list) and proxy_rows else None
     if isinstance(hub, dict) and a is not None:
         verdict = "passed" if hub["passed"] else "FAILED"
         caveats.append(
@@ -553,6 +620,8 @@ def report_blocks(
             f"hand-drawn hub zones rank in the top {_pct(a.hub_pass_rank)} of zones, "
             f"{_pct(hub['share_in_report_rank'])} in the top {_pct(a.hub_report_rank)}."
         )
+    if sensitivity is not None:
+        blocks += sensitivity_blocks(config, sensitivity, proxy_manifest)
     blocks += [
         Heading(2, "Coverage and caveats"),
         Bullets(caveats),

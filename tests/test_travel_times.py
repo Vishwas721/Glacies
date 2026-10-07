@@ -171,6 +171,25 @@ def test_accessibility_stage_on_toyville(city: Path, monkeypatch: pytest.MonkeyP
     assert (by_pct["25"] >= by_pct["75"]).all()
     summary = pl.read_parquet(out / "summary.parquet")
     assert set(summary["scope"]) == {"all zones", "excluding edge zones"}
+    # Sensitivity: toyville's two proxy weightings plus the population reference.
+    sensitivity = pl.read_parquet(out / "sensitivity.parquet")
+    assert sensitivity["weighting"].unique(maintain_order=True).to_list() == [
+        "baseline",
+        "equal",
+        "population (reference, not a proxy)",
+    ]
+    baseline = sensitivity.filter(
+        (pl.col("weighting") == "baseline") & (pl.col("threshold_min") == 45)
+    )
+    headline = summary.filter(
+        (pl.col("scope") == "all zones")
+        & (pl.col("percentile") == 50)
+        & (pl.col("threshold_min") == 45)
+        & (pl.col("measure") == "est_jobs")
+    )
+    assert baseline["population_weighted_mean"][0] == pytest.approx(
+        headline["population_weighted_mean"][0]
+    )
 
 
 def test_report_on_toyville(city: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -194,6 +213,8 @@ def test_report_on_toyville(city: Path, monkeypatch: pytest.MonkeyPatch) -> None
     for label in ("Observed", "Estimated", "Simulated", "Assumed"):
         assert f"| {label} |" in md
     assert "not a count of jobs" in md
+    assert "## Sensitivity to the employment-proxy weights" in md
+    assert "| equal | 0.5 / 0.5 / 0.75 |" in md
     assert all(f"]({name})" in md for name in maps)
     zones = pl.read_parquet(out / "accessibility.geoparquet")
     assert zones.height == pl.read_parquet(city / "zones" / "zones.parquet").height

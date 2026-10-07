@@ -40,6 +40,7 @@ from glacies.demand.attraction import (
     AttractionError,
     AttractionManifest,
     build_attraction,
+    employment_score,
     read_hubs,
     write_attraction,
 )
@@ -394,16 +395,23 @@ def run_accessibility(
     for stage, directory in stages.items():
         if not (directory / "manifest.json").is_file():
             raise PipelineError(f"missing {directory}; run `glacies build {commands[stage]}` first")
+    zones = pl.read_parquet(stages["zones"] / "zones.parquet").sort("zone_idx")
+    proxy = config.attraction
     try:
+        alternatives = {
+            w.name: employment_score(zones, w, proxy.job_poi_categories)
+            for w in (proxy.baseline, *proxy.sensitivity)
+        }
         result = build_accessibility(
-            pl.read_parquet(stages["zones"] / "zones.parquet"),
+            zones,
             pl.read_parquet(stages["attraction"] / "attraction.parquet"),
             pl.scan_parquet(stages["tt_matrix"] / "*.parquet"),
             config.accessibility,
             bbox=config.city.bbox,
-            index_total=config.attraction.opportunity_index_total,
+            index_total=proxy.opportunity_index_total,
+            alternatives=alternatives,
         )
-    except AccessibilityError as exc:
+    except (AccessibilityError, AttractionError) as exc:
         raise PipelineError(str(exc)) from exc
     out_dir = base / "accessibility" / scenario
     manifest = write_accessibility(

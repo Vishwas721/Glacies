@@ -79,11 +79,11 @@ template, `data/processed/bengaluru/accessibility/baseline/*.parquet`.
 
 ## 9. Definition of done
 
-- [ ] Baseline accessibility for all zones × 4 thresholds × jobs/population is computed reproducibly.
-- [ ] The toy accessibility tests match hand calculations.
-- [ ] ≥ 80 % of your hand-drawn hub zones fall in the top 20 % of `employment_score`.
-- [ ] The report states which numbers are Observed / Estimated / Simulated / Assumed.
-- [ ] A sensitivity table exists for at least 3 proxy weightings.
+- [x] Baseline accessibility for all zones × 4 thresholds × jobs/population is computed reproducibly.
+- [x] The toy accessibility tests match hand calculations.
+- [x] ≥ 80 % of your hand-drawn hub zones fall in the top 20 % of `employment_score`.
+- [x] The report states which numbers are Observed / Estimated / Simulated / Assumed.
+- [x] A sensitivity table exists for at least 3 proxy weightings.
 
 ## 10. Risks & pitfalls
 

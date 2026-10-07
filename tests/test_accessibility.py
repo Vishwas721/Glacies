@@ -173,3 +173,38 @@ def test_missing_attraction_is_reported() -> None:
 def test_headline_must_be_a_configured_threshold() -> None:
     with pytest.raises(ValueError, match="headline_threshold_min"):
         Accessibility(thresholds_min=[15, 30], headline_threshold_min=45)
+
+
+def test_headline_sensitivity_matches_hand_calculation(tmp_path: Path) -> None:
+    alternatives = {"baseline": np.array([0.1, 0.2, 0.3, 0.4]), "flat": np.full(4, 0.25)}
+
+    build = build_accessibility(
+        toy_zones(), toy_attraction(), toy_matrix(), SETTINGS, bbox=BBOX, index_total=1000,
+        alternatives=alternatives,
+    )  # fmt: skip
+
+    table = build.sensitivity
+    assert table is not None
+    means = {
+        (w, t): v
+        for w, t, v in table.select(
+            "weighting", "threshold_min", "population_weighted_mean"
+        ).iter_rows()
+    }
+    # Baseline equals the headline path: .31 / .51 / .60 at 15 / 30 / 45 min.
+    assert [means[("baseline", t)] for t in (15, 30, 45)] == pytest.approx([0.31, 0.51, 0.60])
+    assert means[("baseline", 45)] == pytest.approx(build.headline)
+    # Flat jobs (.25 per zone): zones reached 2/2/1/1, 3/2/2/1, 3/3/2/1 at 15/30/45 min.
+    assert [means[("flat", t)] for t in (15, 30, 45)] == pytest.approx([0.425, 0.575, 0.65])
+    # Population as a reference: reach .9/.9/.3/.1 at 45 min, weighted .4/.3/.2/.1.
+    assert means[("population (reference, not a proxy)", 45)] == pytest.approx(0.70)
+    change = table.filter((pl.col("weighting") == "flat") & (pl.col("threshold_min") == 45))
+    assert change["change_vs_baseline"][0] == pytest.approx(0.05)
+
+    manifest = write_accessibility(
+        build, tmp_path / "out", city="toy", scenario="baseline", settings=SETTINGS,
+        index_total=1000, inputs=[],
+    )  # fmt: skip
+    assert manifest.headline_by_weighting["flat"] == pytest.approx(0.65)
+    text = (tmp_path / "out" / "BUILD_REPORT.md").read_text(encoding="utf-8")
+    assert "| flat | 42.5% | 57.5% | 65.0% | +5.00 pp |" in text
