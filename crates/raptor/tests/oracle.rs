@@ -35,8 +35,20 @@ struct Network {
     stops: u32,
     trips: Vec<TripInput>,
     footpaths: Vec<(StopIdx, StopIdx, u32)>,
-    /// Per stop: seconds needed before boarding there (station access).
-    boarding: Vec<u32>,
+    /// Per stop: station id (if any) and seconds to enter it on foot from outside the station.
+    entry: Vec<(Option<u32>, u32)>,
+}
+
+impl Network {
+    /// Same rule as the router: free within one stop or one station.
+    fn entry_from(&self, from: StopIdx, to: StopIdx) -> u32 {
+        let ((a, _), (b, seconds)) = (self.entry[from.0 as usize], self.entry[to.0 as usize]);
+        if from == to || (a.is_some() && a == b) {
+            0
+        } else {
+            seconds
+        }
+    }
 }
 
 fn random_network(rng: &mut Rng) -> Network {
@@ -63,10 +75,19 @@ fn random_network(rng: &mut Rng) -> Network {
     let footpaths = (0..rng.below(25))
         .map(|_| (StopIdx(rng.below(stops)), StopIdx(rng.below(stops)), rng.between(30, 240)))
         .collect();
-    // About a third of the stops are "stations" with up to 5 minutes of access time.
-    let boarding =
-        (0..stops).map(|_| if rng.below(3) == 0 { rng.between(1, 300) } else { 0 }).collect();
-    Network { stops, trips, footpaths, boarding }
+    // About a third of the stops are platforms of one of three stations, with up to 5 minutes
+    // of entry time; footpaths between platforms of a station exercise the in-station waiver.
+    let entry =
+        (0..stops)
+            .map(|_| {
+                if rng.below(3) == 0 {
+                    (Some(rng.below(3)), rng.between(1, 300))
+                } else {
+                    (None, 0)
+                }
+            })
+            .collect();
+    Network { stops, trips, footpaths, entry }
 }
 
 fn timetable(network: &Network) -> Timetable {
@@ -77,21 +98,25 @@ fn timetable(network: &Network) -> Timetable {
     for &(from, to, duration) in &network.footpaths {
         builder.add_footpath(from, to, duration).unwrap();
     }
-    for (stop, &seconds) in network.boarding.iter().enumerate() {
-        builder.set_boarding_time(StopIdx(u32::try_from(stop).unwrap()), seconds).unwrap();
+    for (stop, &(station, seconds)) in network.entry.iter().enumerate() {
+        if let Some(station) = station {
+            builder
+                .set_station_entry(StopIdx(u32::try_from(stop).unwrap()), station, seconds)
+                .unwrap();
+        }
     }
     builder.build().0
 }
 
 /// Connection Scan earliest arrival with the same rules as the router: the minimum transfer
-/// time applies after riding, every boarding adds the stop's boarding time, staying seated needs
-/// neither, and one footpath follows each ride.
+/// time applies after riding, staying seated needs none, one footpath follows each ride, and
+/// walking onto a stop from the origin or from outside its station adds its entry time.
 fn oracle(network: &Network, origins: &[Access], departure: Time, mtt: u32) -> Vec<Time> {
     let n = network.stops as usize;
     let (mut ride, mut walk) = (vec![Time::UNREACHED; n], vec![Time::UNREACHED; n]);
     for o in origins {
         let s = o.stop.0 as usize;
-        walk[s] = walk[s].min(departure.saturating_add(o.duration));
+        walk[s] = walk[s].min(departure.saturating_add(o.duration + network.entry[s].1));
     }
     let mut connections: Vec<(Time, u32, usize, usize, usize, Time)> = Vec::new();
     for (t, trip) in network.trips.iter().enumerate() {
@@ -104,8 +129,7 @@ fn oracle(network: &Network, origins: &[Access], departure: Time, mtt: u32) -> V
     connections.sort_unstable();
     let mut seated = vec![false; network.trips.len()];
     for (dep, trip_id, _, from, to, arr) in connections {
-        let ready =
-            walk[from].min(ride[from].saturating_add(mtt)).saturating_add(network.boarding[from]);
+        let ready = walk[from].min(ride[from].saturating_add(mtt));
         let trip = trip_id as usize;
         if !(seated[trip] || ready <= dep) {
             continue;
@@ -116,7 +140,8 @@ fn oracle(network: &Network, origins: &[Access], departure: Time, mtt: u32) -> V
             for &(f, target, duration) in &network.footpaths {
                 if f.0 as usize == to {
                     let t = target.0 as usize;
-                    walk[t] = walk[t].min(arr.saturating_add(duration));
+                    let entry = network.entry_from(StopIdx(u32::try_from(to).unwrap()), target);
+                    walk[t] = walk[t].min(arr.saturating_add(duration + entry));
                 }
             }
         }
@@ -128,19 +153,23 @@ fn oracle(network: &Network, origins: &[Access], departure: Time, mtt: u32) -> V
 fn check_feasible(network: &Network, journey: &Journey, mtt: u32) {
     let mut clock = journey.departure;
     let mut after_ride = false;
+    // A zero-second access walk has no leg, but its stop's entry time is still paid.
+    if let Some(Leg::Ride { from, .. } | Leg::Egress { from, .. }) = journey.legs.first() {
+        clock = clock.saturating_add(network.entry[from.0 as usize].1);
+    }
     for leg in &journey.legs {
         match *leg {
-            Leg::Access { duration, .. } | Leg::Egress { duration, .. } => {
-                clock = clock.saturating_add(duration);
+            Leg::Access { to, duration } => {
+                clock = clock.saturating_add(duration + network.entry[to.0 as usize].1);
             }
-            Leg::Transfer { duration, .. } => {
+            Leg::Egress { duration, .. } => clock = clock.saturating_add(duration),
+            Leg::Transfer { from, to, duration } => {
                 assert!(after_ride, "a transfer walk must follow a ride: {journey:#?}");
-                clock = clock.saturating_add(duration);
+                clock = clock.saturating_add(duration + network.entry_from(from, to));
                 after_ride = false;
             }
             Leg::Ride { trip_id, from, to, board, alight, .. } => {
                 let ready = if after_ride { clock.saturating_add(mtt) } else { clock };
-                let ready = ready.saturating_add(network.boarding[from.0 as usize]);
                 assert!(board >= ready, "boarded before ready: {journey:#?}");
                 let trip = network.trips.iter().find(|t| t.trip_id == trip_id).unwrap();
                 let calls = |stop, times: &[Time], at: Time| {

@@ -29,7 +29,7 @@ pub enum BuildError {
     TimeGoesBackwards { trip_id: u32, position: usize },
     DuplicateTripId { trip_id: u32 },
     UnknownFootpathStop { stop: StopIdx },
-    UnknownBoardingStop { stop: StopIdx },
+    UnknownEntryStop { stop: StopIdx },
 }
 
 impl fmt::Display for BuildError {
@@ -52,8 +52,8 @@ impl fmt::Display for BuildError {
             Self::UnknownFootpathStop { stop } => {
                 write!(f, "footpath references unknown stop {}", stop.0)
             }
-            Self::UnknownBoardingStop { stop } => {
-                write!(f, "boarding time set for unknown stop {}", stop.0)
+            Self::UnknownEntryStop { stop } => {
+                write!(f, "station entry set for unknown stop {}", stop.0)
             }
         }
     }
@@ -104,8 +104,8 @@ pub struct Timetable {
     stop_routes: Vec<(RouteIdx, u32)>,
     footpaths_start: Vec<u32>,
     footpaths: Vec<Footpath>,
-    /// Per stop: seconds between reaching the stop and being able to board there.
-    boarding_time: Vec<u32>,
+    /// Per stop: seconds to enter it on foot from outside its station, and the station.
+    entry: Vec<StationEntry>,
 }
 
 /// Read-only view of one route.
@@ -212,14 +212,30 @@ impl Timetable {
         &self.footpaths[self.footpaths_start[s] as usize..self.footpaths_start[s + 1] as usize]
     }
 
-    /// Seconds needed at `stop` before boarding (e.g. a metro station's entrance, security
-    /// check and stairs); 0 unless set with [`TimetableBuilder::set_boarding_time`].
+    /// Seconds to enter `stop` on foot from the origin or from outside its station (e.g. a
+    /// metro station's entrance, security check and stairs); 0 unless set with
+    /// [`TimetableBuilder::set_station_entry`].
     ///
     /// # Panics
     /// If `stop` is out of range.
     #[must_use]
-    pub fn boarding_time(&self, stop: StopIdx) -> u32 {
-        self.boarding_time[stop.0 as usize]
+    pub fn entry_time(&self, stop: StopIdx) -> u32 {
+        self.entry[stop.0 as usize].seconds
+    }
+
+    /// Entry seconds for a footpath `from -> to`: free within one stop or one station.
+    ///
+    /// # Panics
+    /// If either stop is out of range.
+    #[must_use]
+    pub fn entry_time_from(&self, from: StopIdx, to: StopIdx) -> u32 {
+        let (a, b) = (self.entry[from.0 as usize], self.entry[to.0 as usize]);
+        let same_station = a.station.is_some() && a.station == b.station;
+        if from == to || same_station {
+            0
+        } else {
+            b.seconds
+        }
     }
 }
 
@@ -230,7 +246,14 @@ pub struct TimetableBuilder {
     trips: Vec<TripInput>,
     trip_ids: std::collections::BTreeSet<u32>,
     footpaths: Vec<(StopIdx, Footpath)>,
-    boarding_time: BTreeMap<StopIdx, u32>,
+    entry: BTreeMap<StopIdx, StationEntry>,
+}
+
+/// Station membership of a stop and the time to enter it from outside.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct StationEntry {
+    station: Option<u32>,
+    seconds: u32,
 }
 
 impl TimetableBuilder {
@@ -290,15 +313,22 @@ impl TimetableBuilder {
         Ok(())
     }
 
-    /// Require `seconds` at `stop` before every boarding there; a later call replaces it.
+    /// Make `stop` part of `station` (any id shared by its platforms) and charge `seconds`
+    /// whenever it is reached on foot from the origin or from a stop outside that station.
+    /// Changing vehicles within the station is free. A later call replaces the setting.
     ///
     /// # Errors
     /// If the stop is unknown.
-    pub fn set_boarding_time(&mut self, stop: StopIdx, seconds: u32) -> Result<(), BuildError> {
+    pub fn set_station_entry(
+        &mut self,
+        stop: StopIdx,
+        station: u32,
+        seconds: u32,
+    ) -> Result<(), BuildError> {
         if stop.0 >= self.stop_count {
-            return Err(BuildError::UnknownBoardingStop { stop });
+            return Err(BuildError::UnknownEntryStop { stop });
         }
-        self.boarding_time.insert(stop, seconds);
+        self.entry.insert(stop, StationEntry { station: Some(station), seconds });
         Ok(())
     }
 
@@ -373,9 +403,9 @@ impl TimetableBuilder {
         }
         let (footpaths_start, footpaths) = to_csr(walks);
 
-        let mut boarding_time = vec![0; n];
-        for (stop, seconds) in self.boarding_time {
-            boarding_time[stop.0 as usize] = seconds;
+        let mut entry = vec![StationEntry::default(); n];
+        for (stop, setting) in self.entry {
+            entry[stop.0 as usize] = setting;
         }
 
         let timetable = Timetable {
@@ -388,7 +418,7 @@ impl TimetableBuilder {
             stop_routes,
             footpaths_start,
             footpaths,
-            boarding_time,
+            entry,
         };
         (timetable, report)
     }
