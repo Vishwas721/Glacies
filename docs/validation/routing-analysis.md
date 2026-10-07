@@ -5,8 +5,11 @@ explains them; numbers quoted here come from those runs.
 
 ## 2026-10-07 re-run with 4-minute metro station access: 13 of 20 (target 90 % — not met)
 
-`city.toml [routing] boarding_time_s = { metro = 240 }` (Assumed) adds 4 minutes before every
-metro boarding. Bus-only journeys are unchanged; metro journeys got 5–10 min slower:
+`city.toml [routing] station_entry_s = { metro = 240 }` (Assumed) adds 4 minutes whenever a
+metro platform is reached on foot from the origin or from outside the station. Line changes
+inside a station (platforms sharing a GTFS parent station) are free (decided 2026-10-07: no
+repeated security or ticketing; the walk network already gives the platform-to-platform walk).
+Bus-only journeys are unchanged; metro journeys got 5–10 min slower:
 
 | # | Pair | Expected | Before | After | Within |
 |---:|---|---:|---:|---:|:---:|
@@ -24,11 +27,10 @@ more likely than a model error. #7 got worse: its fastest journey is a bus to In
 station, then the Purple line, so it pays the access time too; its real problem is where the
 origin point is (group 3 below).
 
-**Open question for review:** the 4 minutes apply on every metro boarding, including line
-changes inside a station. At the Rashtreeya Vidyalaya Road interchange (#11), the model now
-charges a 4-minute walk between the Green and Yellow platforms (walk network) *plus* the
-4-minute boarding time. If that feels too long for an in-station change, a later option is to
-waive the boarding time for metro-to-metro transfers.
+The in-station waiver did not change any sanity-set result (#11 catches the same Yellow line
+train either way), but it matters elsewhere: from Yeshwantpur at 08:40, the Green line reaches
+RV Road at 09:15 and the 4-minute platform walk catches the 09:22 Yellow train, which an extra
+4-minute entry would miss.
 
 ## 2026-10-06 run: 11 of 20 within ±20 % / ±5 min (target 90 % — not met)
 
@@ -82,5 +84,5 @@ more of the network than peripheral ones.
 
 1. ~~Review the stop matches~~: done, all 20 accepted (2026-10-06).
 2. ~~Implement the 4-minute metro station access time~~: done, 13 of 20 (2026-10-07).
-   Decide whether in-station metro line changes should skip it (open question above).
+   In-station line changes are free (2026-10-07).
 3. Treat the sanity set as a plausibility check, not ground truth: its times are Estimated.

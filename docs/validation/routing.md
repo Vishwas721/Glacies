@@ -1,6 +1,6 @@
 # Routing sanity check
 
-City `bengaluru`, timetable of 2026-10-13, max 4 vehicles, 60 s minimum transfer, walking 1.2 m/s (access ≤ 800 m, transfers ≤ 400 m). Boarding time per boarding: metro 240 s.
+City `bengaluru`, timetable of 2026-10-13, max 4 vehicles, 60 s minimum transfer, walking 1.2 m/s (access ≤ 800 m, transfers ≤ 400 m). Station entry (free when changing within a station): metro 240 s.
 
 **13 of 20 pairs within ±20% or ±5 min** (target: 90 %). Simulated times are door to door from the departure time, including the wait for the first vehicle.
 
