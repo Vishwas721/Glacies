@@ -86,7 +86,7 @@ files = ["src", "tests", "crates/raptor-py/glacies_raptor.pyi"]
 
 [[tool.mypy.overrides]]
 # These ship no type information and no stub package exists.
-module = ["h3", "h3.*", "rasterio", "rasterio.*"]
+module = ["h3", "h3.*", "pyarrow", "pyarrow.*", "rasterio", "rasterio.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
