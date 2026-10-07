@@ -212,6 +212,48 @@ class Attraction(_Strict):
         return self
 
 
+def _clock_seconds(text: str) -> int:
+    hours, _, minutes = text.partition(":")
+    if not (hours.isdigit() and minutes.isdigit() and len(minutes) == 2 and int(minutes) < 60):
+        raise ValueError(f"invalid time {text!r}; use HH:MM")
+    return int(hours) * 3600 + int(minutes) * 60
+
+
+class Accessibility(_Strict):
+    """Travel-time matrix and accessibility settings (Phase 3). All Assumed."""
+
+    window_start: str = Field(default="07:30", description="First departure, HH:MM.")
+    window_end: str = Field(default="09:30", description="End of the window (exclusive), HH:MM.")
+    departure_step_s: int = Field(default=60, gt=0)
+    percentiles: list[int] = Field(default_factory=lambda: [25, 50, 75])
+    max_travel_time_min: int = Field(
+        default=120, gt=0, le=1000, description="Longer trips are not stored (not reached)."
+    )
+    max_walk_only_m: float = Field(
+        default=2000.0, ge=0, description="Zone to zone on foot, without transit."
+    )
+    thresholds_min: list[int] = Field(default_factory=lambda: [15, 30, 45, 60])
+
+    @model_validator(mode="after")
+    def _check(self) -> Accessibility:
+        if _clock_seconds(self.window_end) <= _clock_seconds(self.window_start):
+            raise ValueError("window_end must be after window_start")
+        ps = self.percentiles
+        if not ps or sorted(set(ps)) != ps or not all(1 <= p <= 100 for p in ps):
+            raise ValueError("percentiles must be ascending, unique, in 1..100")
+        ts = self.thresholds_min
+        if not ts or sorted(set(ts)) != ts or ts[0] <= 0:
+            raise ValueError("thresholds_min must be ascending, unique and positive")
+        if ts[-1] > self.max_travel_time_min:
+            raise ValueError("thresholds_min cannot exceed max_travel_time_min")
+        return self
+
+    def departures(self) -> list[int]:
+        """Departure times (seconds since midnight) in the half-open window."""
+        start, end = _clock_seconds(self.window_start), _clock_seconds(self.window_end)
+        return list(range(start, end, self.departure_step_s))
+
+
 class CityConfig(_Strict):
     city: CityInfo
     zoning: Zoning
@@ -219,6 +261,7 @@ class CityConfig(_Strict):
     walk: Walk = Field(default_factory=Walk)
     routing: Routing = Field(default_factory=Routing)
     attraction: Attraction | None = None
+    accessibility: Accessibility = Field(default_factory=Accessibility)
     sources: dict[str, Source]
 
     @model_validator(mode="after")
