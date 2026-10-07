@@ -64,6 +64,32 @@ Column labels:
 - Best-served zones (p50, 45 min): around KR Market (12.956, 77.577) at 18.8 % and Vidhana
   Soudha / Cubbon Park (12.978, 77.590) at 18.6 %.
 
+## Sensitivity to the employment-proxy weights (M5)
+
+Headline (p50, 45 min, population-weighted mean share of estimated jobs) recomputed with each
+weighting from `city.toml [attraction]`, next to that weighting's hub check (2026-10-07 run):
+
+| Weighting | Area / POIs / confidence | Headline | Change | Gini | Hub zones in top 20 % | in top 5 % | Hub concentration |
+|---|---|---:|---:|---:|---:|---:|---:|
+| baseline | 0.7 / 0.3 / 0.65 | 2.3% | +0.00 pp | 0.71 | 96.4% | 64.3% | 1.50x |
+| equal | 0.5 / 0.5 / 0.65 | 2.7% | +0.43 pp | 0.73 | 96.4% | 64.3% | 1.84x |
+| poi-led | 0.3 / 0.7 / 0.65 | 3.2% | +0.87 pp | 0.75 | 96.4% | 60.7% | 2.19x |
+| pois-only | 0 / 1 / 0.65 | 3.8% | +1.52 pp | 0.77 | 96.4% | 64.3% | 2.70x |
+| area-only | 1 / 0 / 0.65 | 1.7% | -0.65 pp | 0.68 | 96.4% | 50.0% | 0.98x |
+| baseline-c75 | 0.7 / 0.3 / 0.75 | 2.3% | -0.04 pp | 0.71 | 96.4% | 60.7% | 1.50x |
+| population (reference) | - | 1.6% | -0.67 pp | 0.67 | 96.4% | 46.4% | 1.00x |
+
+- **The headline depends on the weights**: 1.7 % to 3.8 %, more than a factor of two. Its
+  absolute value should be quoted with the weighting and treated as Assumed-dependent.
+- **The direction is consistent**: the more weight on job-type POIs, the higher the headline and
+  the Gini. POIs concentrate estimated jobs in the well-served centre; footprint area spreads
+  them like population (area-only lands near the population reference).
+- **What does not change**: under every weighting the distribution is very unequal (Gini 0.68
+  to 0.77), and the building-confidence cut-off barely matters (-0.04 pp).
+- **For tuning**: the hub check cannot pick a weighting (every row has 96.4 % of hub zones in the
+  top 20 %). The top 5 % and the concentration ratio are the informative columns; they favour
+  more POI weight than the baseline. Changing the weights is the user's decision.
+
 ## Interpretation
 
 - **The mean hides a very unequal distribution** (Gini 0.71 at 45 min). The best-served zones
