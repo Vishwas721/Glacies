@@ -8,6 +8,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, NoReturn
 
+import psutil
 import typer
 
 from glacies import pipeline
@@ -53,6 +54,12 @@ def _load(city: str | None) -> tuple[Settings, CityConfig]:
         return settings, load_city(settings.city_config_path)
     except CityConfigError as exc:
         _fail(str(exc))
+
+
+def _peak_mb() -> float:
+    """Peak memory of this process (Windows reports it; elsewhere the current size)."""
+    info = psutil.Process().memory_info()
+    return float(getattr(info, "peak_wset", info.rss)) / 2**20
 
 
 def _human_size(num_bytes: int) -> str:
@@ -255,6 +262,28 @@ def build_zone_layers(city: CityOption = None) -> None:
         f"zones: {s['zones']:,} ({s['zones_populated']:,} populated); population "
         f"{s['population_zones']:,.0f} (zones / bbox {ratio:.2%}, conservation error "
         f"{conservation:.1e}); buildings {s['buildings_read']:,}; POIs {s['pois']:,} -> {out_dir}"
+    )
+
+
+@build_app.command("tt-matrix")
+def build_travel_time_matrix(city: CityOption = None) -> None:
+    """Zone-to-zone travel-time percentiles over the departure window (Simulated)."""
+    settings, config = _load(city)
+    started = time.perf_counter()
+
+    def progress(done: int, total: int) -> None:
+        elapsed = time.perf_counter() - started
+        typer.echo(f"  {done:,}/{total:,} origins ({elapsed:.0f} s)")
+
+    try:
+        result = pipeline.run_matrix(settings, config, on_chunk=progress)
+    except PipelineError as exc:
+        _fail(str(exc))
+    m = result.manifest
+    typer.echo(
+        f"travel-time matrix: {m.zones:,} zones x {m.departures} departures, {m.rows:,} rows "
+        f"in {time.perf_counter() - started:.0f} s (peak memory {_peak_mb():,.0f} MB) "
+        f"-> {result.out_dir}"
     )
 
 

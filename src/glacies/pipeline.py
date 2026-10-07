@@ -18,6 +18,12 @@ import psycopg
 from pydantic import BaseModel
 
 from glacies import __version__
+from glacies.analytics.travel_times import (
+    MatrixError,
+    MatrixInput,
+    MatrixResult,
+    build_matrix,
+)
 from glacies.cities import CityConfig, CityConfigError
 from glacies.config import Settings
 from glacies.db import postgis
@@ -47,6 +53,7 @@ from glacies.model.zones.build import (
     write_zones,
 )
 from glacies.provenance import DatasetManifest, sha256_file
+from glacies.routing.network import RouterError, load_router
 from glacies.validate.gtfs.report import Severity, Thresholds, ValidationReport
 from glacies.validate.gtfs.validator import ValidationOptions, validate_feed
 
@@ -327,6 +334,40 @@ def run_attraction(
         hub_names=[name for name, _ in hubs or []],
     )
     return manifest, result, out_dir
+
+
+def run_matrix(
+    settings: Settings,
+    config: CityConfig,
+    *,
+    scenario: str = "baseline",
+    on_chunk: Callable[[int, int], None] | None = None,
+) -> MatrixResult:
+    """Zone-to-zone travel-time percentiles over the departure window (Phase 3 M2)."""
+    base = city_dir(settings, config)
+    zones_path = base / "zones" / "zones.parquet"
+    if not zones_path.is_file():
+        raise PipelineError(f"missing {zones_path}; run `glacies build zones` first")
+    try:
+        router = load_router(base, config.routing, config.city.crs_projected)
+        return build_matrix(
+            router,
+            pl.read_parquet(zones_path),
+            base / "walk",
+            config.accessibility,
+            base / "tt_matrix" / scenario,
+            city=config.city.id,
+            scenario=scenario,
+            inputs=[
+                MatrixInput(
+                    stage=stage, manifest_sha256=sha256_file(base / stage / "manifest.json")
+                )
+                for stage in ("transit", "walk", "zones")
+            ],
+            on_chunk=on_chunk,
+        )
+    except (RouterError, MatrixError) as exc:
+        raise PipelineError(str(exc)) from exc
 
 
 def run_postgis(
