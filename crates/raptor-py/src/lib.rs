@@ -158,10 +158,12 @@ struct Timetable {
 #[pymethods]
 impl Timetable {
     /// Trips are given in CSR form: trip `i` visits `stops[trip_starts[i]:trip_starts[i+1]]`.
+    /// `boarding_stops`/`boarding_seconds` set the time needed before each boarding at a stop
+    /// (e.g. metro station access); other stops need none.
     #[staticmethod]
     #[pyo3(signature = (
         stop_count, trip_ids, trip_starts, stops, arrivals, departures,
-        footpath_from, footpath_to, footpath_seconds,
+        footpath_from, footpath_to, footpath_seconds, boarding_stops=None, boarding_seconds=None,
     ))]
     #[allow(clippy::too_many_arguments)] // mirrors the columnar layout of the inputs
     fn build(
@@ -175,6 +177,8 @@ impl Timetable {
         footpath_from: PyReadonlyArray1<'_, u32>,
         footpath_to: PyReadonlyArray1<'_, u32>,
         footpath_seconds: PyReadonlyArray1<'_, u32>,
+        boarding_stops: Option<PyReadonlyArray1<'_, u32>>,
+        boarding_seconds: Option<PyReadonlyArray1<'_, u32>>,
     ) -> PyResult<Self> {
         let ids = slice(&trip_ids, "trip_ids")?;
         let starts = slice(&trip_starts, "trip_starts")?;
@@ -200,6 +204,20 @@ impl Timetable {
         if fp_to.len() != fp_from.len() || fp_s.len() != fp_from.len() {
             return Err(value_error("footpath arrays differ in length"));
         }
+        let (board_stops, board_s) = match (&boarding_stops, &boarding_seconds) {
+            (Some(stops), Some(seconds)) => {
+                (slice(stops, "boarding_stops")?, slice(seconds, "boarding_seconds")?)
+            }
+            (None, None) => (&[][..], &[][..]),
+            _ => {
+                return Err(value_error(
+                    "give both boarding_stops and boarding_seconds, or neither",
+                ))
+            }
+        };
+        if board_s.len() != board_stops.len() {
+            return Err(value_error("boarding arrays differ in length"));
+        }
         let to_time = |values: &[u32]| values.iter().map(|&v| core::Time(v)).collect::<Vec<_>>();
         py.detach(|| {
             let mut builder = core::TimetableBuilder::new(stop_count);
@@ -218,6 +236,9 @@ impl Timetable {
                 builder
                     .add_footpath(core::StopIdx(from), core::StopIdx(to), seconds)
                     .map_err(value_error)?;
+            }
+            for (&stop, &seconds) in board_stops.iter().zip(board_s) {
+                builder.set_boarding_time(core::StopIdx(stop), seconds).map_err(value_error)?;
             }
             let (inner, report) = builder.build();
             Ok(Self { inner, overtaking_splits: report.overtaking_splits })
@@ -243,6 +264,13 @@ impl Timetable {
     #[getter]
     fn overtaking_splits(&self) -> usize {
         self.overtaking_splits
+    }
+
+    /// Seconds needed at each stop before boarding there.
+    fn boarding_times<'py>(&self, py: Python<'py>) -> U32Array<'py> {
+        let n = u32::try_from(self.inner.stop_count()).expect("stop count fits u32");
+        let times: Vec<u32> = (0..n).map(|s| self.inner.boarding_time(core::StopIdx(s))).collect();
+        times.into_pyarray(py)
     }
 
     /// Earliest arrival at every stop (`UNREACHED` if none) leaving at `departure`.
