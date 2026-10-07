@@ -3,6 +3,7 @@
 import shutil
 from pathlib import Path
 
+import polars as pl
 import pytest
 from typer.testing import CliRunner
 
@@ -14,6 +15,7 @@ from glacies.routing.network import (
     clock,
     load_router,
     parse_clock,
+    station_entries,
     walk_seconds,
 )
 
@@ -57,19 +59,29 @@ def test_journey_between_two_points(city_dir: Path) -> None:
     assert r.describe(journey) == ["08:00 ride 10 from Stop A to Stop C, arrive 08:06"]
 
 
-def test_boarding_time_applies_to_stops_of_the_configured_mode(city_dir: Path) -> None:
-    metro = router(city_dir, boarding_time_s={"metro": 240})
-    seconds = metro.timetable.boarding_times()
+def test_station_entry_applies_to_stops_of_the_configured_mode(city_dir: Path) -> None:
+    metro = router(city_dir, station_entry_s={"metro": 240})
+    seconds = metro.timetable.entry_times()
     stop_ids = metro.stops.sort("stop_idx")["source_stop_id"].to_list()
 
     # The metro route M1 (trip T4) serves platform P1 and Stop D; bus stops need no time.
     assert {stop_ids[i]: int(seconds[i]) for i in seconds.nonzero()[0]} == {"P1": 240, "D": 240}
 
 
-def test_boarding_time_delays_the_journey(city_dir: Path) -> None:
-    # Reaching Stop A just before 08:00 and needing 5 min to board: T1 (08:00) is missed and
+def test_platforms_share_their_parent_station(city_dir: Path) -> None:
+    transit = city_dir / "transit"
+    stops, stations, seconds = station_entries(transit, {"metro": 240})
+    ids = pl.read_parquet(transit / "stops.parquet").sort("stop_idx")["source_stop_id"].to_list()
+
+    # P1's parent is Central Station (S1); Stop D has no parent and is its own station.
+    entries = {(ids[a], ids[b], int(c)) for a, b, c in zip(stops, stations, seconds, strict=True)}
+    assert entries == {("P1", "S1", 240), ("D", "D", 240)}
+
+
+def test_station_entry_delays_the_journey(city_dir: Path) -> None:
+    # Reaching Stop A just before 08:00 and needing 5 min to enter: T1 (08:00) is missed and
     # T2 (08:10, arriving 08:16) is taken.
-    slow = router(city_dir, boarding_time_s={"bus": 300})
+    slow = router(city_dir, station_entry_s={"bus": 300})
 
     (journey,) = slow.plan(STOP_A, STOP_C, parse_clock("07:59"))
 

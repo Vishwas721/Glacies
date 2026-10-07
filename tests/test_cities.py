@@ -148,16 +148,16 @@ def test_routing_parameters() -> None:
         60,
     )
     assert (routing.max_access_walk_m, routing.max_transfer_walk_m) == (800.0, 400.0)
-    assert routing.boarding_time_s == {"metro": 240}
+    assert routing.station_entry_s == {"metro": 240}
 
 
 @pytest.mark.parametrize(
     ("table", "message"),
     [("{ subway = 240 }", "unknown mode 'subway'"), ("{ metro = -1 }", "must be >= 0")],
 )
-def test_rejects_bad_boarding_times(tmp_path: Path, table: str, message: str) -> None:
+def test_rejects_bad_station_entry_times(tmp_path: Path, table: str, message: str) -> None:
     original = (FIXTURES / "toyville" / "city.toml").read_text(encoding="utf-8")
-    path = _write(tmp_path, original + f"\n[routing]\nboarding_time_s = {table}\n")
+    path = _write(tmp_path, original + f"\n[routing]\nstation_entry_s = {table}\n")
 
     with pytest.raises(CityConfigError, match=message):
         load_city(path)

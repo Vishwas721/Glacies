@@ -135,10 +135,16 @@ def parse_clock(text: str) -> int:
     return h * 3600 + m * 60 + s
 
 
-def boarding_times(transit: Path, by_mode: dict[str, int]) -> tuple[U32, U32]:
-    """Per-stop boarding seconds from per-mode ones (the largest mode serving a stop wins)."""
+def station_entries(transit: Path, by_mode: dict[str, int]) -> tuple[U32, U32, U32]:
+    """Stops with an entry time: (stop, station, seconds).
+
+    Seconds come from the modes serving the stop (the largest wins). The station is the GTFS
+    parent station, so platforms of one interchange share it; a stop without a parent is its
+    own station.
+    """
     if not by_mode:
-        return np.zeros(0, dtype=np.uint32), np.zeros(0, dtype=np.uint32)
+        empty = np.zeros(0, dtype=np.uint32)
+        return empty, empty, empty
     seconds = pl.DataFrame(
         {"mode": list(by_mode), "seconds": list(by_mode.values())},
         schema={"mode": pl.String, "seconds": pl.UInt32},
@@ -156,17 +162,23 @@ def boarding_times(transit: Path, by_mode: dict[str, int]) -> tuple[U32, U32]:
         .join(seconds.lazy(), on="mode")
         .group_by("stop_idx")
         .agg(pl.col("seconds").max())
+        .join(
+            pl.scan_parquet(transit / "stops.parquet").select("stop_idx", "parent_stop_idx"),
+            on="stop_idx",
+        )
         .sort("stop_idx")
         .collect()
     )
+    station = per_stop["parent_stop_idx"].fill_null(per_stop["stop_idx"])
     return (
         per_stop["stop_idx"].to_numpy().astype(np.uint32),
+        station.to_numpy().astype(np.uint32),
         per_stop["seconds"].to_numpy().astype(np.uint32),
     )
 
 
 def _timetable(
-    transit: Path, footpaths: tuple[U32, U32, U32], boarding: tuple[U32, U32]
+    transit: Path, footpaths: tuple[U32, U32, U32], entries: tuple[U32, U32, U32]
 ) -> gr.Timetable:
     stop_count = pl.read_parquet(transit / "stops.parquet", columns=["stop_idx"]).height
     stop_times = pl.read_parquet(transit / "stop_times.parquet").sort("trip_idx", "position")
@@ -181,7 +193,7 @@ def _timetable(
         stop_times["arrival"].to_numpy().astype(np.uint32),
         stop_times["departure"].to_numpy().astype(np.uint32),
         *footpaths,
-        *boarding,
+        *entries,
     )
 
 
@@ -209,7 +221,7 @@ def load_router(city_dir: Path, routing: Routing, crs_projected: str) -> Router:
     )
     pair_from, pair_to, metres = walk.stop_to_stop(routing.max_transfer_walk_m)
     footpaths = (pair_from, pair_to, walk_seconds(metres, routing.walking_speed_m_s))
-    timetable = _timetable(transit, footpaths, boarding_times(transit, routing.boarding_time_s))
+    timetable = _timetable(transit, footpaths, station_entries(transit, routing.station_entry_s))
 
     # Points attach to the nearest node of the main walk component; OSM nodes are dense
     # (tens of metres apart), so this costs a few metres at most.

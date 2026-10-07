@@ -55,9 +55,9 @@ max_access_walk_m = 800.0    # origin -> first stop, last stop -> destination
 max_transfer_walk_m = 400.0  # one walking leg between vehicles
 min_transfer_time_s = 60     # alighting and reaching the next boarding point
 # Assumed (decided 2026-10-06, docs/validation/routing-analysis.md): entering a metro station
-# (entrance, security check, stairs to the platform) takes 4 minutes, added to every metro
-# boarding, including line changes at interchange stations.
-boarding_time_s = { metro = 240 }
+# (entrance, security check, stairs to the platform) takes 4 minutes. Line changes inside an
+# interchange (e.g. RV Road) are free: no repeated security or ticketing (decided 2026-10-07).
+station_entry_s = { metro = 240 }
 
 [sources.bmtc_gtfs]
 kind = "gtfs"
