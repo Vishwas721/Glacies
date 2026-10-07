@@ -181,6 +181,25 @@ fn invalid_trips_are_rejected() {
         b.add_footpath(StopIdx(0), StopIdx(5), 60),
         Err(BuildError::UnknownFootpathStop { stop: StopIdx(5) })
     );
+    assert_eq!(
+        b.set_station_entry(StopIdx(3), 0, 240),
+        Err(BuildError::UnknownEntryStop { stop: StopIdx(3) })
+    );
+}
+
+#[test]
+fn station_entry_defaults_to_zero_and_the_last_setting_wins() {
+    let mut b = toy1();
+    b.set_station_entry(B, 5, 120).unwrap();
+    b.set_station_entry(B, 5, 240).unwrap();
+    b.set_station_entry(C, 5, 60).unwrap();
+    let (tt, _) = b.build();
+
+    assert_eq!([A, B, C].map(|s| tt.entry_time(s)), [0, 240, 60]);
+    assert_eq!(tt.entry_time_from(A, B), 240, "from outside the station");
+    assert_eq!(tt.entry_time_from(C, B), 0, "within station 5");
+    assert_eq!(tt.entry_time_from(B, B), 0, "same stop");
+    assert_eq!(tt.entry_time_from(B, A), 0, "A has no entry time");
 }
 
 #[test]

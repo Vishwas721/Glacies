@@ -9,6 +9,11 @@
 //! Keeping only the earlier of the two would be wrong: a stop reached by vehicle at 08:10 and
 //! on foot at 08:10:30 is ready for boarding at 08:10:30, not 08:11. Footpaths are relaxed only
 //! from `ride` arrivals, so a journey never has two walking legs in a row.
+//!
+//! Station entry time (e.g. metro security and stairs) is part of walking onto a platform: it is
+//! added to access walks and to footpaths that come from outside the platform's station. Staying
+//! in the station (alighting and boarding again, or walking between its platforms) is free, and
+//! alighting never costs it. Because it only changes walking-edge weights, the search stays exact.
 
 use crate::{RouteIdx, StopIdx, Time, Timetable};
 
@@ -214,7 +219,8 @@ impl<'a> Search<'a> {
         let mut first = Round::unreached(self.tt.stop_count());
         for o in origins {
             let s = o.stop.0 as usize;
-            let arrival = departure.saturating_add(o.duration);
+            let arrival =
+                departure.saturating_add(o.duration.saturating_add(self.tt.entry_time(o.stop)));
             if arrival < first.walk[s] {
                 first.walk[s] = arrival;
                 first.walk_label[s] = Label::Access { duration: o.duration };
@@ -304,7 +310,8 @@ impl<'a> Search<'a> {
             let arrival = cur.ride[s];
             for footpath in self.tt.footpaths(StopIdx(to_u32(s))) {
                 let to = footpath.to.0 as usize;
-                let walked = arrival.saturating_add(footpath.duration);
+                let entry = self.tt.entry_time_from(StopIdx(to_u32(s)), footpath.to);
+                let walked = arrival.saturating_add(footpath.duration.saturating_add(entry));
                 if walked < cur.walk[to] && walked < self.bound {
                     cur.walk[to] = walked;
                     cur.walk_label[to] =

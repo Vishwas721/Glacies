@@ -46,3 +46,23 @@ A ────┤                     ├──→ D
 | Slow | 08:00 | | 08:10 | 08:30 |
 
 Query A → D departing 08:00: **arrive 08:15 · 15 min · 0 transfers · via B (Fast)**.
+
+## Toy 4 — station entry time
+
+```
+A ──T1/T2──→ C        entering station A on foot takes 4 min (240 s)
+```
+
+| Trip | A | C |
+|---|---|---|
+| T1 | 08:02 | 08:12 |
+| T2 | 08:06 | 08:16 |
+
+Query A → C departing 08:00: without entry time **arrive 08:12** (T1). With 240 s the
+passenger is on the platform at 08:04, misses T1 and **arrives 08:16** (T2).
+
+The entry time is paid when walking onto a platform from the origin or from outside its
+station: T1 A 08:00 → B 08:10, walk B → X (120 s), T2 X 08:15 → C 08:25. With 180 s entry at
+X the passenger is on the platform at 08:15 and catches T2; with 181 s it is missed. If B and X
+are platforms of the same station, the change is free (on X's platform at 08:12). Alighting,
+or boarding again at the stop just alighted at, never costs the entry time.

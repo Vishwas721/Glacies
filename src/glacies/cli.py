@@ -383,6 +383,12 @@ def validate_routing(
         f"{config.routing.walking_speed_m_s} m/s (access ≤ {config.routing.max_access_walk_m:g} m, "
         f"transfers ≤ {config.routing.max_transfer_walk_m:g} m)."
     )
+    if config.routing.station_entry_s:
+        entry = ", ".join(
+            f"{mode} {seconds} s"
+            for mode, seconds in sorted(config.routing.station_entry_s.items())
+        )
+        header += f" Station entry (free when changing within a station): {entry}."
     text, passed = report(results, share=share, minutes=minutes, header=header)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8", newline="\n")  # same bytes on every OS

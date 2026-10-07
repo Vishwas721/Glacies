@@ -165,3 +165,73 @@ fn circular_routes_can_be_ridden_back_to_the_start() {
     let profile = search(&tt, &PARAMS, &from(B), t("08:05"), &[]);
     assert_eq!(profile.earliest_arrival(A), Some(t("08:20")));
 }
+
+/// Toy 4: T1 A 08:02 -> C 08:12, T2 A 08:06 -> C 08:16; entering station A takes `seconds`.
+fn toy4(seconds: u32) -> Timetable {
+    let mut b = builder(
+        3,
+        vec![trip(1, &[(A, "08:02"), (C, "08:12")]), trip(2, &[(A, "08:06"), (C, "08:16")])],
+    );
+    b.set_station_entry(A, 0, seconds).unwrap();
+    b.build().0
+}
+
+#[test]
+fn station_entry_delays_the_first_boarding() {
+    // Reaching A at 08:00 with a 4-minute station entry: on the platform at 08:04, so T1
+    // (08:02) is missed and T2 (08:06) is taken.
+    assert_eq!(earliest(&toy4(0), A, "08:00", C), Some(t("08:12")));
+    assert_eq!(earliest(&toy4(240), A, "08:00", C), Some(t("08:16")));
+    assert_eq!(earliest(&toy4(240), A, "08:00", A), Some(t("08:04")));
+}
+
+/// T1 A 08:00 -> B 08:10; footpath B -> X (120 s); T2 X 08:15 -> C 08:25. X is stop 3.
+fn walk_in(setup: impl FnOnce(&mut glacies_raptor::TimetableBuilder)) -> Timetable {
+    let x = StopIdx(3);
+    let mut b = builder(
+        4,
+        vec![trip(1, &[(A, "08:00"), (B, "08:10")]), trip(2, &[(x, "08:15"), (C, "08:25")])],
+    );
+    b.add_footpath(B, x, 120).unwrap();
+    setup(&mut b);
+    b.build().0
+}
+
+#[test]
+fn station_entry_applies_when_walking_in_from_outside() {
+    // Off T1 at 08:10, walk to X by 08:12, enter: 180 s gives 08:15 (T2 caught), 181 s misses it.
+    let x = StopIdx(3);
+    let caught = walk_in(|b| b.set_station_entry(x, 7, 180).unwrap());
+    let missed = walk_in(|b| b.set_station_entry(x, 7, 181).unwrap());
+
+    assert_eq!(earliest(&caught, A, "08:00", C), Some(t("08:25")));
+    assert_eq!(earliest(&missed, A, "08:00", C), None);
+}
+
+#[test]
+fn changing_platforms_within_a_station_is_free() {
+    // B and X are platforms of station 7: the walk takes 120 s and no entry time.
+    let x = StopIdx(3);
+    let tt = walk_in(|b| {
+        b.set_station_entry(B, 7, 600).unwrap();
+        b.set_station_entry(x, 7, 600).unwrap();
+    });
+
+    let profile = search(&tt, &PARAMS, &from(A), t("08:00"), &[]);
+    assert_eq!(profile.earliest_arrival(x), Some(t("08:12")));
+    assert_eq!(profile.earliest_arrival(C), Some(t("08:25")));
+}
+
+#[test]
+fn station_entry_does_not_apply_to_alighting_or_staying_at_a_stop() {
+    // Toy 2 with a 10-minute entry at B and C: arriving by vehicle costs nothing, and the
+    // transfer at B needs only the 60 s minimum transfer time.
+    let mut b = toy2();
+    b.set_station_entry(B, 1, 600).unwrap();
+    b.set_station_entry(C, 2, 600).unwrap();
+    let (tt, _) = b.build();
+
+    let profile = search(&tt, &PARAMS, &from(A), t("08:00"), &[]);
+    assert_eq!(profile.earliest_arrival(B), Some(t("08:10")));
+    assert_eq!(profile.earliest_arrival(C), Some(t("08:25")));
+}

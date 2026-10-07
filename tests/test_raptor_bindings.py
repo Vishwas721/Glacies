@@ -118,3 +118,31 @@ def test_walk_graph_through_python() -> None:
     assert list(zip(a.tolist(), b.tolist(), strict=True)) == [(10, 11), (11, 10)]
     assert d.tolist() == pytest.approx([155.0, 155.0])
     assert (graph.node_count, graph.edge_count) == (3, 2)
+
+
+def test_station_entry_delays_boarding() -> None:
+    # Toy 4 (docs/validation/raptor-toy-networks.md): on platform A at 08:04, so T2 (08:06).
+    trips = [(1, [(A, "08:02"), (C, "08:12")]), (2, [(A, "08:06"), (C, "08:16")])]
+    plain = build(3, trips)
+    starts, stops = arr(0, 2, 4), arr(A, C, A, C)
+    times = arr(hm("08:02"), hm("08:12"), hm("08:06"), hm("08:16"))
+    station = gr.Timetable.build(
+        3, arr(1, 2), starts, stops, times, times, NONE, NONE, NONE, arr(A), arr(0), arr(240)
+    )
+
+    assert plan(plain, A, "08:00", C)[0].arrival == hm("08:12")
+    (journey,) = plan(station, A, "08:00", C)
+    assert (journey.arrival, journey.waiting_time) == (hm("08:16"), 360)
+    assert station.entry_times().tolist() == [240, 0, 0]
+    assert plain.entry_times().tolist() == [0, 0, 0]
+
+
+def test_entry_arrays_are_validated() -> None:
+    t = arr(1, 2)
+    args = (3, arr(7), arr(0, 2), arr(A, B), t, t, NONE, NONE, NONE)
+    with pytest.raises(ValueError, match="or none"):
+        gr.Timetable.build(*args, arr(A), arr(0), None)
+    with pytest.raises(ValueError, match="differ in length"):
+        gr.Timetable.build(*args, arr(A, B), arr(0), arr(240))
+    with pytest.raises(ValueError, match="unknown stop 9"):
+        gr.Timetable.build(*args, arr(9), arr(0), arr(240))
