@@ -45,6 +45,9 @@ class Timetable:
         footpath_from: U32,
         footpath_to: U32,
         footpath_seconds: U32,
+        entry_stops: U32 | None = None,
+        entry_stations: U32 | None = None,
+        entry_seconds: U32 | None = None,
     ) -> Timetable: ...
     @property
     def stop_count(self) -> int: ...
@@ -54,6 +57,7 @@ class Timetable:
     def trip_count(self) -> int: ...
     @property
     def overtaking_splits(self) -> int: ...
+    def entry_times(self) -> U32: ...
     def earliest_arrivals(
         self,
         origin_stops: U32,

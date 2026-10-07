@@ -13,6 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from glacies.model.transit.schema import MODE_BY_ROUTE_TYPE, OTHER_MODE
 from glacies.provenance import DataNature
 
 
@@ -148,6 +149,23 @@ class Routing(_Strict):
     max_access_walk_m: float = Field(default=800.0, gt=0)
     max_transfer_walk_m: float = Field(default=400.0, ge=0)
     min_transfer_time_s: int = Field(default=60, ge=0)
+    station_entry_s: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Seconds to walk onto a stop of a mode from outside its station (entrance, security,"
+            " stairs). Changes between platforms of one station are free."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _check_entry_modes(self) -> Routing:
+        known = {*MODE_BY_ROUTE_TYPE.values(), OTHER_MODE}
+        for mode, seconds in self.station_entry_s.items():
+            if mode not in known:
+                raise ValueError(f"station_entry_s: unknown mode {mode!r}")
+            if seconds < 0:
+                raise ValueError(f"station_entry_s: {mode} must be >= 0")
+        return self
 
 
 class ProxyWeights(_Strict):

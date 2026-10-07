@@ -68,7 +68,8 @@ pub fn range_search(
         let departure = departures[i];
         for o in origins {
             let s = o.stop.0 as usize;
-            let arrival = departure.saturating_add(o.duration);
+            let arrival =
+                departure.saturating_add(o.duration.saturating_add(tt.entry_time(o.stop)));
             if arrival < rounds[0].walk[s] {
                 rounds[0].walk[s] = arrival;
                 rounds[0].walk_label[s] = Label::Access { duration: o.duration };
