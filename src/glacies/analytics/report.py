@@ -211,7 +211,7 @@ def draw_map(
     colours = [NONE_FILL if c < 0 else RAMP[c] for c in classes]
     min_lon, min_lat, max_lon, max_lat = bbox
     mid_lat = (min_lat + max_lat) / 2
-    fig, ax = plt.subplots(figsize=(8, 8.6), dpi=150)
+    fig, ax = plt.subplots(figsize=(8, 7.0), dpi=150)
     fig.patch.set_facecolor(SURFACE)
     ax.set_facecolor(SURFACE)
     ax.add_collection(
@@ -238,6 +238,7 @@ def draw_map(
     ax.set_ylim(min_lat, max_lat)
     ax.set_aspect(1 / np.cos(np.radians(mid_lat)))
     ax.set_axis_off()
+    ax.set_anchor("N")  # map right under the title
     handles = [
         Patch(facecolor=RAMP[i], label=label) for i, label in enumerate(class_labels(breaks, fmt))
     ]
@@ -253,9 +254,9 @@ def draw_map(
         fontsize=8,
         labelcolor=INK,
     )
-    fig.suptitle(title, x=0.02, y=0.985, ha="left", fontsize=12, color=INK)
-    fig.text(0.02, 0.945, subtitle, ha="left", fontsize=8.5, color=INK_MUTED)
-    fig.subplots_adjust(left=0.01, right=0.78, top=0.93, bottom=0.01)
+    fig.suptitle(title, x=0.02, y=0.982, ha="left", fontsize=12, color=INK)
+    fig.text(0.02, 0.935, subtitle, ha="left", fontsize=8.5, color=INK_MUTED)
+    fig.subplots_adjust(left=0.01, right=0.78, top=0.91, bottom=0.01)
     fig.savefig(path, facecolor=SURFACE, metadata={"Software": None})
     plt.close(fig)
 
@@ -291,6 +292,12 @@ class ReportResult:
     out_dir: Path
     maps: list[str]
     zones: int
+
+
+def source_names(config: CityConfig, kind: str) -> str:
+    """The configured sources of a kind, e.g. "WorldPop - India 100m constrained, 2021"."""
+    names = [src.source for _, src in sorted(config.sources.items()) if src.kind == kind]
+    return "; ".join(names) or "not configured"
 
 
 def _pct(value: float) -> str:
@@ -397,8 +404,8 @@ def build_report(
         population / population.mean(),
         RELATIVE_BREAKS,
         "{:g}x",
-        "Residents per zone (Estimated, WorldPop 2021)",
-        "As a multiple of the average zone",
+        "Residents per zone (Estimated)",
+        f"As a multiple of the average zone; {source_names(config, 'population_raster')}",
     )
 
     blocks = report_blocks(config, scenario, manifest, matrix, proxy_manifest, summary, maps)
@@ -429,6 +436,14 @@ def report_blocks(
     headline = float(manifest["headline_est_jobs_share"])  # type: ignore[arg-type]
     stats = matrix["stats"]
     assert isinstance(stats, dict)
+    network = config.network
+    feeds = (
+        "GTFS: "
+        + "; ".join(config.sources[f].source for f in network.feeds)
+        + f" (service day {network.service_date})"
+        if network
+        else "not configured"
+    )
 
     def mean(scope: str, p: int, measure: str) -> list[str]:
         rows = summary.filter(
@@ -450,14 +465,14 @@ def report_blocks(
         Table(
             ["Quantity", "Label", "Source"],
             [
+                ["Transit timetables", "Observed", feeds],
                 [
-                    "Bus and metro timetables",
+                    "Points of interest",
                     "Observed",
-                    "GTFS feeds (BMTC, BMRCL) for one weekday",
+                    f"{source_names(config, 'osm_pbf')}; job categories are Assumed",
                 ],
-                ["Points of interest", "Observed", "OpenStreetMap; job categories are Assumed"],
-                ["Residents per zone", "Estimated", "WorldPop 2021 (modelled raster)"],
-                ["Building footprints", "Estimated", "Open Buildings (machine-detected)"],
+                ["Residents per zone", "Estimated", source_names(config, "population_raster")],
+                ["Building footprints", "Estimated", source_names(config, "buildings")],
                 ["Estimated jobs per zone", "Estimated", "Employment proxy; weights are Assumed"],
                 ["Travel times and reach", "Simulated", "RAPTOR router over the departure window"],
                 [
