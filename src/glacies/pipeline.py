@@ -21,6 +21,14 @@ from glacies import __version__
 from glacies.cities import CityConfig, CityConfigError
 from glacies.config import Settings
 from glacies.db import postgis
+from glacies.demand.attraction import (
+    AttractionBuild,
+    AttractionError,
+    AttractionManifest,
+    build_attraction,
+    read_hubs,
+    write_attraction,
+)
 from glacies.ingest import archive
 from glacies.model.transit.build import FeedInput, TransitBuildError, build_transit
 from glacies.model.transit.writer import MANIFEST_NAME as TRANSIT_MANIFEST
@@ -28,6 +36,7 @@ from glacies.model.transit.writer import TransitManifest, write_transit
 from glacies.model.walk.build import WalkBuild, build_walk
 from glacies.model.walk.extract import extract_walk_segments
 from glacies.model.walk.writer import WalkManifest, write_walk
+from glacies.model.zones.build import MANIFEST_NAME as ZONES_MANIFEST
 from glacies.model.zones.build import (
     InputRef,
     ZoneInputs,
@@ -286,6 +295,40 @@ def run_zones(settings: Settings, config: CityConfig) -> tuple[ZonesManifest, Zo
     return manifest, result, out_dir
 
 
+def run_attraction(
+    settings: Settings, config: CityConfig
+) -> tuple[AttractionManifest, AttractionBuild, Path]:
+    """Employment proxy per zone from the processed zones (Phase 3 M1)."""
+    params = config.attraction
+    if params is None:
+        raise PipelineError(f"city {config.city.id!r} has no [attraction] section in city.toml")
+    zones_dir = city_dir(settings, config) / "zones"
+    zones_path = zones_dir / "zones.parquet"
+    if not zones_path.is_file():
+        raise PipelineError(f"missing {zones_path}; run `glacies build zones` first")
+    hubs_path = (
+        settings.cities_dir / config.city.id / params.validation_hubs
+        if params.validation_hubs
+        else None
+    )
+    try:
+        hubs = read_hubs(hubs_path) if hubs_path else None
+        result = build_attraction(pl.read_parquet(zones_path), params, hubs)
+    except AttractionError as exc:
+        raise PipelineError(str(exc)) from exc
+    out_dir = city_dir(settings, config) / "attraction"
+    manifest = write_attraction(
+        result,
+        out_dir,
+        city=config.city.id,
+        params=params,
+        zones_manifest_sha256=sha256_file(zones_dir / ZONES_MANIFEST),
+        hubs_path=hubs_path,
+        hub_names=[name for name, _ in hubs or []],
+    )
+    return manifest, result, out_dir
+
+
 def run_postgis(
     settings: Settings, config: CityConfig, *, connect_timeout: int = 10
 ) -> dict[str, int]:
@@ -419,6 +462,16 @@ def build_city(
     done("walk", f"{walk.row_counts['edges']:,} edges")
     zones, _, zones_dir = run_zones(settings, config)
     done("zones", f"{zones.row_counts['zones']:,} zones")
+    stage_dirs = [("transit", transit_dir), ("walk", walk_dir), ("zones", zones_dir)]
+    if config.attraction is not None:
+        attraction, _, attraction_dir = run_attraction(settings, config)
+        check = attraction.sensitivity[0].hub_check
+        done(
+            "proxy",
+            "employment proxy"
+            + (f"; hub check {'passed' if check.passed else 'FAILED'}" if check else ""),
+        )
+        stage_dirs.append(("attraction", attraction_dir))
     if load_postgis:
         counts = run_postgis(settings, config)
         done("postgis", ", ".join(f"{k} {v:,}" for k, v in counts.items()))
@@ -446,11 +499,7 @@ def build_city(
                 directory=directory.relative_to(base).as_posix(),
                 manifest_sha256=sha256_file(directory / "manifest.json"),
             )
-            for stage, directory in (
-                ("transit", transit_dir),
-                ("walk", walk_dir),
-                ("zones", zones_dir),
-            )
+            for stage, directory in stage_dirs
         ],
     )
     (base / BUILD_NAME).write_text(build.model_dump_json(indent=2) + "\n", encoding="utf-8")

@@ -51,10 +51,10 @@ def test_build_city_runs_every_stage(city: Path) -> None:
     result = runner.invoke(app, ["build-city"])
 
     assert result.exit_code == 0, result.output
-    for stage in ("verify", "validate", "transit", "walk", "zones", "build"):
+    for stage in ("verify", "validate", "transit", "walk", "zones", "proxy", "build"):
         assert f"[{stage:<8}]" in result.output
     build = json.loads((city / "BUILD.json").read_text(encoding="utf-8"))
-    assert [s["stage"] for s in build["stages"]] == ["transit", "walk", "zones"]
+    assert [s["stage"] for s in build["stages"]] == ["transit", "walk", "zones", "attraction"]
     assert sorted(i["dataset"] for i in build["inputs"]) == [
         "toy_buildings",
         "toy_gtfs",

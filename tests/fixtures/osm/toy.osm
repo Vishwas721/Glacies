@@ -7,6 +7,7 @@
   Clipped: residential 5-8 (node 8 is outside the bbox).
   Island: path 9-10 near the Central Station platform.
   Duplicate: footway 1-2 repeats the square's first segment.
+  POIs: shop 20 and office 21 (standalone nodes, for the employment proxy).
 -->
 <osm version="0.6" generator="glacies-test">
   <node id="1" lat="12.0200" lon="77.0200" version="1"/>
@@ -22,6 +23,12 @@
   <node id="11" lat="12.0350" lon="77.0150" version="1"/>
   <node id="12" lat="12.0250" lon="77.0350" version="1"/>
   <node id="13" lat="12.0350" lon="77.0350" version="1"/>
+  <node id="20" lat="12.0500" lon="77.0500" version="1">
+    <tag k="shop" v="bakery"/>
+  </node>
+  <node id="21" lat="12.0300" lon="77.0300" version="1">
+    <tag k="office" v="company"/>
+  </node>
   <way id="100" version="1">
     <nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/><nd ref="1"/>
     <tag k="highway" v="residential"/>
