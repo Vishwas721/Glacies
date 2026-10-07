@@ -146,3 +146,40 @@ def test_entry_arrays_are_validated() -> None:
         gr.Timetable.build(*args, arr(A, B), arr(0), arr(240))
     with pytest.raises(ValueError, match="unknown stop 9"):
         gr.Timetable.build(*args, arr(9), arr(0), arr(240))
+
+
+def test_zone_travel_times_toy5() -> None:
+    # Toy 5 (docs/validation/raptor-toy-networks.md): zone 0 is 2 min from C, zone 1 is 1 min
+    # from B or 25 min on foot. A second origin only walks to zone 2 (its own zone).
+    tt = build(
+        3,
+        [
+            (1, [(A, "08:00"), (B, "08:10"), (C, "08:20")]),
+            (2, [(A, "08:30"), (B, "08:40"), (C, "08:50")]),
+        ],
+    )
+    origins = [(arr(A), arr(60), arr(1), arr(1500)), (NONE, NONE, arr(2), arr(0))]
+    departures = arr(*(hm(t) for t in ("07:58", "07:59", "08:00", "08:01")))
+
+    origin, zone, times = tt.zone_travel_times_many(
+        origins, departures, 3, arr(0, 1), arr(C, B), arr(120, 60),
+        np.array([25, 50, 75], dtype=np.uint8), 30 * 60, 4, 60,
+    )  # fmt: skip
+
+    assert origin.tolist() == [0, 0, 1]
+    assert zone.tolist() == [0, 1, 2]
+    minutes = [[t // 60 if t != gr.UNREACHED else None for t in row] for row in times.tolist()]
+    assert minutes == [[23, 24, None], [12, 13, 25], [0, 0, 0]]
+
+
+def test_zone_travel_times_validates_inputs() -> None:
+    tt = build(3, [(1, [(A, "08:00"), (B, "08:10")])])
+    pct = np.array([50], dtype=np.uint8)
+    with pytest.raises(ValueError, match="unknown stop 7"):
+        tt.zone_travel_times_many([], arr(0), 1, arr(0), arr(7), arr(0), pct, 60, 4, 60)
+    with pytest.raises(ValueError, match="unknown zone 5"):
+        tt.zone_travel_times_many([], arr(0), 1, arr(5), arr(A), arr(0), pct, 60, 4, 60)
+    origins = [(arr(A), arr(0), NONE, NONE)]
+    bad = np.array([0], dtype=np.uint8)
+    with pytest.raises(ValueError, match="percentile 0"):
+        tt.zone_travel_times_many(origins, arr(0), 1, NONE, NONE, NONE, bad, 60, 4, 60)
