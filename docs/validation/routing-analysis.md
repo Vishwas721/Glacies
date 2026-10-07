@@ -1,9 +1,36 @@
-# Routing validation — analysis of the 2026-10-06 run
+# Routing validation — analysis
 
 Generated results: `routing.md` (sanity set) and `routing-benchmark.md` (performance). This file
 explains them; numbers quoted here come from those runs.
 
-## Sanity set: 11 of 20 within ±20 % / ±5 min (target 90 % — not met)
+## 2026-10-07 re-run with 4-minute metro station access: 13 of 20 (target 90 % — not met)
+
+`city.toml [routing] boarding_time_s = { metro = 240 }` (Assumed) adds 4 minutes before every
+metro boarding. Bus-only journeys are unchanged; metro journeys got 5–10 min slower:
+
+| # | Pair | Expected | Before | After | Within |
+|---:|---|---:|---:|---:|:---:|
+| 7 | Indiranagar → MG Road | 15 | 28 | 35 | ❌ |
+| 9 | Majestic → Electronic City | 73 | 58 | 66 | ❌ → ✅ |
+| 11 | Yeshwanthpur → Electronic City | 140 | 66 | 74 | ❌ |
+| 13 | Kengeri → Indiranagar | 95 | 60 | 65 | ❌ |
+| 15 | Banashankari → Whitefield | 100 | 79 | 89 | ❌ → ✅ |
+| 16 | KR Puram → Majestic | 60 | 40 | 45 | ❌ |
+| 17 | Marathahalli → Majestic | 50 | 50 | 60 (direct bus now fastest) | ✅ |
+
+The remaining metro gaps (#11, #13, #16) are 15–66 min, far more than an access time explains,
+so the "reference predates the Yellow line or assumes bus only" explanation below now looks
+more likely than a model error. #7 got worse: its fastest journey is a bus to Indiranagar
+station, then the Purple line, so it pays the access time too; its real problem is where the
+origin point is (group 3 below).
+
+**Open question for review:** the 4 minutes apply on every metro boarding, including line
+changes inside a station. At the Rashtreeya Vidyalaya Road interchange (#11), the model now
+charges a 4-minute walk between the Green and Yellow platforms (walk network) *plus* the
+4-minute boarding time. If that feels too long for an in-station change, a later option is to
+waive the boarding time for metro-to-metro transfers.
+
+## 2026-10-06 run: 11 of 20 within ±20 % / ±5 min (target 90 % — not met)
 
 Every failing journey was inspected leg by leg. **All of them are feasible itineraries on the
 2026-10-13 timetable; no router error was found.** The gaps fall into three groups.
@@ -21,9 +48,8 @@ Likely causes, in order:
   a stop is boarded as soon as its platform is reached on the walk network.
 - **The reference may predate the Yellow line** (opened 2025) or reflect a bus-only choice.
 
-→ **Decided 2026-10-06: 4 minutes** (Assumed) of station access per metro boarding. Not yet
-implemented; it needs a mode-aware boarding penalty in the Rust router, configured in
-`city.toml [routing]`. Re-run `glacies validate routing` after implementing it.
+→ **Decided 2026-10-06: 4 minutes** (Assumed) of station access per metro boarding.
+Implemented 2026-10-07 (see the re-run above).
 
 ### 2. Bus timetables do not include traffic (#1, #8)
 
@@ -55,5 +81,6 @@ more of the network than peripheral ones.
 ## Next steps
 
 1. ~~Review the stop matches~~: done, all 20 accepted (2026-10-06).
-2. Implement the 4-minute metro station access time; re-run the sanity check.
+2. ~~Implement the 4-minute metro station access time~~: done, 13 of 20 (2026-10-07).
+   Decide whether in-station metro line changes should skip it (open question above).
 3. Treat the sanity set as a plausibility check, not ground truth: its times are Estimated.
