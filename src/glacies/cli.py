@@ -304,6 +304,24 @@ def build_zone_accessibility(city: CityOption = None) -> None:
     )
 
 
+@app.command("accessibility")
+def accessibility_report(
+    city: Annotated[
+        str | None, typer.Argument(help="City id under cities/ (default: GLACIES_CITY).")
+    ] = None,
+) -> None:
+    """Write the accessibility report: maps, Markdown/HTML and a GeoParquet for QGIS."""
+    settings, config = _load(city)
+    try:
+        result = pipeline.run_report(settings, config)
+    except PipelineError as exc:
+        _fail(str(exc))
+    typer.echo(
+        f"report for {result.zones:,} zones with {len(result.maps)} maps -> {result.out_dir}"
+    )
+    typer.echo("  open report.html, or add accessibility.geoparquet as a layer in QGIS")
+
+
 @build_app.command("attraction")
 def build_employment_proxy(city: CityOption = None) -> None:
     """Estimate employment per zone (Phase 3 proxy) and check it against known hubs."""
