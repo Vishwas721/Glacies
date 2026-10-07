@@ -171,3 +171,30 @@ def test_accessibility_stage_on_toyville(city: Path, monkeypatch: pytest.MonkeyP
     assert (by_pct["25"] >= by_pct["75"]).all()
     summary = pl.read_parquet(out / "summary.parquet")
     assert set(summary["scope"]) == {"all zones", "excluding edge zones"}
+
+
+def test_report_on_toyville(city: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GLACIES_CITIES_DIR", str(FIXTURES / "cities"))
+    monkeypatch.setenv("GLACIES_CITY", "toyville")
+    monkeypatch.setenv("GLACIES_DATA_DIR", str(city.parents[1]))
+    assert runner.invoke(app, ["build", "accessibility"]).exit_code == 0
+    out = city / "accessibility" / "baseline" / "report"
+    fingerprints = []
+    for _ in range(2):
+        result = runner.invoke(app, ["accessibility", "toyville"])
+        assert result.exit_code == 0, result.output
+        fingerprints.append({p.name: p.read_bytes() for p in sorted(out.iterdir())})
+
+    assert fingerprints[0] == fingerprints[1]  # deterministic, maps included
+    files = fingerprints[0]
+    maps = [name for name in files if name.endswith(".png")]
+    assert len(maps) == 5
+    assert all(files[name].startswith(b"\x89PNG") for name in maps)
+    md = files["report.md"].decode("utf-8")
+    for label in ("Observed", "Estimated", "Simulated", "Assumed"):
+        assert f"| {label} |" in md
+    assert "not a count of jobs" in md
+    assert all(f"]({name})" in md for name in maps)
+    zones = pl.read_parquet(out / "accessibility.geoparquet")
+    assert zones.height == pl.read_parquet(city / "zones" / "zones.parquet").height
+    assert {"est_jobs_p50_45min", "pop_p75_15min", "edge_zone", "geometry"} <= set(zones.columns)

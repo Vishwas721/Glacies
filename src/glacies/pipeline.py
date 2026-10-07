@@ -25,6 +25,7 @@ from glacies.analytics.accessibility import (
     build_accessibility,
     write_accessibility,
 )
+from glacies.analytics.report import ReportResult, build_report
 from glacies.analytics.travel_times import (
     MatrixError,
     MatrixInput,
@@ -420,6 +421,25 @@ def run_accessibility(
         ],
     )
     return manifest, out_dir
+
+
+def run_report(
+    settings: Settings, config: CityConfig, *, scenario: str = "baseline"
+) -> ReportResult:
+    """Maps, Markdown/HTML report and GeoParquet from the accessibility outputs (Phase 3 M4)."""
+    base = city_dir(settings, config)
+    needed = base / "accessibility" / scenario / "manifest.json"
+    if not needed.is_file():
+        raise PipelineError(f"missing {needed.parent}; run `glacies build accessibility` first")
+    hubs = []
+    if config.attraction is not None and config.attraction.validation_hubs:
+        try:
+            hubs = read_hubs(
+                settings.cities_dir / config.city.id / config.attraction.validation_hubs
+            )
+        except AttractionError as exc:
+            raise PipelineError(str(exc)) from exc
+    return build_report(base, config, scenario=scenario, hubs=hubs)
 
 
 def run_postgis(

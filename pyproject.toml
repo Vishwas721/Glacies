@@ -11,10 +11,12 @@ dependencies = [
     "fastapi>=0.115",
     "glacies-raptor",
     "h3>=4.2",
+    "matplotlib>=3.9",
     "osmium>=4.0",
     "polars>=1.0",
     "psutil>=6.0",
     "psycopg[binary]>=3.2",
+    "pyarrow>=17",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "pyproj>=3.6",
@@ -84,7 +86,7 @@ files = ["src", "tests", "crates/raptor-py/glacies_raptor.pyi"]
 
 [[tool.mypy.overrides]]
 # These ship no type information and no stub package exists.
-module = ["h3", "h3.*", "rasterio", "rasterio.*"]
+module = ["h3", "h3.*", "pyarrow", "pyarrow.*", "rasterio", "rasterio.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
