@@ -68,6 +68,11 @@ percentiles = [25, 50, 75]    # p50 is the headline; p25/p75 show reliability
 max_travel_time_min = 120     # longer trips count as not reached
 max_walk_only_m = 2000.0      # zone to zone on foot without transit (~28 min)
 thresholds_min = [15, 30, 45, 60]
+# Summary metric: population-weighted mean share of estimated jobs reachable within 45 min (p50).
+headline_threshold_min = 45
+headline_percentile = 50
+# Zones within 5 km of the bbox edge are flagged (destinations outside the study area are missing).
+edge_buffer_m = 5000.0
 
 [attraction]
 # Employment proxy, Phase 3 handoff (2026-10-07). Its output is Estimated ("estimated jobs");

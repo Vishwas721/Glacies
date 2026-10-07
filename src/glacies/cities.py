@@ -233,6 +233,14 @@ class Accessibility(_Strict):
         default=2000.0, ge=0, description="Zone to zone on foot, without transit."
     )
     thresholds_min: list[int] = Field(default_factory=lambda: [15, 30, 45, 60])
+    headline_threshold_min: int = Field(default=45, description="Threshold of the summary metric.")
+    headline_percentile: int = Field(default=50, description="Percentile of the summary metric.")
+    edge_buffer_m: float = Field(
+        default=5000.0,
+        ge=0,
+        description="Zones whose point is this close to the bbox edge are flagged: their "
+        "destinations beyond the study area are missing.",
+    )
 
     @model_validator(mode="after")
     def _check(self) -> Accessibility:
@@ -246,6 +254,10 @@ class Accessibility(_Strict):
             raise ValueError("thresholds_min must be ascending, unique and positive")
         if ts[-1] > self.max_travel_time_min:
             raise ValueError("thresholds_min cannot exceed max_travel_time_min")
+        if self.headline_threshold_min not in ts:
+            raise ValueError("headline_threshold_min must be one of thresholds_min")
+        if self.headline_percentile not in ps:
+            raise ValueError("headline_percentile must be one of percentiles")
         return self
 
     def departures(self) -> list[int]:
