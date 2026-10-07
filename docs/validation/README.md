@@ -8,6 +8,7 @@
 | `routing.md` | Latest sanity-set comparison, written by `glacies validate routing` | Simulated vs Estimated | Phase 2 DoD |
 | `employment-proxy.md` | Employment proxy hub check, sensitivity table and analysis (copy of the `glacies build attraction` report) | Estimated (weights Assumed) | Phase 3 M1 |
 | `travel-time-matrix.md` | Baseline zone travel-time matrix run: coverage, run time, spot checks | Simulated | Phase 3 M2 |
+| `accessibility.md` | Baseline accessibility: headline, distribution, checks, interpretation | Simulated (opportunities Estimated) | Phase 3 M3 |
 | `../../cities/bengaluru/validation/employment_hubs.geojson` | 8 hand-drawn employment hub polygons (QGIS, 2026-10-07) | Assumed (hand-drawn) | Phase 3 hub check |
 
 ## About the Bengaluru sanity set

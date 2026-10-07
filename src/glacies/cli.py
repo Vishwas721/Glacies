@@ -287,6 +287,23 @@ def build_travel_time_matrix(city: CityOption = None) -> None:
     )
 
 
+@build_app.command("accessibility")
+def build_zone_accessibility(city: CityOption = None) -> None:
+    """Share of estimated jobs and population reachable per zone and threshold (Simulated)."""
+    settings, config = _load(city)
+    try:
+        manifest, out_dir = pipeline.run_accessibility(settings, config)
+    except PipelineError as exc:
+        _fail(str(exc))
+    s = manifest.settings
+    typer.echo(f"accessibility -> {out_dir}")
+    typer.echo(
+        f"headline: residents reach on average {manifest.headline_est_jobs_share:.1%} of the "
+        f"city's estimated jobs within {s.headline_threshold_min} min (p{s.headline_percentile}, "
+        f"population-weighted); {manifest.edge_zones:,} edge zones flagged"
+    )
+
+
 @build_app.command("attraction")
 def build_employment_proxy(city: CityOption = None) -> None:
     """Estimate employment per zone (Phase 3 proxy) and check it against known hubs."""

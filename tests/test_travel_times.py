@@ -146,3 +146,28 @@ def test_departures_are_half_open() -> None:
 def test_bad_settings_are_rejected(overrides: dict[str, object], message: str) -> None:
     with pytest.raises(ValueError, match=message):
         Accessibility.model_validate(overrides)
+
+
+def test_accessibility_stage_on_toyville(city: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GLACIES_CITIES_DIR", str(FIXTURES / "cities"))
+    monkeypatch.setenv("GLACIES_CITY", "toyville")
+    monkeypatch.setenv("GLACIES_DATA_DIR", str(city.parents[1]))
+
+    result = runner.invoke(app, ["build", "accessibility"])
+
+    assert result.exit_code == 0, result.output
+    assert "headline: residents reach on average" in result.output
+    out = city / "accessibility" / "baseline"
+    table = pl.read_parquet(out / "accessibility.parquet")
+    zones = pl.read_parquet(city / "zones" / "zones.parquet").height
+    assert table.height == zones * 3 * 4  # percentiles x thresholds
+    assert table.select(
+        pl.col("est_jobs_share", "population_share").is_between(0, 1 + 1e-9).all()
+    ).row(0) == (True, True)
+    wide = table.pivot("threshold_min", index=["zone_idx", "percentile"], values="est_jobs_share")
+    for lower, upper in (("15", "30"), ("30", "45"), ("45", "60")):
+        assert (wide[lower] <= wide[upper]).all()
+    by_pct = table.pivot("percentile", index=["zone_idx", "threshold_min"], values="est_jobs_share")
+    assert (by_pct["25"] >= by_pct["75"]).all()
+    summary = pl.read_parquet(out / "summary.parquet")
+    assert set(summary["scope"]) == {"all zones", "excluding edge zones"}
