@@ -169,3 +169,34 @@ def test_rejects_zero_rounds(tmp_path: Path) -> None:
 
     with pytest.raises(CityConfigError, match="max_rounds"):
         load_city(path)
+
+
+def test_attraction_settings() -> None:
+    bengaluru = load_city(Path(__file__).parents[1] / "cities" / "bengaluru" / "city.toml")
+
+    attraction = bengaluru.attraction
+    assert attraction is not None
+    base = attraction.baseline
+    assert (base.building_area, base.job_pois, base.building_confidence) == (0.7, 0.3, 0.65)
+    assert "amenity_other" not in attraction.job_poi_categories
+    assert attraction.opportunity_index_total == 5_000_000
+    assert (attraction.hub_pass_rank, attraction.hub_report_rank) == (0.2, 0.05)
+    assert len(attraction.sensitivity) >= 3
+    hubs = Path(__file__).parents[1] / "cities" / "bengaluru" / str(attraction.validation_hubs)
+    assert hubs.is_file()
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (("confidence = 0.65", "confidence = 0.5"), "not one of"),
+        (('name = "equal"', 'name = "baseline"'), "unique"),
+        (("job_pois = 0.3", "job_pois = 0.4"), "sum to 1"),
+    ],
+)
+def test_rejects_bad_attraction(tmp_path: Path, edit: tuple[str, str], message: str) -> None:
+    original = (FIXTURES / "toyville" / "city.toml").read_text(encoding="utf-8")
+    path = _write(tmp_path, original.replace(*edit, 1))
+
+    with pytest.raises(CityConfigError, match=message):
+        load_city(path)

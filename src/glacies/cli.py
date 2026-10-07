@@ -258,6 +258,31 @@ def build_zone_layers(city: CityOption = None) -> None:
     )
 
 
+@build_app.command("attraction")
+def build_employment_proxy(city: CityOption = None) -> None:
+    """Estimate employment per zone (Phase 3 proxy) and check it against known hubs."""
+    settings, config = _load(city)
+    try:
+        manifest, result, out_dir = pipeline.run_attraction(settings, config)
+    except PipelineError as exc:
+        _fail(str(exc))
+    typer.echo(f"employment proxy (Estimated) for {result.table.height:,} zones -> {out_dir}")
+    for row in manifest.sensitivity:
+        check = row.hub_check
+        if check is not None:
+            typer.echo(
+                f"  {row.weighting}: {check.share_in_pass_rank:.0%} of {check.hub_zones} hub "
+                f"zones in top {manifest.params.hub_pass_rank:.0%}, "
+                f"{check.share_in_report_rank:.0%} in top {manifest.params.hub_report_rank:.0%}, "
+                f"concentration {check.concentration:.2f}x"
+            )
+    base = manifest.sensitivity[0].hub_check
+    if base is not None:
+        typer.echo(f"hub check: {'PASSED' if base.passed else 'FAILED'} (baseline)")
+    if manifest.hubs_missing:
+        typer.echo("hubs overlapping no zone: " + ", ".join(manifest.hubs_missing))
+
+
 @load_app.command("postgis")
 def load_postgis(
     connect_timeout: Annotated[int, typer.Option(help="Seconds to wait for the database.")] = 10,
