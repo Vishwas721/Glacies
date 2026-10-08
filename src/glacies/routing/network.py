@@ -207,14 +207,9 @@ def _timetable(
     )
 
 
-def load_router(city_dir: Path, routing: Routing, crs_projected: str) -> Router:
-    """Build the router from ``data/processed/<city>``."""
-    transit, walk_dir = city_dir / "transit", city_dir / "walk"
-    for needed in (transit / "stop_times.parquet", walk_dir / "edges.parquet"):
-        if not needed.is_file():
-            raise RouterError(f"missing {needed}; run `glacies build-city` first")
-
-    nodes = pl.read_parquet(walk_dir / "nodes.parquet")
+def load_walk_graph(walk_dir: Path) -> gr.WalkGraph:
+    """The walk network with every snapped stop attached."""
+    nodes = pl.read_parquet(walk_dir / "nodes.parquet", columns=["node_idx"])
     edges = pl.read_parquet(walk_dir / "edges.parquet")
     links = pl.read_parquet(walk_dir / "stop_links.parquet")
     walk = gr.WalkGraph(
@@ -229,6 +224,19 @@ def load_router(city_dir: Path, routing: Routing, crs_projected: str) -> Router:
         links["fraction"].to_numpy().astype(np.float64),
         links["distance_m"].to_numpy().astype(np.float64),
     )
+    return walk
+
+
+def load_router(city_dir: Path, routing: Routing, crs_projected: str) -> Router:
+    """Build the router from ``data/processed/<city>``."""
+    transit, walk_dir = city_dir / "transit", city_dir / "walk"
+    for needed in (transit / "stop_times.parquet", walk_dir / "edges.parquet"):
+        if not needed.is_file():
+            raise RouterError(f"missing {needed}; run `glacies build-city` first")
+
+    nodes = pl.read_parquet(walk_dir / "nodes.parquet")
+    edges = pl.read_parquet(walk_dir / "edges.parquet")
+    walk = load_walk_graph(walk_dir)
     pair_from, pair_to, metres = walk.stop_to_stop(routing.max_transfer_walk_m)
     footpaths = (pair_from, pair_to, walk_seconds(metres, routing.walking_speed_m_s))
     timetable = _timetable(transit, footpaths, station_entries(transit, routing.station_entry_s))
