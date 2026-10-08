@@ -5,14 +5,18 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import polars as pl
 import pytest
 from typer.testing import CliRunner
 
+from glacies.analytics.travel_times import zone_points, zone_walks
 from glacies.cities import CityConfig, load_city
 from glacies.cli import app
 from glacies.config import Settings, get_settings
 from glacies.provenance import sha256_file
+from glacies.routing.network import load_router, parse_clock
+from glacies.scenario.incremental import affected_origins
 from glacies.scenario.runner import EngineVersions, RunOutcome, run_scenario
 from tests.gtfs_edit import TOY_FEED
 from tests.zone_inputs import write_buildings, write_landcover, write_population
@@ -91,7 +95,7 @@ def test_run_writes_results_and_a_run_record(city: Path, tmp_path: Path) -> None
         assert (first.out_dir / stage / "manifest.json").is_file()
     record = json.loads((first.out_dir / "run.json").read_text(encoding="utf-8"))
     assert record["scenario_id"] == "halve"
-    assert record["mode"] == "full"
+    assert record["mode"] == "incremental"
     assert record["nature"] == "simulated"
     assert [b["stage"] for b in record["baseline"]] == ["transit", "walk", "zones", "attraction"]
     assert {d["dataset"] for d in record["datasets"]} >= {"toy_gtfs", "toy_osm"}
@@ -185,3 +189,78 @@ def test_run_command_reports_cache_hits(city: Path, tmp_path: Path) -> None:
     assert first.exit_code == 0, first.output
     assert "1. modify_headway R1: -0 / +1 trips" in first.output
     assert "halve: headline" in first.output
+
+
+# --- incremental recomputation (M4) ----------------------------------------------------------
+
+FEEDER = {
+    "type": "add_route",
+    "route_id": "F",
+    "stops": ["A", "C"],
+    "headway_secs": 300,
+    "span": ["07:30", "09:30"],
+    "speed_kmh": 30,
+}
+CASES: dict[str, list[dict[str, Any]]] = {
+    "halve": [HALVE],
+    "regular": [{"type": "modify_headway", "route_id": "R1", "headway_secs": 240}],
+    "remove": [REMOVE],
+    "feeder": [FEEDER],
+    "mixed": [REMOVE, FEEDER],
+}
+
+
+@pytest.mark.parametrize("case", sorted(CASES))
+def test_incremental_equals_full_recompute(city: Path, tmp_path: Path, case: str) -> None:
+    path = write_scenario(tmp_path, case, *CASES[case])
+    incremental = run(path)
+    assert incremental.record.mode == "incremental"
+    fast = parquet_fingerprint(incremental.out_dir)
+    full = run(path, full=True)
+    assert (full.record.mode, full.record.full_reason) == ("full", "full recompute requested")
+    assert parquet_fingerprint(full.out_dir) == fast
+
+
+def test_only_affected_origins_are_recomputed(city: Path, tmp_path: Path) -> None:
+    record = run(write_scenario(tmp_path, "rm", REMOVE)).record
+    assert 0 < record.origins_recomputed < record.origins_total
+    noop = run(write_scenario(tmp_path, "noop", {**HALVE, "headway_factor": 1})).record
+    assert (noop.mode, noop.origins_recomputed) == ("incremental", 0)
+
+
+def test_falls_back_to_full_without_a_usable_baseline(city: Path, tmp_path: Path) -> None:
+    path = write_scenario(tmp_path, "halve", HALVE)
+    expected = parquet_fingerprint(run(path, full=True).out_dir)
+
+    part = next((city / "tt_matrix" / "baseline").glob("part-*.parquet"))
+    part.write_bytes(part.read_bytes() + b"x")
+    tampered = run(path, force=True)
+    assert tampered.record.mode == "full"
+    assert "missing or changed" in tampered.record.full_reason
+    assert parquet_fingerprint(tampered.out_dir) == expected
+
+    shutil.rmtree(city / "tt_matrix" / "baseline")
+    missing = run(path, force=True)
+    assert "no baseline travel-time matrix" in missing.record.full_reason
+
+
+def test_reach_uses_the_last_departure_of_the_window(city: Path) -> None:
+    """Leaving at 07:50 boards R1 at A at 08:00 and reaches C at 08:06 (16 min): within a
+    20-minute limit, so C counts, although from 07:40 it takes 26 min."""
+    config = load_city(get_settings().city_config_path)
+    router = load_router(city, config.routing, config.city.crs_projected)
+    zones = pl.read_parquet(city / "zones" / "zones.parquet")
+    walks = zone_walks(router, city / "walk", zone_points(zones), config.accessibility)
+    stops = pl.read_parquet(city / "transit" / "stops.parquet")
+    idx = dict(zip(stops["source_stop_id"], stops["stop_idx"], strict=True))
+    near_a_only = [
+        i
+        for i, (s, _) in enumerate(walks.access)
+        if idx["A"] in s and idx["C"] not in s and idx["B"] not in s
+    ]
+    assert near_a_only
+    c = np.array([idx["C"]], dtype=np.uint32)
+    departures = [parse_clock("07:40"), parse_clock("07:50")]
+    affected = affected_origins(router, walks, c, departures, 20 * 60)
+    assert set(near_a_only) <= affected
+    assert not set(near_a_only) & affected_origins(router, walks, c, departures, 15 * 60)
