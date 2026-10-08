@@ -4,7 +4,7 @@
     "scenario_id": "bengaluru_new_tech_feeder",
     "base_network": "baseline",
     "title": "Feeder from Kundalahalli metro to the ORR tech parks",
-    "description": "A new 10-min feeder links the Purple Line at Kundalahalli to the Outer Ring Road tech parks (Prestige Tech Park at Kadubisanahalli, Eco Space at Bellandur), which have no metro. Stops follow the 500-F alignment, with the platform IDs for each direction.",
+    "description": "A new 10-min feeder links the Purple Line at Kundalahalli to the Outer Ring Road tech parks (Prestige Tech Park at Kadubisanahalli, Eco Space at Bellandur), which have no metro. Stops follow the 500-F alignment, with the platform IDs for each direction. 20 km/h (Assumed, user decision 2026-10-08): at 15 km/h the feeder took 46-49 min where BMTC timetables the same stops at 35 min.",
     "expected_change": "Gains only, no zone loses. Localised to zones near the feeder stops between Kundalahalli and Bellandur and to trips that reach the corridor by metro. Small, because 500-F, V-500F and 500-D already serve this road.",
     "mutations": [
         {
@@ -50,7 +50,7 @@
                 "38798"
             ],
             "headway_secs": 600,
-            "speed_kmh": 15,
+            "speed_kmh": 20,
             "span": [
                 "07:00",
                 "22:00"
