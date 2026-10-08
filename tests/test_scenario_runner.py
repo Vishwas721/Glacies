@@ -10,7 +10,7 @@ import polars as pl
 import pytest
 from typer.testing import CliRunner
 
-from glacies.analytics.travel_times import zone_points, zone_walks
+from glacies.analytics.travel_times import load_walks, save_walks, zone_points, zone_walks
 from glacies.cities import CityConfig, load_city
 from glacies.cli import app
 from glacies.config import Settings, get_settings
@@ -264,3 +264,30 @@ def test_reach_uses_the_last_departure_of_the_window(city: Path) -> None:
     affected = affected_origins(router, walks, c, departures, 20 * 60)
     assert set(near_a_only) <= affected
     assert not set(near_a_only) & affected_origins(router, walks, c, departures, 15 * 60)
+
+
+def test_walks_are_cached_across_scenarios(city: Path, tmp_path: Path) -> None:
+    first = run(write_scenario(tmp_path, "halve", HALVE)).record
+    path = write_scenario(tmp_path, "rm", REMOVE)
+    second = run(path)
+    assert (first.walks_reused, second.record.walks_reused) == (False, True)
+    full = run(path, full=True)
+    assert not full.record.walks_reused  # --full recomputes walks too, so it checks the cache
+    assert parquet_fingerprint(full.out_dir) == parquet_fingerprint(second.out_dir)
+    dirty = CLEAN.model_copy(update={"git_dirty": True})
+    assert not run(path, engine=dirty).record.walks_reused
+
+
+def test_walks_survive_a_round_trip(city: Path, tmp_path: Path) -> None:
+    config = load_city(get_settings().city_config_path)
+    router = load_router(city, config.routing, config.city.crs_projected)
+    zones = pl.read_parquet(city / "zones" / "zones.parquet")
+    walks = zone_walks(router, city / "walk", zone_points(zones), config.accessibility)
+    assert any(s.size == 0 for s, _ in walks.access)  # zones without stops round-trip too
+    save_walks(walks, tmp_path / "walks")
+    loaded = load_walks(tmp_path / "walks", zones.height)
+    for got, want in ((loaded.access, walks.access), (loaded.walk_only, walks.walk_only)):
+        assert len(got) == len(want)
+        for (a, b), (c, d) in zip(got, want, strict=True):
+            assert a.tolist() == c.tolist()
+            assert b.tolist() == d.tolist()
