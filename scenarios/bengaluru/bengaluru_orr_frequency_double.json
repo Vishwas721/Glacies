@@ -1,0 +1,16 @@
+{
+    "$schema": "../../schemas/scenario.schema.json",
+    "schema_version": 1,
+    "scenario_id": "bengaluru_orr_frequency_double",
+    "base_network": "baseline",
+    "title": "Double the frequency of 500-D on the Outer Ring Road",
+    "description": "500-D (route 1066, Central Silk Board - Hebbala Bridge) is the main ORR trunk variant: 60 of the 83 500-D departures between 07:30 and 09:30. Its timetable is irregular (mostly 5 min at peak, 10-140 min gaps off-peak), so frequency is scaled, not reset to a fixed headway.",
+    "expected_change": "Gains only, no zone loses. Small: 500-D already runs about every 5 min in the AM window, so halving the headway saves about 1-1.5 min of waiting. Gains sit in zones along the ORR from Central Silk Board through Bellandur, Marathahalli and KR Pura to Hebbal.",
+    "mutations": [
+        {
+            "type": "modify_headway",
+            "route_id": "1066",
+            "headway_factor": 0.5
+        }
+    ]
+}

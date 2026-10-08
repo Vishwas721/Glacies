@@ -1,0 +1,19 @@
+{
+    "$schema": "../../schemas/scenario.schema.json",
+    "schema_version": 1,
+    "scenario_id": "bengaluru_metro_overlap_removal",
+    "base_network": "baseline",
+    "title": "Remove the 304-K bus routes that duplicate the Purple Line",
+    "description": "304-K (route 2255, plus variant 2256 to KR Pura Market) runs Channasandra - Hope Farm - ITPL - Hoodi - Mahadevapura - KR Pura - Tin Factory, the same corridor as the Purple Line extension. 28 departures between 07:30 and 09:30; the Purple Line has 59 in the same window.",
+    "expected_change": "Losses only, no zone gains. Close to zero city-wide. Any losses are in zones along Whitefield Main Road (Hope Farm to KR Pura) that are farther than a short walk from a Purple Line station.",
+    "mutations": [
+        {
+            "type": "remove_route",
+            "route_id": "2255"
+        },
+        {
+            "type": "remove_route",
+            "route_id": "2256"
+        }
+    ]
+}
