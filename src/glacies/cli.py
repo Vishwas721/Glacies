@@ -8,6 +8,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, NoReturn
 
+import polars as pl
 import psutil
 import typer
 
@@ -20,6 +21,7 @@ from glacies.pipeline import PipelineError, StageDone
 from glacies.routing import bench
 from glacies.routing.network import RouterError, clock, load_router, parse_clock
 from glacies.routing.validate import read_pairs, report, run_pairs
+from glacies.scenario.schema import ScenarioError, json_schema_text, load_scenario, resolve
 from glacies.validate.gtfs.report import Severity
 
 app = typer.Typer(help="Glacies — urban transit digital twin.", no_args_is_help=True)
@@ -35,6 +37,8 @@ load_app = typer.Typer(help="Copy canonical layers into databases.", no_args_is_
 app.add_typer(load_app, name="load")
 bench_app = typer.Typer(help="Measure performance on the real network.", no_args_is_help=True)
 app.add_typer(bench_app, name="bench")
+scenario_app = typer.Typer(help="Define and check network scenarios.", no_args_is_help=True)
+app.add_typer(scenario_app, name="scenario")
 
 CityOption = Annotated[
     str | None, typer.Option("--city", help="City id under cities/ (default: GLACIES_CITY).")
@@ -507,4 +511,39 @@ def bench_routing(
     typer.echo(
         f"all-zones 120-min matrix estimate: {result.all_zones_estimate_min} min; "
         f"peak memory {result.peak_rss_mb:,.0f} MB -> {out}"
+    )
+
+
+@scenario_app.command("schema")
+def scenario_schema(
+    out: Annotated[Path, typer.Option(help="Where to write the JSON Schema.")] = Path(
+        "schemas/scenario.schema.json"
+    ),
+) -> None:
+    """Write the JSON Schema of scenario files (for editors and other tools)."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json_schema_text(), encoding="utf-8", newline="\n")
+    typer.echo(f"scenario schema -> {out}")
+
+
+@scenario_app.command("check")
+def scenario_check(
+    path: Annotated[Path, typer.Argument(help="Scenario JSON file.")],
+    city: CityOption = None,
+) -> None:
+    """Validate a scenario file and check its route and stop ids against the baseline network."""
+    settings, config = _load(city)
+    try:
+        scenario = load_scenario(path)
+        _, transit_dir = pipeline.transit_manifest(settings, config)
+        tables = {
+            name: pl.read_parquet(transit_dir / f"{name}.parquet")
+            for name in ("feeds", "routes", "stops", "trips")
+        }
+        resolved = resolve(scenario, tables)
+    except (ScenarioError, PipelineError) as exc:
+        _fail(str(exc))
+    typer.echo(
+        f"{scenario.scenario_id}: {len(scenario.mutations)} mutation(s) OK; "
+        f"{len(resolved.route_idx)} baseline route(s), {len(resolved.stop_idx)} stop(s) referenced"
     )
