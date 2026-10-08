@@ -23,6 +23,7 @@ from glacies.routing import bench
 from glacies.routing.network import RouterError, clock, load_router, parse_clock
 from glacies.routing.validate import read_pairs, report, run_pairs
 from glacies.scenario.calibrate import detour_ratios, markdown
+from glacies.scenario.compare import compare, format_delta, format_value
 from glacies.scenario.mutations import apply
 from glacies.scenario.runner import run_scenario
 from glacies.scenario.schema import ScenarioError, json_schema_text, load_scenario
@@ -625,3 +626,28 @@ def scenario_run(
         f"{r.scenario_id}: headline {r.headline_est_jobs_share:.2%} of estimated jobs "
         f"(Simulated) -> {outcome.out_dir}"
     )
+
+
+@scenario_app.command("compare")
+def scenario_compare(
+    a: Annotated[str, typer.Argument(help="`baseline` or a scenario file (A).")],
+    b: Annotated[str, typer.Argument(help="`baseline` or a scenario file (B).")],
+    city: CityOption = None,
+) -> None:
+    """Compare two run networks: metrics table, zone deltas, map and Markdown report."""
+    settings, config = _load(city)
+    try:
+        result = compare(settings, config, a, b)
+    except (ScenarioError, PipelineError) as exc:
+        _fail(str(exc))
+    m = result.manifest
+    typer.echo(f"{m.b.label} vs {m.a.label} (Simulated)")
+    for name, va, vb, unit, delta in result.metrics.select(
+        "metric", "a", "b", "unit", "delta"
+    ).iter_rows():
+        typer.echo(
+            f"  {name}: {format_value(va, unit)} -> {format_value(vb, unit)} "
+            f"({format_delta(delta, unit)})"
+        )
+    typer.echo(f"direction check: {m.direction_check}")
+    typer.echo(f"report -> {result.out_dir / 'comparison.md'}")
