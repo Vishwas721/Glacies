@@ -177,7 +177,7 @@ def test_attraction_settings() -> None:
     attraction = bengaluru.attraction
     assert attraction is not None
     base = attraction.baseline
-    assert (base.building_area, base.job_pois, base.building_confidence) == (0.7, 0.3, 0.65)
+    assert (base.building_area, base.job_pois, base.building_confidence) == (0.5, 0.5, 0.65)
     assert "amenity_other" not in attraction.job_poi_categories
     assert attraction.opportunity_index_total == 5_000_000
     assert (attraction.hub_pass_rank, attraction.hub_report_rank) == (0.2, 0.05)

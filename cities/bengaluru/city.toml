@@ -91,14 +91,17 @@ hub_pass_share = 0.80
 
 [attraction.baseline]
 name = "baseline"
-building_area = 0.70   # bias towards large tech campuses
-job_pois = 0.30        # keeps street retail and services
+# Changed 2026-10-08 from 0.70/0.30 (user decision after the Phase 3 M5 sensitivity table):
+# footprint area alone ranks zones like population (homes dominate), while equal weights keep
+# the hub top-5 % score (64 %) and raise hub concentration from 1.50x to 1.84x.
+building_area = 0.50
+job_pois = 0.50
 building_confidence = 0.65
 
 [[attraction.sensitivity]]
-name = "equal"
-building_area = 0.50
-job_pois = 0.50
+name = "previous-baseline"   # the Phase 3 handoff weights, kept for comparison
+building_area = 0.70
+job_pois = 0.30
 building_confidence = 0.65
 
 [[attraction.sensitivity]]
@@ -121,8 +124,8 @@ building_confidence = 0.65
 
 [[attraction.sensitivity]]
 name = "baseline-c75"
-building_area = 0.70
-job_pois = 0.30
+building_area = 0.50
+job_pois = 0.50
 building_confidence = 0.75
 
 [sources.bmtc_gtfs]
