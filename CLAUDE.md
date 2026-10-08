@@ -2,7 +2,7 @@
 
 Glacies is an urban public-transit digital twin: real data → canonical network → RAPTOR routing →
 synthetic demand → assignment/crowding → scenarios → accessibility analytics → visualisation.
-The full product spec is the PRD; the working plan is `docs/phases/`. **Read the phase doc you are
+The full product spec is the PRD (`docs/prd.md`); the working plan is `docs/phases/`. **Read the phase doc you are
 asked to work on before writing code.**
 
 ## Repository map

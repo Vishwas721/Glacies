@@ -32,12 +32,14 @@ Phase 2 timetable builder; Phase 3 accessibility pipeline producing a baseline.
 
 ## 5. Your hands-on tasks
 
-- [ ] Write 3 realistic Bengaluru scenarios as JSON by hand. For example: double frequency on a
+- [x] Write 3 realistic Bengaluru scenarios as JSON by hand. For example: double frequency on a
       trunk route along Outer Ring Road; remove two routes that overlap a metro line; add a feeder
       from a metro station to a tech park. These become fixtures and the demo story.
-- [ ] For each, write down the *expected direction* of change (which zones should gain or lose).
+      (Route and stop ids revised with the agent on 2026-10-08; see ADR 0007.)
+- [x] For each, write down the *expected direction* of change (which zones should gain or lose).
       This is PRD validation level 5 (logical plausibility).
-- [ ] Review the first comparison output against your expectations.
+- [x] Review the first comparison output against your expectations. (Reviewed 2026-10-08:
+      results accepted as realistic; see `docs/validation/scenario-comparison.md`.)
 
 ## 6. Agent tasks
 
