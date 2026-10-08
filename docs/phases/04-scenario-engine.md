@@ -24,11 +24,11 @@ Phase 2 timetable builder; Phase 3 accessibility pipeline producing a baseline.
 
 | Decision | Guidance | Your choice |
 |---|---|---|
-| v1 mutation types | `remove_route`, `modify_headway`, `add_route` (MVP), then `remove_stop`, `add_stop`, `adjust_speed` | |
-| How new routes get times | given stop sequence + headway + span + speed (km/h) or explicit run times | |
-| Scenario storage | JSON files in `scenarios/<city>/` + rows in PostGIS (metadata) | |
-| Cache key | sha256(baseline BUILD.json + mutations + config + engine versions) | |
-| Comparison metrics v1 | accessibility deltas (zone + city), mean/percentile travel time, transfers | |
+| v1 mutation types | `remove_route`, `modify_headway`, `add_route` (MVP), then `remove_stop`, `add_stop`, `adjust_speed` | The three MVP types. `modify_headway` takes `headway_factor` (scale) or `headway_secs` (regularise), optionally within a `window` (ADR 0007) |
+| How new routes get times | given stop sequence + headway + span + speed (km/h) or explicit run times | Stop sequence (+ optional `return_stops`), headway, span, speed; distance = straight line × detour factor, plus dwell (Assumed) |
+| Scenario storage | JSON files in `scenarios/<city>/` + rows in PostGIS (metadata) | JSON is the source of truth; runs do not need PostGIS. Metadata can be loaded later |
+| Cache key | sha256(baseline BUILD.json + mutations + config + engine versions) | As guided, plus git commit and seed; mutations only, so editing a title keeps the cache; a dirty tree recomputes |
+| Comparison metrics v1 | accessibility deltas (zone + city), mean/percentile travel time, transfers | As guided, plus zones gaining/losing and a sign check (added service never hurts, removed service never helps) |
 
 ## 5. Your hands-on tasks
 
