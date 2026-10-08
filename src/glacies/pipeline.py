@@ -30,6 +30,8 @@ from glacies.analytics.travel_times import (
     MatrixError,
     MatrixInput,
     MatrixResult,
+    Reuse,
+    ZoneWalks,
     build_matrix,
 )
 from glacies.cities import CityConfig, CityConfigError
@@ -352,6 +354,8 @@ def run_matrix(
     scenario: str = "baseline",
     transit_dir: Path | None = None,
     out_dir: Path | None = None,
+    walks: ZoneWalks | None = None,
+    reuse: Reuse | None = None,
     on_chunk: Callable[[int, int], None] | None = None,
 ) -> MatrixResult:
     """Zone-to-zone travel-time percentiles over the departure window (Phase 3 M2).
@@ -379,6 +383,8 @@ def run_matrix(
                 MatrixInput(stage=stage, manifest_sha256=sha256_file(directory / "manifest.json"))
                 for stage, directory in stage_dirs.items()
             ],
+            walks=walks,
+            reuse=reuse,
             on_chunk=on_chunk,
         )
     except (RouterError, MatrixError) as exc:

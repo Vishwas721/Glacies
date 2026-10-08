@@ -160,6 +160,18 @@ class MatrixManifest(BaseModel):
     outputs: dict[str, str]
 
 
+@dataclass(frozen=True)
+class Reuse:
+    """Copy rows from a baseline matrix except for the ``origins`` (zone positions) given.
+
+    The baseline must have been built with the same settings, zones and walk network; rows of
+    other origins are then identical by construction (see ``glacies.scenario.incremental``).
+    """
+
+    baseline_dir: Path
+    origins: frozenset[int]
+
+
 @dataclass
 class MatrixResult:
     manifest: MatrixManifest
@@ -177,16 +189,22 @@ def build_matrix(
     scenario: str,
     inputs: list[MatrixInput],
     chunk: int = CHUNK_ORIGINS,
+    walks: ZoneWalks | None = None,
+    reuse: Reuse | None = None,
     on_chunk: Callable[[int, int], None] | None = None,
 ) -> MatrixResult:
-    """Write the matrix for every zone as origin (``on_chunk(done, total)`` reports progress)."""
+    """Write the matrix for every zone as origin (``on_chunk(done, total)`` reports progress).
+
+    ``walks`` skips recomputing walks that the caller already has; ``reuse`` recomputes only
+    some origins and copies the rest from a baseline matrix with the same part layout.
+    """
     if zones.height == 0:
         raise MatrixError("no zones")
     if "pop_lat" not in zones.columns:
         raise MatrixError("zones have no population-weighted points; rebuild zones")
     points = zone_points(zones)
     departures = np.array(settings.departures(), dtype=np.uint32)
-    walks = zone_walks(router, walk_dir, points, settings)
+    walks = walks or zone_walks(router, walk_dir, points, settings)
 
     staging = out_dir.with_name(f".{out_dir.name}.staging")
     if staging.exists():
@@ -198,10 +216,12 @@ def build_matrix(
     p50 = f"p{settings.percentiles[len(settings.percentiles) // 2]}_s"
     reached_within: list[int] = []
     for k, start in enumerate(range(0, n, chunk)):
-        part = matrix_chunk(
-            router, walks, range(start, min(start + chunk, n)), departures, settings
-        )
+        origins = range(start, min(start + chunk, n))
         path = staging / f"part-{k:05d}.parquet"
+        if reuse is None:
+            part = matrix_chunk(router, walks, origins, departures, settings)
+        else:
+            part = _reused_part(router, walks, origins, departures, settings, reuse, path.name)
         part.write_parquet(path, compression="zstd", statistics=True)
         outputs[path.name] = sha256_file(path)
         rows += part.height
@@ -246,6 +266,29 @@ def build_matrix(
     out_dir.parent.mkdir(parents=True, exist_ok=True)
     rename_with_retry(staging, out_dir)
     return MatrixResult(manifest=manifest, out_dir=out_dir)
+
+
+def _reused_part(
+    router: Router,
+    walks: ZoneWalks,
+    origins: range,
+    departures: U32,
+    settings: Accessibility,
+    reuse: Reuse,
+    name: str,
+) -> pl.DataFrame:
+    baseline = reuse.baseline_dir / name
+    if not baseline.is_file():
+        raise MatrixError(f"baseline matrix has no {name}")
+    recompute = [o for o in origins if o in reuse.origins]
+    kept = pl.read_parquet(baseline)
+    if not recompute:
+        return kept
+    fresh = matrix_chunk(router, walks, recompute, departures, settings)
+    kept = kept.filter(
+        ~pl.col("origin_zone").is_in(pl.Series(recompute, dtype=pl.UInt32).implode())
+    )
+    return pl.concat([kept, fresh]).sort("origin_zone", "dest_zone")
 
 
 def report(m: MatrixManifest) -> str:
