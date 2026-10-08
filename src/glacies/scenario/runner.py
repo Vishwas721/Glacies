@@ -62,6 +62,9 @@ RESULTS_DIR = "results"
 WALKS_DIR = "_walks"  # under RESULTS_DIR: zone walks shared by every scenario of a baseline
 RUN_NAME = "run.json"
 MANIFEST_NAME = "manifest.json"
+# Code whose changes can change results. Docs, tests and scenario files are not here: scenario
+# content is in the key through its mutations, city config through the config itself.
+ENGINE_PATHS = ("src", "crates", "pyproject.toml", "uv.lock", "Cargo.toml", "Cargo.lock")
 # Baseline stages a scenario run reads; their manifests identify the baseline in the key.
 BASELINE_STAGES = ("transit", "walk", "zones", "attraction")
 
@@ -138,7 +141,7 @@ class RunOutcome:
 
 
 def engine_versions() -> EngineVersions:
-    commit, dirty = git_state(Path(__file__).resolve().parents[3])
+    commit, dirty = git_state(Path(__file__).resolve().parents[3], ENGINE_PATHS)
     return EngineVersions(
         glacies=__version__,
         glacies_raptor=importlib.metadata.version("glacies-raptor"),
