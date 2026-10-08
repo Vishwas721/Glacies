@@ -1,0 +1,60 @@
+{
+    "$schema": "../../schemas/scenario.schema.json",
+    "schema_version": 1,
+    "scenario_id": "bengaluru_new_tech_feeder",
+    "base_network": "baseline",
+    "title": "Feeder from Kundalahalli metro to the ORR tech parks",
+    "description": "A new 10-min feeder links the Purple Line at Kundalahalli to the Outer Ring Road tech parks (Prestige Tech Park at Kadubisanahalli, Eco Space at Bellandur), which have no metro. Stops follow the 500-F alignment, with the platform IDs for each direction.",
+    "expected_change": "Gains only, no zone loses. Localised to zones near the feeder stops between Kundalahalli and Bellandur and to trips that reach the corridor by metro. Small, because 500-F, V-500F and 500-D already serve this road.",
+    "mutations": [
+        {
+            "type": "add_route",
+            "route_id": "FEEDER-KDL-ECO",
+            "name": "Kundalahalli Metro - Eco Space feeder",
+            "mode": "bus",
+            "stops": [
+                "38799",
+                "21152",
+                "20803",
+                "20957",
+                "20721",
+                "20595",
+                "20641",
+                "20955",
+                "20959",
+                "21037",
+                "35409",
+                "21031",
+                "20894",
+                "21058",
+                "20753",
+                "20770"
+            ],
+            "return_stops": [
+                "20771",
+                "20754",
+                "21059",
+                "20895",
+                "21032",
+                "22670",
+                "22668",
+                "21038",
+                "20960",
+                "20956",
+                "20640",
+                "20596",
+                "20722",
+                "20958",
+                "20802",
+                "21153",
+                "38798"
+            ],
+            "headway_secs": 600,
+            "speed_kmh": 15,
+            "span": [
+                "07:00",
+                "22:00"
+            ]
+        }
+    ]
+}
