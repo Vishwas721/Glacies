@@ -19,12 +19,16 @@ produced it (PRD §53).
   the baseline stages the run reads (transit, walk, zones, attraction); the hash of the
   mutations; the full city config; the glacies and glacies-raptor versions, git commit and
   dirty flag; and the seed.
+  - The commit and dirty flag cover engine code only (`src`, `crates` and the dependency
+    files; amended in Phase 4 M5): a docs or test commit, or a merge that leaves engine code
+    unchanged, keeps every cached result. Scenario files and city config enter the key
+    through their content.
   - Stage manifests rather than `BUILD.json`: they are what the run actually reads, and they
     stay correct when a stage is rebuilt on its own.
   - The whole city config rather than chosen sections: a little over-conservative, but a new
     parameter can never be forgotten in the key.
   - Titles, descriptions and expected changes are excluded, so editing prose keeps the cache.
-- A source tree with uncommitted changes never reads the cache (the commit no longer describes
+- A source tree with uncommitted engine changes never reads the cache (the commit no longer describes
   the code). Its results are still written, under a key that includes the dirty flag, so they
   can never be served to a clean run. `--force` recomputes.
 - `run.json` records the scenario file and its hash, the key and everything in it, the raw
