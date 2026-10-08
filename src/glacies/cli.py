@@ -24,6 +24,7 @@ from glacies.routing.network import RouterError, clock, load_router, parse_clock
 from glacies.routing.validate import read_pairs, report, run_pairs
 from glacies.scenario.calibrate import detour_ratios, markdown
 from glacies.scenario.mutations import apply
+from glacies.scenario.runner import run_scenario
 from glacies.scenario.schema import ScenarioError, json_schema_text, load_scenario
 from glacies.validate.gtfs.report import Severity
 
@@ -577,4 +578,43 @@ def scenario_calibrate(
     typer.echo(
         f"{result.ratios.size:,} pairs: median {result.percentile(50):.2f}, "
         f"mean {result.mean:.2f} -> {out}"
+    )
+
+
+@scenario_app.command("run")
+def scenario_run(
+    path: Annotated[Path, typer.Argument(help="Scenario JSON file.")],
+    force: Annotated[bool, typer.Option("--force", help="Recompute even if cached.")] = False,
+    city: CityOption = None,
+) -> None:
+    """Apply a scenario, then rebuild travel times and accessibility on it (cached)."""
+    settings, config = _load(city)
+    started = time.perf_counter()
+
+    def stage(name: str) -> None:
+        typer.echo(f"[{time.perf_counter() - started:5.0f} s] {name}")
+
+    def progress(done: int, total: int) -> None:
+        if done == total or done % 2048 == 0:
+            typer.echo(f"  {done:,}/{total:,} origins")
+
+    try:
+        outcome = run_scenario(
+            settings, config, path, force=force, on_stage=stage, on_chunk=progress
+        )
+    except (ScenarioError, PipelineError) as exc:
+        _fail(str(exc))
+    r = outcome.record
+    if outcome.cached:
+        typer.echo(f"cached result (computed {r.finished_at})")
+    for c in r.changes:
+        typer.echo(
+            f"  {c.mutation}. {c.type} {c.route_id}: "
+            f"-{c.trips_removed:,} / +{c.trips_added:,} trips"
+        )
+    if r.engine.git_dirty:
+        typer.echo("note: uncommitted changes in the source tree; the cache was not read")
+    typer.echo(
+        f"{r.scenario_id}: headline {r.headline_est_jobs_share:.2%} of estimated jobs "
+        f"(Simulated) -> {outcome.out_dir}"
     )
