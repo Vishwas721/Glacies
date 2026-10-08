@@ -68,6 +68,49 @@ class ZoneWalks:
         self.egress = (zones, stops.astype(np.uint32), secs.astype(np.uint32))
 
 
+def _flatten(per_zone: list[tuple[U32, U32]], column: str) -> pl.DataFrame:
+    sizes = [ids.size for ids, _ in per_zone]
+    empty = np.zeros(0, np.uint32)
+    return pl.DataFrame(
+        {
+            "zone": np.repeat(np.arange(len(per_zone), dtype=np.uint32), sizes),
+            column: np.concatenate([ids for ids, _ in per_zone] or [empty]).astype(np.uint32),
+            "seconds": np.concatenate([t for _, t in per_zone] or [empty]).astype(np.uint32),
+        }
+    )
+
+
+def _split(frame: pl.DataFrame, column: str, zones: int) -> list[tuple[U32, U32]]:
+    """Inverse of ``_flatten``: rows are zone-major and keep their order within a zone."""
+    zone = frame["zone"].to_numpy()
+    ids = frame[column].to_numpy().astype(np.uint32)
+    secs = frame["seconds"].to_numpy().astype(np.uint32)
+    bounds = np.searchsorted(zone, np.arange(zones + 1), side="left")
+    return [(ids[bounds[i] : bounds[i + 1]], secs[bounds[i] : bounds[i + 1]]) for i in range(zones)]
+
+
+def save_walks(walks: ZoneWalks, out_dir: Path) -> None:
+    """Store walks so later runs over the same walk network and zones can skip computing them."""
+    staging = out_dir.with_name(f".{out_dir.name}.staging")
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    _flatten(walks.access, "stop").write_parquet(staging / "access.parquet", compression="zstd")
+    _flatten(walks.walk_only, "to_zone").write_parquet(
+        staging / "walk_only.parquet", compression="zstd"
+    )
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    rename_with_retry(staging, out_dir)
+
+
+def load_walks(directory: Path, zones: int) -> ZoneWalks:
+    return ZoneWalks(
+        access=_split(pl.read_parquet(directory / "access.parquet"), "stop", zones),
+        walk_only=_split(pl.read_parquet(directory / "walk_only.parquet"), "to_zone", zones),
+    )
+
+
 def zone_walks(
     router: Router, walk_dir: Path, points: pl.DataFrame, settings: Accessibility
 ) -> ZoneWalks:
