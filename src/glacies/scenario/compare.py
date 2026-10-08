@@ -27,8 +27,10 @@ mpl.use("Agg")  # files only, no display
 
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 from matplotlib.collections import PolyCollection
+from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from pydantic import BaseModel
 
@@ -72,6 +74,7 @@ KEYS = ["zone_idx", "percentile", "threshold_min"]
 GAIN = ("#86b6ef", "#3987e5", "#184f95")
 LOSS = ("#f19d99", "#e34948", "#a3292a")
 NO_CHANGE = "#f0efec"
+ROUTE_LINE = INK_MUTED  # context, not data: neutral ink
 DELTA_BREAKS = (0.0005, 0.002)  # 0.05 and 0.2 percentage points, as fractions
 TOP_ZONES = 10
 
@@ -194,7 +197,15 @@ def compare(
     deltas.write_parquet(staging / "zone_deltas.parquet", compression="zstd")
     wide = _wide(deltas, zones, p, s.thresholds_min, t)
     write_geoparquet(wide, wide["h3_cell"].to_list(), staging / "zone_deltas.geoparquet")
-    _draw_delta_map(staging / "delta_map.png", head, a.label, b.label, p, t, config)
+    _draw_delta_map(
+        staging / "delta_map.png",
+        head,
+        _route_lines(a, b),
+        f"Change in estimated jobs reachable within {t} min",
+        f"{b.label} vs {a.label}: percentage points of the city's estimated jobs, p{p} "
+        f"(Simulated); {up + down:,} zones changed",
+        config,
+    )
     blocks = _report(a, b, metrics, head, direction, config)
     (staging / "comparison.md").write_text(to_markdown(blocks), encoding="utf-8", newline="\n")
 
@@ -431,14 +442,44 @@ def _colour(delta: float) -> str:
     return arm[int(np.searchsorted(DELTA_BREAKS, abs(delta), side="right"))]
 
 
+def _route_lines(a: Side, b: Side) -> list[npt.NDArray[np.float64]]:
+    """Stop-to-stop lines of every route a scenario touches, from the network that has it."""
+    ids = sorted({c.route_id for side in (a, b) if side.run for c in side.run.changes})
+    lines: list[npt.NDArray[np.float64]] = []
+    for side in (a, b):
+        routes = pl.read_parquet(side.transit / "routes.parquet")
+        chosen = routes.filter(pl.col("source_route_id").is_in(ids))["route_idx"]
+        if chosen.is_empty():
+            continue
+        patterns = pl.read_parquet(side.transit / "patterns.parquet").filter(
+            pl.col("route_idx").is_in(chosen.implode())
+        )
+        stops = pl.read_parquet(side.transit / "stops.parquet", columns=["stop_idx", "lat", "lon"])
+        points = (
+            pl.read_parquet(side.transit / "pattern_stops.parquet")
+            .join(patterns.select("pattern_idx"), on="pattern_idx")
+            .join(stops, on="stop_idx")
+            .sort("pattern_idx", "position")
+        )
+        for (_,), part in points.group_by(["pattern_idx"], maintain_order=True):
+            lines.append(part.select("lon", "lat").to_numpy())
+    return lines
+
+
 def _draw_delta_map(
-    path: Path, head: pl.DataFrame, a: str, b: str, p: int, t: int, config: CityConfig
+    path: Path,
+    head: pl.DataFrame,
+    lines: list[npt.NDArray[np.float64]],
+    title: str,
+    subtitle: str,
+    config: CityConfig,
 ) -> None:
-    """Changed zones, zoomed to where they are; unchanged zones as neutral context."""
+    """Changed zones and the changed routes, zoomed to them; unchanged zones as context."""
     changed = head.filter(pl.col("est_jobs_share_delta") != 0)
-    if changed.height:
-        pad = 0.04  # about 4 km of context around the changed zones
-        lon, lat = changed["lon"].to_numpy(), changed["lat"].to_numpy()
+    lon = np.concatenate([changed["lon"].to_numpy(), *(line[:, 0] for line in lines)])
+    lat = np.concatenate([changed["lat"].to_numpy(), *(line[:, 1] for line in lines)])
+    if lon.size:
+        pad = 0.02  # about 2 km of context
         min_lon, max_lon = float(lon.min()) - pad, float(lon.max()) + pad
         min_lat, max_lat = float(lat.min()) - pad, float(lat.max()) + pad
     else:
@@ -447,8 +488,11 @@ def _draw_delta_map(
         pl.col("lon").is_between(min_lon - 0.01, max_lon + 0.01)
         & pl.col("lat").is_between(min_lat - 0.01, max_lat + 0.01)
     )
-    mid_lat = (min_lat + max_lat) / 2
-    fig, ax = plt.subplots(figsize=(8, 7.0), dpi=150)
+    shrink = float(np.cos(np.radians((min_lat + max_lat) / 2)))
+    # Size the figure to the map: 8 in wide, the map takes 73 % of it; 0.8 in for the titles.
+    map_h = 8 * 0.73 * (max_lat - min_lat) / ((max_lon - min_lon) * shrink)
+    height = min(max(map_h + 0.8, 4.0), 11.0)
+    fig, ax = plt.subplots(figsize=(8, height), dpi=150)
     fig.patch.set_facecolor(SURFACE)
     ax.set_facecolor(SURFACE)
     ax.add_collection(
@@ -459,14 +503,16 @@ def _draw_delta_map(
             linewidths=0.3,
         )
     )
+    for line in lines:
+        ax.plot(line[:, 0], line[:, 1], color=ROUTE_LINE, linewidth=1.0)
     ax.set_xlim(min_lon, max_lon)
     ax.set_ylim(min_lat, max_lat)
-    ax.set_aspect(1 / float(np.cos(np.radians(mid_lat))))
+    ax.set_aspect(1 / shrink)
     ax.set_axis_off()
     ax.set_anchor("N")
     pp = [f"{x * 100:g}" for x in DELTA_BREAKS]
     labels = [f"under {pp[0]} pp", f"{pp[0]} - {pp[1]} pp", f"{pp[1]} pp or more"]
-    handles = [
+    handles: list[Patch | Line2D] = [
         Patch(facecolor=c, label=f"gain {lab}")
         for c, lab in zip(reversed(GAIN), reversed(labels), strict=True)
     ]
@@ -474,6 +520,8 @@ def _draw_delta_map(
     handles += [
         Patch(facecolor=c, label=f"loss {lab}") for c, lab in zip(LOSS, labels, strict=True)
     ]
+    if lines:
+        handles.append(Line2D([], [], color=ROUTE_LINE, linewidth=1.0, label="changed routes"))
     ax.legend(
         handles=handles,
         loc="upper left",
@@ -482,24 +530,12 @@ def _draw_delta_map(
         fontsize=8,
         labelcolor=INK,
     )
-    fig.suptitle(
-        f"Change in estimated jobs reachable within {t} min: {b} vs {a}",
-        x=0.02,
-        y=0.982,
-        ha="left",
-        fontsize=12,
-        color=INK,
-    )
+    top = 1 - 0.75 / height
+    fig.text(0.02, 1 - 0.3 / height, title, ha="left", va="center", fontsize=12, color=INK)
     fig.text(
-        0.02,
-        0.935,
-        f"Percentage points of the city's estimated jobs, p{p} (Simulated). "
-        f"{changed.height:,} zones changed.",
-        ha="left",
-        fontsize=8.5,
-        color=INK_MUTED,
+        0.02, 1 - 0.58 / height, subtitle, ha="left", va="center", fontsize=8.5, color=INK_MUTED
     )
-    fig.subplots_adjust(left=0.01, right=0.74, top=0.91, bottom=0.01)
+    fig.subplots_adjust(left=0.01, right=0.74, top=top, bottom=0.01)
     fig.savefig(path, facecolor=SURFACE, metadata={"Software": None})
     plt.close(fig)
 
@@ -515,6 +551,8 @@ def format_value(value: float, unit: str) -> str:
 
 
 def format_delta(value: float, unit: str) -> str:
+    decimals = {"share": 6, "minutes": 2, "index": 4}.get(unit, 0)
+    value = round(value, decimals) + 0.0  # + 0.0 turns -0.0 into 0.0
     if unit == "share":
         return f"{value * 100:+.4f} pp"
     if unit == "minutes":
@@ -575,8 +613,10 @@ def _report(
         Para(
             "PRD §31 also lists average waiting, transfers and crowding. They need per-journey "
             "results and passenger demand, which arrive with assignment (Phase 6); the "
-            "travel-time matrix stores door-to-door times only. The two zone counts compare B "
-            "against A (A's column is 0 by definition)."
+            "travel-time matrix stores door-to-door times only. The mean door-to-door time is "
+            "taken over the pairs connected in both networks, so its A value can differ "
+            "slightly between comparisons. The two zone counts compare B against A (A's column "
+            "is 0 by definition)."
         ),
         Heading(2, "Direction check"),
         Para(direction),
