@@ -227,9 +227,14 @@ def load_walk_graph(walk_dir: Path) -> gr.WalkGraph:
     return walk
 
 
-def load_router(city_dir: Path, routing: Routing, crs_projected: str) -> Router:
-    """Build the router from ``data/processed/<city>``."""
-    transit, walk_dir = city_dir / "transit", city_dir / "walk"
+def load_router(
+    city_dir: Path, routing: Routing, crs_projected: str, *, transit_dir: Path | None = None
+) -> Router:
+    """Build the router from ``data/processed/<city>``.
+
+    ``transit_dir`` swaps in another timetable (a scenario network) over the same walk network.
+    """
+    transit, walk_dir = transit_dir or city_dir / "transit", city_dir / "walk"
     for needed in (transit / "stop_times.parquet", walk_dir / "edges.parquet"):
         if not needed.is_file():
             raise RouterError(f"missing {needed}; run `glacies build-city` first")
