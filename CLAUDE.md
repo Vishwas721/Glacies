@@ -73,7 +73,7 @@ uv run glacies route LAT,LON LAT,LON --at 08:30   # plan journeys (Simulated)
 uv run glacies validate routing | bench routing   # sanity set / performance reports in docs/validation
 uv run glacies scenario check scenarios/bengaluru/<id>.json   # validate, apply, report trip changes
 uv run glacies scenario calibrate         # measure [scenario] detour_factor for added routes
-uv run glacies scenario run scenarios/bengaluru/<id>.json     # apply + tt-matrix + accessibility, cached
+uv run glacies scenario run scenarios/bengaluru/<id>.json     # apply + tt-matrix + accessibility, cached; --full skips reuse
 uv run glacies scenario schema            # regenerate schemas/scenario.schema.json
 
 # Infra

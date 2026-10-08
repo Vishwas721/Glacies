@@ -29,6 +29,14 @@ import polars as pl
 from pydantic import BaseModel
 
 from glacies import __version__
+from glacies.analytics.travel_times import (
+    Reuse,
+    ZoneWalks,
+    load_walks,
+    save_walks,
+    zone_points,
+    zone_walks,
+)
 from glacies.cities import CityConfig
 from glacies.config import Settings
 from glacies.fsutil import rename_with_retry
@@ -44,11 +52,14 @@ from glacies.pipeline import (
     run_matrix,
 )
 from glacies.provenance import DataNature, sha256_file
+from glacies.routing.network import Router, RouterError, load_router
+from glacies.scenario.incremental import affected_origins, baseline_matrix, changed_stops
 from glacies.scenario.mutations import Change, apply, mutations_sha256
 from glacies.scenario.schema import Scenario, load_scenario
 
 KEY_VERSION = 1
 RESULTS_DIR = "results"
+WALKS_DIR = "_walks"  # under RESULTS_DIR: zone walks shared by every scenario of a baseline
 RUN_NAME = "run.json"
 MANIFEST_NAME = "manifest.json"
 # Baseline stages a scenario run reads; their manifests identify the baseline in the key.
@@ -105,7 +116,11 @@ class RunRecord(BaseModel):
     engine: EngineVersions
     seed: int
     config: dict[str, Any]
-    mode: str
+    mode: str  # "incremental" or "full"
+    full_reason: str  # why the run was not incremental; empty when it was
+    origins_recomputed: int
+    origins_total: int
+    walks_reused: bool
     changes: list[ChangeRecord]
     outputs: list[StageInput]
     headline_est_jobs_share: float
@@ -172,13 +187,16 @@ def run_scenario(
     path: Path,
     *,
     force: bool = False,
+    full: bool = False,
     engine: EngineVersions | None = None,
     on_stage: Callable[[str], None] | None = None,
     on_chunk: Callable[[int, int], None] | None = None,
 ) -> RunOutcome:
     """Apply, route and measure a scenario, or return the cached result.
 
-    ``engine`` defaults to the installed versions and the git state; tests pass their own.
+    ``full`` recomputes every origin instead of reusing the baseline matrix (and implies
+    ``force``). ``engine`` defaults to the installed versions and the git state; tests pass
+    their own.
     """
 
     def stage(message: str) -> None:
@@ -191,7 +209,7 @@ def run_scenario(
     engine = engine or engine_versions()
     key = cache_key(scenario, config, baseline, engine, settings.random_seed)
     out_dir = result_dir(base, key)
-    if (out_dir / RUN_NAME).is_file() and not force and not engine.git_dirty:
+    if (out_dir / RUN_NAME).is_file() and not (force or full) and not engine.git_dirty:
         record = RunRecord.model_validate_json((out_dir / RUN_NAME).read_text(encoding="utf-8"))
         return RunOutcome(record=record, out_dir=out_dir, cached=True)
 
@@ -213,13 +231,21 @@ def run_scenario(
         base_manifest=base / "transit" / MANIFEST_NAME,
         changes=changes,
     )
-    stage("travel-time matrix")
+    plan = _plan_matrix(base, config, baseline_tables, applied.tables, full=full, engine=engine)
+    walks_note = ", walks reused" if plan.walks_reused else ""
+    stage(
+        f"travel-time matrix: {len(plan.reuse.origins):,} of {plan.total:,} origins{walks_note}"
+        if plan.reuse
+        else f"travel-time matrix: all origins ({plan.reason})"
+    )
     matrix = run_matrix(
         settings,
         config,
         scenario=scenario.scenario_id,
         transit_dir=staging / "transit",
         out_dir=staging / "tt_matrix",
+        walks=plan.walks,
+        reuse=plan.reuse,
         on_chunk=on_chunk,
     )
     stage("accessibility")
@@ -245,7 +271,11 @@ def run_scenario(
         engine=engine,
         seed=settings.random_seed,
         config=config.model_dump(mode="json"),
-        mode="full",
+        mode="incremental" if plan.reuse else "full",
+        full_reason=plan.reason,
+        origins_recomputed=len(plan.reuse.origins) if plan.reuse else matrix.manifest.zones,
+        origins_total=matrix.manifest.zones,
+        walks_reused=plan.walks_reused,
         changes=changes,
         outputs=[
             StageInput(stage=s, manifest_sha256=sha256_file(staging / s / MANIFEST_NAME))
@@ -264,6 +294,72 @@ def run_scenario(
         shutil.rmtree(out_dir)
     rename_with_retry(staging, out_dir)
     return RunOutcome(record=record, out_dir=out_dir, cached=False)
+
+
+@dataclass(frozen=True)
+class _MatrixPlan:
+    reuse: Reuse | None
+    walks: ZoneWalks | None
+    reason: str
+    total: int
+    walks_reused: bool = False
+
+
+def _plan_matrix(
+    base: Path,
+    config: CityConfig,
+    baseline: dict[str, pl.DataFrame],
+    scenario: dict[str, pl.DataFrame],
+    *,
+    full: bool,
+    engine: EngineVersions,
+) -> _MatrixPlan:
+    """Recompute only the origins the changed trips can affect, when that is safe."""
+    zones = pl.read_parquet(base / "zones" / "zones.parquet")
+    if full:
+        return _MatrixPlan(None, None, "full recompute requested", zones.height)
+    baseline_dir, reason = baseline_matrix(base, config)
+    if baseline_dir is None:
+        return _MatrixPlan(None, None, reason, zones.height)
+    stops = changed_stops(baseline, scenario)
+    if stops is None:
+        return _MatrixPlan(None, None, "the scenario changes stops", zones.height)
+    try:
+        router = load_router(base, config.routing, config.city.crs_projected)
+    except RouterError as exc:
+        raise PipelineError(str(exc)) from exc
+    walks, reused = _walks(base, config, router, zones, engine)
+    s = config.accessibility
+    origins = affected_origins(router, walks, stops, s.departures(), s.max_travel_time_min * 60)
+    return _MatrixPlan(Reuse(baseline_dir, origins), walks, "", zones.height, reused)
+
+
+def walks_key(base: Path, config: CityConfig, engine: EngineVersions) -> str:
+    """Zone walks depend on the walk network, the zones, the walking settings and the code."""
+    material = {
+        "key_version": KEY_VERSION,
+        "walk": sha256_file(base / "walk" / MANIFEST_NAME),
+        "zones": sha256_file(base / "zones" / MANIFEST_NAME),
+        "routing": config.routing.model_dump(mode="json"),
+        "accessibility": config.accessibility.model_dump(mode="json"),
+        "engine": engine.model_dump(),
+    }
+    text = json.dumps(material, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _walks(
+    base: Path, config: CityConfig, router: Router, zones: pl.DataFrame, engine: EngineVersions
+) -> tuple[ZoneWalks, bool]:
+    """Cached zone walks, or freshly computed ones (stored for next time on a clean tree)."""
+    directory = base / RESULTS_DIR / WALKS_DIR / walks_key(base, config, engine)
+    complete = all((directory / f).is_file() for f in ("access.parquet", "walk_only.parquet"))
+    if complete and not engine.git_dirty:
+        return load_walks(directory, zones.height), True
+    walks = zone_walks(router, base / "walk", zone_points(zones), config.accessibility)
+    if not engine.git_dirty:
+        save_walks(walks, directory)
+    return walks, False
 
 
 def _change_record(change: Change) -> ChangeRecord:

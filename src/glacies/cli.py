@@ -585,9 +585,16 @@ def scenario_calibrate(
 def scenario_run(
     path: Annotated[Path, typer.Argument(help="Scenario JSON file.")],
     force: Annotated[bool, typer.Option("--force", help="Recompute even if cached.")] = False,
+    full: Annotated[
+        bool, typer.Option("--full", help="Recompute every origin (implies --force).")
+    ] = False,
     city: CityOption = None,
 ) -> None:
-    """Apply a scenario, then rebuild travel times and accessibility on it (cached)."""
+    """Apply a scenario, then rebuild travel times and accessibility on it (cached).
+
+    Only origins that can reach a changed trip are recomputed; the rest of the matrix is
+    copied from the baseline, which gives the same result as a full recompute.
+    """
     settings, config = _load(city)
     started = time.perf_counter()
 
@@ -600,7 +607,7 @@ def scenario_run(
 
     try:
         outcome = run_scenario(
-            settings, config, path, force=force, on_stage=stage, on_chunk=progress
+            settings, config, path, force=force, full=full, on_stage=stage, on_chunk=progress
         )
     except (ScenarioError, PipelineError) as exc:
         _fail(str(exc))
