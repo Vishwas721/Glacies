@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -528,19 +528,25 @@ class StageDone:
     summary: str
 
 
-def git_state(repo: Path) -> tuple[str | None, bool | None]:
-    """Commit and dirty flag of the source tree, or Nones outside a git checkout."""
+def git_state(repo: Path, paths: Sequence[str] = ()) -> tuple[str | None, bool | None]:
+    """Commit and dirty flag of the source tree, or Nones outside a git checkout.
+
+    With ``paths``, the commit is the last one that changed them and only they count as
+    dirty; merge commits that leave them unchanged are skipped by git's history simplification.
+    """
+    scope = ["--", *paths] if paths else []
+    head = ["log", "-1", "--format=%H", *scope] if paths else ["rev-parse", "HEAD"]
     try:
         commit = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+            ["git", *head], cwd=repo, capture_output=True, text=True, check=True
         ).stdout.strip()
         status = subprocess.run(
-            ["git", "status", "--porcelain", "--untracked-files=no"],
+            ["git", "status", "--porcelain", "--untracked-files=no", *scope],
             cwd=repo, capture_output=True, text=True, check=True,
         ).stdout  # fmt: skip
     except (OSError, subprocess.CalledProcessError):
         return None, None
-    return commit, bool(status.strip())
+    return commit or None, bool(status.strip())
 
 
 def clean_city(settings: Settings, config: CityConfig) -> Path:
