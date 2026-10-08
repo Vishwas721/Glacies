@@ -350,28 +350,34 @@ def run_matrix(
     config: CityConfig,
     *,
     scenario: str = "baseline",
+    transit_dir: Path | None = None,
+    out_dir: Path | None = None,
     on_chunk: Callable[[int, int], None] | None = None,
 ) -> MatrixResult:
-    """Zone-to-zone travel-time percentiles over the departure window (Phase 3 M2)."""
+    """Zone-to-zone travel-time percentiles over the departure window (Phase 3 M2).
+
+    ``transit_dir`` and ``out_dir`` default to the city's own network and
+    ``tt_matrix/<scenario>``; scenario runs point them at their result directory.
+    """
     base = city_dir(settings, config)
+    transit = transit_dir or base / "transit"
+    stage_dirs = {"transit": transit, "walk": base / "walk", "zones": base / "zones"}
     zones_path = base / "zones" / "zones.parquet"
     if not zones_path.is_file():
         raise PipelineError(f"missing {zones_path}; run `glacies build zones` first")
     try:
-        router = load_router(base, config.routing, config.city.crs_projected)
+        router = load_router(base, config.routing, config.city.crs_projected, transit_dir=transit)
         return build_matrix(
             router,
             pl.read_parquet(zones_path),
             base / "walk",
             config.accessibility,
-            base / "tt_matrix" / scenario,
+            out_dir or base / "tt_matrix" / scenario,
             city=config.city.id,
             scenario=scenario,
             inputs=[
-                MatrixInput(
-                    stage=stage, manifest_sha256=sha256_file(base / stage / "manifest.json")
-                )
-                for stage in ("transit", "walk", "zones")
+                MatrixInput(stage=stage, manifest_sha256=sha256_file(directory / "manifest.json"))
+                for stage, directory in stage_dirs.items()
             ],
             on_chunk=on_chunk,
         )
@@ -380,7 +386,12 @@ def run_matrix(
 
 
 def run_accessibility(
-    settings: Settings, config: CityConfig, *, scenario: str = "baseline"
+    settings: Settings,
+    config: CityConfig,
+    *,
+    scenario: str = "baseline",
+    tt_dir: Path | None = None,
+    out_dir: Path | None = None,
 ) -> tuple[AccessibilityManifest, Path]:
     """Cumulative accessibility per zone and city summaries (Phase 3 M3)."""
     if config.attraction is None:
@@ -389,7 +400,7 @@ def run_accessibility(
     stages = {
         "zones": base / "zones",
         "attraction": base / "attraction",
-        "tt_matrix": base / "tt_matrix" / scenario,
+        "tt_matrix": tt_dir or base / "tt_matrix" / scenario,
     }
     commands = {"zones": "zones", "attraction": "attraction", "tt_matrix": "tt-matrix"}
     for stage, directory in stages.items():
@@ -413,7 +424,7 @@ def run_accessibility(
         )
     except (AccessibilityError, AttractionError) as exc:
         raise PipelineError(str(exc)) from exc
-    out_dir = base / "accessibility" / scenario
+    out_dir = out_dir or base / "accessibility" / scenario
     manifest = write_accessibility(
         result,
         out_dir,
@@ -511,7 +522,8 @@ class StageDone:
     summary: str
 
 
-def _git_state(repo: Path) -> tuple[str | None, bool | None]:
+def git_state(repo: Path) -> tuple[str | None, bool | None]:
+    """Commit and dirty flag of the source tree, or Nones outside a git checkout."""
     try:
         commit = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
@@ -605,7 +617,7 @@ def build_city(
         *zones.inputs,
     ]
     inputs = {(r.dataset, r.snapshot): r for r in refs}  # OSM is used by walk and zones
-    commit, dirty = _git_state(Path(__file__).resolve().parents[2])
+    commit, dirty = git_state(Path(__file__).resolve().parents[2])
     build = CityBuild(
         city=config.city.id,
         builder_version=__version__,
