@@ -74,6 +74,14 @@ headline_percentile = 50
 # Zones within 5 km of the bbox edge are flagged (destinations outside the study area are missing).
 edge_buffer_m = 5000.0
 
+[scenario]
+# Assumed, Phase 4 M2 (2026-10-08). Timetables of routes added by scenarios: running time is
+# straight-line distance x detour_factor at the route's speed_kmh, plus dwell_s at each stop.
+# detour_factor = mean walk/straight ratio of 1,997 consecutive bus-stop pairs (median 1.06);
+# see docs/validation/scenario-detour.md (`glacies scenario calibrate`).
+detour_factor = 1.15
+dwell_s = 20
+
 [attraction]
 # Employment proxy, Phase 3 handoff (2026-10-07). Its output is Estimated ("estimated jobs");
 # every value below is Assumed. Each part is a share of the city total before weighting.
