@@ -14,8 +14,10 @@ from glacies.analytics.travel_times import load_walks, save_walks, zone_points, 
 from glacies.cities import CityConfig, load_city
 from glacies.cli import app
 from glacies.config import Settings, get_settings
+from glacies.pipeline import PipelineError
 from glacies.provenance import sha256_file
 from glacies.routing.network import load_router, parse_clock
+from glacies.scenario.compare import Comparison, compare
 from glacies.scenario.incremental import affected_origins
 from glacies.scenario.runner import EngineVersions, RunOutcome, run_scenario
 from tests.gtfs_edit import TOY_FEED
@@ -291,3 +293,72 @@ def test_walks_survive_a_round_trip(city: Path, tmp_path: Path) -> None:
         for (a, b), (c, d) in zip(got, want, strict=True):
             assert a.tolist() == c.tolist()
             assert b.tolist() == d.tolist()
+
+
+# --- comparison (M5) ---------------------------------------------------------------------------
+
+
+def comparison(a: str, b: str) -> Comparison:
+    settings = get_settings()
+    return compare(settings, load_city(settings.city_config_path), a, b, engine=CLEAN)
+
+
+def test_compare_scenario_with_baseline(city: Path, tmp_path: Path) -> None:
+    path = write_scenario(tmp_path, "rm", REMOVE, expected_change="Losses near A, B and C.")
+    record = run(path).record
+    result = comparison("baseline", str(path))
+
+    assert result.out_dir == city / "comparisons" / "baseline__vs__rm"
+    metrics = {r["metric"]: r for r in result.metrics.iter_rows(named=True)}
+    headline = next(m for m in metrics if m.startswith("Estimated jobs reachable within 45 min"))
+    baseline = json.loads(
+        (city / "accessibility" / "baseline" / "manifest.json").read_text(encoding="utf-8")
+    )
+    # Manifests round the headline to 6 decimals; the summary table keeps full precision.
+    assert metrics[headline]["a"] == pytest.approx(baseline["headline_est_jobs_share"], abs=5e-7)
+    assert metrics[headline]["b"] == pytest.approx(record.headline_est_jobs_share, abs=5e-7)
+    trips = metrics["Trips in the service-day timetable"]
+    assert trips["delta"] == -2  # R1's two trips
+    m = result.manifest
+    assert m.zones_up == 0
+    assert m.direction_check.startswith("passed (trips only removed")
+
+    deltas = pl.read_parquet(result.out_dir / "zone_deltas.parquet")
+    # R1 runs only at 08:00 and 08:10, so the median headline barely sees it; other
+    # percentiles and thresholds do.
+    assert (deltas["est_jobs_share_delta"] < 0).any()
+    assert (
+        deltas["est_jobs_share_b"] - deltas["est_jobs_share_a"] == deltas["est_jobs_share_delta"]
+    ).all()
+    geo = pl.read_parquet(result.out_dir / "zone_deltas.geoparquet")
+    assert {"h3_cell", "geometry", "jobs_45min_delta"} <= set(geo.columns)
+    report = (result.out_dir / "comparison.md").read_text(encoding="utf-8")
+    assert "Losses near A, B and C." in report
+    assert "Phase 6" in report
+    assert (result.out_dir / "delta_map.png").stat().st_size > 0
+
+
+def test_compare_two_scenarios_skips_the_direction_check(city: Path, tmp_path: Path) -> None:
+    halve, rm = write_scenario(tmp_path, "halve", HALVE), write_scenario(tmp_path, "rm", REMOVE)
+    run(halve)
+    run(rm)
+    result = comparison(str(halve), str(rm))
+    assert result.manifest.direction_check.startswith("not checked")
+    assert result.out_dir.name == "halve__vs__rm"
+
+
+def test_compare_needs_runs_and_two_sides(city: Path, tmp_path: Path) -> None:
+    path = write_scenario(tmp_path, "halve", HALVE)
+    with pytest.raises(PipelineError, match="run `glacies scenario run"):
+        comparison("baseline", str(path))
+    with pytest.raises(PipelineError, match="two different networks"):
+        comparison("baseline", "baseline")
+
+
+def test_comparisons_are_reproducible(city: Path, tmp_path: Path) -> None:
+    path = write_scenario(tmp_path, "halve", HALVE)
+    run(path)
+    first = comparison("baseline", str(path))
+    files = {p.name: p.read_bytes() for p in sorted(first.out_dir.iterdir())}
+    second = comparison("baseline", str(path))
+    assert {p.name: p.read_bytes() for p in sorted(second.out_dir.iterdir())} == files
