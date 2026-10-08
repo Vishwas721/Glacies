@@ -32,6 +32,23 @@ train either way), but it matters elsewhere: from Yeshwantpur at 08:40, the Gree
 RV Road at 09:15 and the 4-minute platform walk catches the 09:22 Yellow train, which an extra
 4-minute entry would miss.
 
+## The reference times are bus-only (2026-10-07)
+
+The user confirmed that the sanity-set expected times were researched with BMTC bus timings
+only, ignoring the metro. Re-running the 20 pairs **bus-only** (metro entry made prohibitively
+long) also gives **13 of 20**, but a different 13:
+
+| # | Pair | Expected | With metro | Bus only |
+|---:|---|---:|---:|---:|
+| 16 | KR Puram → Majestic | 60 | 45 ❌ | 50 ✅ |
+| 11 | Yeshwanthpur → Electronic City | 140 | 74 ❌ | 84 ❌ |
+| 13 | Kengeri → Indiranagar | 95 | 65 ❌ | 74 ❌ |
+| 12 | Whitefield → Silk Board | 65 | 75 ✅ | 85 ❌ |
+
+Only #16 is explained by the missing metro. #11 and #13 are still 20–56 min faster than the
+reference even by bus, the same traffic-free-schedule effect as #1 and #8; #5 and #7 are slower
+with or without the metro. Read the expected times as bus-only, traffic-affected estimates.
+
 ## 2026-10-06 run: 11 of 20 within ±20 % / ±5 min (target 90 % — not met)
 
 Every failing journey was inspected leg by leg. **All of them are feasible itineraries on the
