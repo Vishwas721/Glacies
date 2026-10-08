@@ -222,7 +222,7 @@ def build_matrix(
             part = matrix_chunk(router, walks, origins, departures, settings)
         else:
             part = _reused_part(router, walks, origins, departures, settings, reuse, path.name)
-        part.write_parquet(path, compression="zstd", statistics=True)
+        write_part(part, path)
         outputs[path.name] = sha256_file(path)
         rows += part.height
         counts = (
@@ -266,6 +266,13 @@ def build_matrix(
     out_dir.parent.mkdir(parents=True, exist_ok=True)
     rename_with_retry(staging, out_dir)
     return MatrixResult(manifest=manifest, out_dir=out_dir)
+
+
+def write_part(part: pl.DataFrame, path: Path) -> None:
+    """Write one matrix part. Rechunking first makes the bytes depend only on the rows: a
+    frame stitched from copied and recomputed rows would otherwise get one row group per chunk.
+    """
+    part.rechunk().write_parquet(path, compression="zstd", statistics=True)
 
 
 def _reused_part(

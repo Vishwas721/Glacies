@@ -6,6 +6,7 @@ import numpy.typing as npt
 import polars as pl
 import pytest
 
+from glacies.analytics.travel_times import write_part
 from glacies.cities import ScenarioDefaults
 from glacies.model.transit.schema import TABLES
 from glacies.scenario.incremental import changed_stops
@@ -61,3 +62,21 @@ def test_retimed_trips_count_as_changed(baseline: dict[str, pl.DataFrame]) -> No
 def test_changed_stops_refuse_a_different_stop_table(baseline: dict[str, pl.DataFrame]) -> None:
     moved = baseline | {"stops": baseline["stops"].with_columns(pl.col("lat") + 0.001)}
     assert changed_stops(baseline, moved) is None
+
+
+def test_matrix_parts_are_written_independently_of_chunking(tmp_path: Path) -> None:
+    # 150k rows fit one row group, but Polars keeps a chunk of ~100k rows as its own: a
+    # Bengaluru part is this size, a toy part far smaller, so toy end-to-end runs cannot
+    # catch it.
+    n = 150_000
+    rows = pl.DataFrame(
+        {
+            "origin_zone": pl.arange(0, n, eager=True) // 50,
+            "dest_zone": pl.arange(0, n, eager=True) % 50,
+        }
+    ).cast(pl.UInt32)
+    stitched = pl.concat([rows.head(100_000), rows.tail(n - 100_000)], rechunk=False)
+    assert stitched.n_chunks() == 2
+    write_part(rows, tmp_path / "one.parquet")
+    write_part(stitched, tmp_path / "two.parquet")
+    assert (tmp_path / "one.parquet").read_bytes() == (tmp_path / "two.parquet").read_bytes()
