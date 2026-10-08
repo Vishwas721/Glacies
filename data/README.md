@@ -10,7 +10,9 @@ data/
 │   └── manifest.json                    DatasetManifest: source, licence, per-file sha256
 ├── interim/<city>/                      clipped / reprojected / validated intermediates
 └── processed/<city>/                    canonical datasets consumed by the engine
-    └── results/<simulation-id>/         Parquet outputs of simulations
+    └── results/<cache-key>/             one scenario run: transit/, tt_matrix/, accessibility/,
+                                         run.json (`glacies scenario run`; a cache, deleted by
+                                         `build-city --clean` like everything else here)
 ```
 
 ## Rebuilding everything
