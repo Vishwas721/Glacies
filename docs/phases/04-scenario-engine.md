@@ -79,11 +79,16 @@ Implement milestone M<N> only. Rules:
 
 ## 9. Definition of done
 
-- [ ] The three hand-written scenarios run end-to-end and produce comparison reports.
-- [ ] Re-running a scenario hits the cache; changing one mutation invalidates it.
-- [ ] The incremental result equals the full recompute on test scenarios.
-- [ ] The direction of change matches your expectations, or the difference is explained.
-- [ ] The same scenario + seed produces identical outputs (byte-level on Parquet).
+- [x] The three hand-written scenarios run end-to-end and produce comparison reports
+      (`docs/validation/scenario-comparison.md`).
+- [x] Re-running a scenario hits the cache; changing one mutation invalidates it
+      (`tests/test_scenario_runner.py`; Bengaluru cache hit in 2.3 s).
+- [x] The incremental result equals the full recompute on test scenarios (five toy shapes and
+      all three Bengaluru scenarios, byte for byte; ADR 0010).
+- [x] The direction of change matches your expectations, or the difference is explained
+      (ORR and 304-K match; the feeder gains only near Kundalahalli, explained in the
+      validation doc; the automatic direction check passes for all three).
+- [x] The same scenario + seed produces identical outputs (byte-level on Parquet).
 
 ## 10. Risks & pitfalls
 
