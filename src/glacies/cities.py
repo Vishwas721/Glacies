@@ -266,6 +266,18 @@ class Accessibility(_Strict):
         return list(range(start, end, self.departure_step_s))
 
 
+class ScenarioDefaults(_Strict):
+    """Timetables of routes added by scenarios (Phase 4). All Assumed."""
+
+    detour_factor: float = Field(
+        default=1.15,
+        ge=1,
+        le=3,
+        description="Road distance over straight-line distance between consecutive stops.",
+    )
+    dwell_s: int = Field(default=20, ge=0, description="Stop dwell when a route sets none.")
+
+
 class CityConfig(_Strict):
     city: CityInfo
     zoning: Zoning
@@ -274,6 +286,7 @@ class CityConfig(_Strict):
     routing: Routing = Field(default_factory=Routing)
     attraction: Attraction | None = None
     accessibility: Accessibility = Field(default_factory=Accessibility)
+    scenario: ScenarioDefaults = Field(default_factory=ScenarioDefaults)
     sources: dict[str, Source]
 
     @model_validator(mode="after")

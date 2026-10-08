@@ -71,7 +71,8 @@ uv run glacies accessibility bengaluru     # report: maps, Markdown/HTML, GeoPar
 uv run glacies load postgis               # copy zones/stops/pattern lines to PostGIS for QGIS
 uv run glacies route LAT,LON LAT,LON --at 08:30   # plan journeys (Simulated)
 uv run glacies validate routing | bench routing   # sanity set / performance reports in docs/validation
-uv run glacies scenario check scenarios/bengaluru/<id>.json   # validate ids against the baseline
+uv run glacies scenario check scenarios/bengaluru/<id>.json   # validate, apply, report trip changes
+uv run glacies scenario calibrate         # measure [scenario] detour_factor for added routes
 uv run glacies scenario schema            # regenerate schemas/scenario.schema.json
 
 # Infra

@@ -16,12 +16,15 @@ from glacies import pipeline
 from glacies.cities import CityConfig, CityConfigError, load_city
 from glacies.config import Settings, get_settings
 from glacies.ingest import archive, download
+from glacies.model.transit.schema import TABLES
 from glacies.model.zones.build import population_check
 from glacies.pipeline import PipelineError, StageDone
 from glacies.routing import bench
 from glacies.routing.network import RouterError, clock, load_router, parse_clock
 from glacies.routing.validate import read_pairs, report, run_pairs
-from glacies.scenario.schema import ScenarioError, json_schema_text, load_scenario, resolve
+from glacies.scenario.calibrate import detour_ratios, markdown
+from glacies.scenario.mutations import apply
+from glacies.scenario.schema import ScenarioError, json_schema_text, load_scenario
 from glacies.validate.gtfs.report import Severity
 
 app = typer.Typer(help="Glacies — urban transit digital twin.", no_args_is_help=True)
@@ -531,19 +534,47 @@ def scenario_check(
     path: Annotated[Path, typer.Argument(help="Scenario JSON file.")],
     city: CityOption = None,
 ) -> None:
-    """Validate a scenario file and check its route and stop ids against the baseline network."""
+    """Validate a scenario, apply it to the baseline network and report what each mutation does."""
     settings, config = _load(city)
     try:
         scenario = load_scenario(path)
         _, transit_dir = pipeline.transit_manifest(settings, config)
-        tables = {
-            name: pl.read_parquet(transit_dir / f"{name}.parquet")
-            for name in ("feeds", "routes", "stops", "trips")
-        }
-        resolved = resolve(scenario, tables)
+        tables = {name: pl.read_parquet(transit_dir / f"{name}.parquet") for name in TABLES}
+        applied = apply(tables, scenario, config.scenario)
     except (ScenarioError, PipelineError) as exc:
         _fail(str(exc))
+    for change in applied.changes:
+        typer.echo(
+            f"  {change.mutation}. {change.type} {change.route_id}: "
+            f"-{change.trips_removed:,} / +{change.trips_added:,} trips"
+        )
+    before, after = tables["trips"].height, applied.tables["trips"].height
+    typer.echo(f"{scenario.scenario_id}: OK; trips {before:,} -> {after:,}")
+
+
+@scenario_app.command("calibrate")
+def scenario_calibrate(
+    samples: Annotated[int, typer.Option(help="Consecutive-stop pairs to measure.")] = 2000,
+    seed: Annotated[int, typer.Option(help="Seed for the sample.")] = 2026,
+    out: Annotated[Path, typer.Option(help="Where to write the Markdown report.")] = Path(
+        "docs/validation/scenario-detour.md"
+    ),
+    city: CityOption = None,
+) -> None:
+    """Measure road over straight-line distance between consecutive bus stops (detour factor)."""
+    settings, config = _load(city)
+    city_path = pipeline.city_dir(settings, config)
+    try:
+        result = detour_ratios(city_path, samples=samples, seed=seed)
+    except (OSError, pl.exceptions.PolarsError) as exc:
+        _fail(str(exc))
+    if result.ratios.size == 0:
+        _fail("no consecutive stop pairs could be measured")
+    header = f"City `{config.city.id}`; current `[scenario] detour_factor` = "
+    header += f"{config.scenario.detour_factor}."
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(markdown(result, header), encoding="utf-8", newline="\n")
     typer.echo(
-        f"{scenario.scenario_id}: {len(scenario.mutations)} mutation(s) OK; "
-        f"{len(resolved.route_idx)} baseline route(s), {len(resolved.stop_idx)} stop(s) referenced"
+        f"{result.ratios.size:,} pairs: median {result.percentile(50):.2f}, "
+        f"mean {result.mean:.2f} -> {out}"
     )

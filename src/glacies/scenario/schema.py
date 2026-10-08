@@ -32,7 +32,8 @@ class ScenarioError(Exception):
     """A scenario file that cannot be read, or that does not fit the baseline network."""
 
 
-def _seconds(text: str) -> int:
+def parse_seconds(text: str) -> int:
+    """``HH:MM[:SS]`` to seconds, as a ``ValueError`` for Pydantic validators."""
     try:
         return parse_clock(text)
     except RouterError as exc:
@@ -40,7 +41,7 @@ def _seconds(text: str) -> int:
 
 
 def _check_window(window: tuple[str, str]) -> tuple[str, str]:
-    if _seconds(window[0]) >= _seconds(window[1]):
+    if parse_seconds(window[0]) >= parse_seconds(window[1]):
         raise ValueError(f"window {window[0]}-{window[1]} must end after it starts")
     return window
 
