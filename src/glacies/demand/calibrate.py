@@ -13,7 +13,9 @@ counts do not enter the training objective even through a denominator.
 
 The search runs Furness at a log-spaced grid of β (warm-starting each from the previous one),
 then a golden-section refinement in log β around the best grid point, all at a coarser Furness
-tolerance; the chosen β is re-run at the configured tolerance for the reported fit. Fit
+tolerance; the chosen β is re-run at the configured tolerance for the reported fit. With
+``[demand.gateways]``, gateway trips are linear in their factor, so at every β the factor
+that best fits the training shares is found from the station counts alone (no extra Furness). Fit
 statistics: share RMSE, R² of shares, GEH of counts after scaling the simulated set total to
 the observed one (GEH is meant for hourly counts; these are two-hour means), and the level
 ratio. Station-pair flows are a secondary check on the dates that have them.
@@ -36,7 +38,7 @@ from pydantic import BaseModel
 from glacies import __version__
 from glacies.cities import DemandCalibration, DemandConfig
 from glacies.demand.metro import station_flows
-from glacies.demand.od import DemandBuild, Prepared, balance
+from glacies.demand.od import GATEWAY, DemandModel, ModelBuild, PartSummary, build_model
 from glacies.demand.production import DemandError
 from glacies.fsutil import rename_with_retry
 from glacies.provenance import DataNature, sha256_file
@@ -123,8 +125,9 @@ class Targets:
     stations: pl.DataFrame
 
 
-def station_table(build: DemandBuild, targets: Targets) -> tuple[pl.DataFrame, pl.DataFrame]:
-    flows = station_flows(build.od, targets.reach, targets.paths, targets.stations)
+def station_table(od: pl.DataFrame, targets: Targets) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Observed and simulated entries per station of ``od``, and its station-pair flows."""
+    flows = station_flows(od, targets.reach, targets.paths, targets.stations)
     stations = (
         targets.sets.join(targets.entries, on="station_idx", how="left")
         .join(flows.stations.select("station_idx", "entries"), on="station_idx", how="left")
@@ -154,14 +157,16 @@ class SweepPoint(BaseModel):
     mean_km: float
     mean_cost_min: float
     iterations: int
+    gateway_factor: float = 0.0
 
 
 @dataclass
 class Calibration:
     beta_per_min: float
+    gateway_factor: float
     sweep: list[SweepPoint]
     at_boundary: bool
-    build: DemandBuild
+    build: ModelBuild
     stations: pl.DataFrame
     pairs: pl.DataFrame  # entry_station, exit_station, set, observed, simulated
     fits: dict[str, Fit]  # per station set, and "pairs_<set>"
@@ -229,33 +234,107 @@ def search_beta(
     return min(tried)[1], best in (0, grid.size - 1)
 
 
+def _share_rmse(simulated: F64, observed: F64) -> float:
+    total = simulated.sum()
+    if total <= 0:
+        return math.inf
+    return float(np.sqrt(np.mean((simulated / total - observed / observed.sum()) ** 2)))
+
+
+def best_factor(base: F64, extra: F64, observed: F64, factor_max: float) -> float:
+    """Factor f in [0, factor_max] minimising the share RMSE of ``base + f x extra``.
+
+    A 21-point grid, then golden-section steps between the best point's neighbours.
+    """
+    grid = np.linspace(0.0, factor_max, 21)
+    scores = [_share_rmse(base + f * extra, observed) for f in grid]
+    best = int(np.argmin(scores))
+    low, high = grid[max(best - 1, 0)], grid[min(best + 1, grid.size - 1)]
+    tried = [(scores[best], float(grid[best]))]
+    for _ in range(30):
+        x1 = high - GOLDEN * (high - low)
+        x2 = low + GOLDEN * (high - low)
+        f1 = _share_rmse(base + x1 * extra, observed)
+        f2 = _share_rmse(base + x2 * extra, observed)
+        tried += [(f1, float(x1)), (f2, float(x2))]
+        if f1 <= f2:
+            high = x2
+        else:
+            low = x1
+    return min(tried)[1]
+
+
+def _fitted_build(
+    model: DemandModel,
+    demand: DemandConfig,
+    targets: Targets,
+    beta: float,
+    *,
+    tolerance: float | None,
+    warm: dict[str, F64],
+) -> ModelBuild:
+    """The build at ``beta`` with the gateway factor that best fits the training stations."""
+    gateways = demand.gateways
+    if model.gateways is None or gateways is None:
+        return build_model(model, beta, tolerance=tolerance, warm=warm)
+    unit = build_model(model, beta, gateway_factor=1.0, tolerance=tolerance, warm=warm)
+    parts = unit.parts()
+    base_od = pl.concat([od.select(_OD_COLUMNS) for name, od in parts if name != GATEWAY])
+    base, _ = station_table(base_od, targets)
+    extra, _ = station_table(unit.gateway_od if unit.gateway_od is not None else base_od, targets)
+    training = base["set"] == TRAINING
+    factor = best_factor(
+        base.filter(training)["simulated"].to_numpy(),
+        extra.filter(training)["simulated"].to_numpy(),
+        base.filter(training)["observed"].to_numpy(),
+        gateways.factor_max,
+    )
+    gateway_od = (
+        unit.gateway_od.with_columns(pl.col("trips") * factor)
+        if unit.gateway_od is not None
+        else None
+    )
+    return ModelBuild(
+        main_name=unit.main_name,
+        main=unit.main,
+        purposes=unit.purposes,
+        gateway_od=gateway_od,
+        gateway_factor=factor,
+        beta_per_min=beta,
+    )
+
+
+_OD_COLUMNS = ["origin_zone", "dest_zone", "cost_s", "trips", "distance_km"]
+
+
 def calibrate(
-    prepared: Prepared,
+    model: DemandModel,
     demand: DemandConfig,
     targets: Targets,
     *,
     on_point: Callable[[SweepPoint], None] | None = None,
 ) -> Calibration:
-    """Search β on the training stations; see module doc."""
+    """Search β (and the gateway factor) on the training stations; see module doc."""
     cal = demand.calibration
     sweep: list[SweepPoint] = []
     warm: dict[str, F64] = {}
 
     def evaluate(beta: float, stage: str) -> float:
-        build, b = balance(
-            prepared, demand, beta, tolerance=cal.sweep_tolerance, initial_b=warm.get("b")
+        build = _fitted_build(
+            model, demand, targets, beta, tolerance=cal.sweep_tolerance, warm=warm
         )
-        warm["b"] = b
-        stations, _ = station_table(build, targets)
+        stations, _ = station_table(build.od, targets)
         training = set_fit(stations, TRAINING)
+        everything = build.summaries()[-1]
         point = SweepPoint(
             beta_per_min=beta,
             stage=stage,
             rmse_share_training=training.rmse_share,
             r2_share_training=training.r2_share,
-            mean_km=build.trip_length.mean_km,
-            mean_cost_min=build.trip_length.mean_cost_min,
-            iterations=build.convergence.iterations,
+            mean_km=everything.mean_km,
+            mean_cost_min=everything.mean_cost_min,
+            iterations=build.main.convergence.iterations,
+            gateway_factor=build.gateway_factor,
         )
         sweep.append(point)
         if on_point is not None:
@@ -265,16 +344,21 @@ def calibrate(
     chosen, at_boundary = search_beta(
         evaluate, cal.beta_min, cal.beta_max, cal.grid_points, cal.refine_steps
     )
-    build, _ = balance(prepared, demand, chosen)
-    stations, simulated_pairs = station_table(build, targets)
+    build = _fitted_build(model, demand, targets, chosen, tolerance=None, warm={})
+    stations, simulated_pairs = station_table(build.od, targets)
     pairs = _pair_table(simulated_pairs, targets)
-    fits = {which: set_fit(stations, which) for which in (TRAINING, HELD_OUT, EXCLUDED)}
+    fits = {
+        which: set_fit(stations, which)
+        for which in (TRAINING, HELD_OUT, EXCLUDED)
+        if stations.filter(pl.col("set") == which)["observed"].sum() > 0
+    }
     for which in (TRAINING, HELD_OUT):
         rows = pairs.filter(pl.col("set") == which)
         if rows.height and rows["observed"].sum() > 0:
             fits[f"pairs_{which}"] = fit(rows["simulated"].to_numpy(), rows["observed"].to_numpy())
     return Calibration(
         beta_per_min=chosen,
+        gateway_factor=build.gateway_factor,
         sweep=sweep,
         at_boundary=at_boundary,
         build=build,
@@ -302,8 +386,10 @@ class CalibrationManifest(BaseModel):
     observed_dates: list[date]
     pair_dates: list[date]
     beta_per_min: float
+    gateway_factor: float
     at_boundary: bool
     fits: dict[str, Fit]
+    purposes: list[PartSummary]
     mean_km: float
     mean_cost_min: float
     trips: float
@@ -333,7 +419,8 @@ def write_calibration(
     ):
         frame.rechunk().write_parquet(staging / name, compression="zstd", statistics=True)
         outputs[name] = sha256_file(staging / name)
-    t = result.build.trip_length
+    summaries = result.build.summaries()
+    everything = summaries[-1]
     manifest = CalibrationManifest(
         city=city,
         scenario=scenario,
@@ -344,11 +431,13 @@ def write_calibration(
         observed_dates=calibration.dates,
         pair_dates=pair_dates,
         beta_per_min=result.beta_per_min,
+        gateway_factor=result.gateway_factor,
         at_boundary=result.at_boundary,
         fits=result.fits,
-        mean_km=t.mean_km,
-        mean_cost_min=t.mean_cost_min,
-        trips=result.build.ends.stats.trips,
+        purposes=summaries,
+        mean_km=everything.mean_km,
+        mean_cost_min=everything.mean_cost_min,
+        trips=everything.trips,
         outputs=outputs,
     )
     (staging / MANIFEST_NAME).write_text(
@@ -396,7 +485,28 @@ def report(m: CalibrationManifest, result: Calibration) -> str:
         + (" — **at the edge of the searched range**; widen it." if m.at_boundary else "."),
         f"At this β: {m.trips:,.0f} trips, mean {m.mean_km:.1f} km, {m.mean_cost_min:.1f} min "
         "door to door.",
+        *(
+            [
+                f"Gateway factor (fitted on training stations): **{m.gateway_factor:.4f}** x "
+                "daily passengers."
+            ]
+            if m.gateway_factor > 0
+            else []
+        ),
         "",
+        *(
+            [
+                "| Purpose | Trips | Mean km | Mean min |",
+                "|---|---:|---:|---:|",
+                *(
+                    f"| {s.purpose} | {s.trips:,.0f} | {s.mean_km:.1f} | {s.mean_cost_min:.1f} |"
+                    for s in m.purposes
+                ),
+                "",
+            ]
+            if len(m.purposes) > 2
+            else []
+        ),
         "## Fit",
         "",
         "Shares are taken within each set; GEH compares counts after scaling the simulated "
@@ -422,12 +532,12 @@ def report(m: CalibrationManifest, result: Calibration) -> str:
         f"Furness tolerance {cal.sweep_tolerance:g} during the sweep; the chosen β is re-run at "
         "the configured tolerance.",
         "",
-        "| β | Stage | RMSE (share) | R² | Mean km | Mean min | Iterations |",
-        "|---:|---|---:|---:|---:|---:|---:|",
+        "| β | Stage | RMSE (share) | R² | Mean km | Mean min | Iterations | Gateway factor |",
+        "|---:|---|---:|---:|---:|---:|---:|---:|",
         *(
             f"| {p.beta_per_min:.4f} | {p.stage} | {p.rmse_share_training:.5f} | "
             f"{p.r2_share_training:.3f} | {p.mean_km:.1f} | {p.mean_cost_min:.1f} | "
-            f"{p.iterations} |"
+            f"{p.iterations} | {p.gateway_factor:.4f} |"
             for p in sweep
         ),
         "",
