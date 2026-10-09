@@ -88,8 +88,8 @@ def furness(
         rows = np.bincount(o_idx, weights=a[o_idx] * b[d_idx] * f, minlength=n).astype(np.float64)
         row_error = _relative_error(rows, productions)
         history.append(row_error)
-        if row_error <= tolerance:
-            break
+        if row_error <= tolerance or not np.isfinite(row_error):
+            break  # non-finite: the factors overflowed on infeasible targets
 
     trips = np.zeros(origin.size)
     trips[keep] = a[o_idx] * b[d_idx] * f
