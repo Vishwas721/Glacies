@@ -140,8 +140,11 @@ fn a_board_only_ride_must_be_followed_by_a_vehicle() {
     let ride = paths(true);
     assert_eq!(ride.reached, [1, 0]);
     assert_eq!(ride.metro, [1, 0]);
+    assert_eq!(ride.ridden, [1, 0]);
     assert_eq!(ride.segments, [(0, 10, 11, 1)]);
-    assert_eq!(paths(false).reached, [1, 1]);
+    let walk = paths(false);
+    assert_eq!(walk.reached, [1, 1]);
+    assert_eq!(walk.ridden, [0, 0]);
 
     let times = |board_only| {
         zone_travel_times(
