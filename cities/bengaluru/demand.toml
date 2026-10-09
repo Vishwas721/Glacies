@@ -52,7 +52,7 @@ column = "p50_s"
 # calibration replaces it; see docs/validation/demand.md for how it was chosen.
 beta_per_min = 0.05
 tolerance = 1e-6       # largest relative error of any row or column sum
-max_iterations = 1000
+max_iterations = 5000
 
 [demand.calibration]
 friction_function = "exponential"
