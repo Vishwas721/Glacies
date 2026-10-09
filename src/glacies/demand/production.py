@@ -6,7 +6,10 @@ are Estimated, the rate and share are Assumed, so both trip ends are **Estimated
 
 Only zones with a stop within the access walk take part: in the travel-time matrix every
 other zone reaches nothing but the zones it can walk to, so a transit model cannot place its
-trips. Zones that take part must also be able to reach each other: an origin with no reachable
+trips. With ``[demand.ride_access]`` a zone may also produce trips by riding to a station
+(``glacies.demand.access``); trips still end with a walk, so only walk-served zones attract.
+
+Zones that take part must also be able to reach each other: an origin with no reachable
 destination, or a destination no origin reaches, would make Furness balancing impossible. Those
 zones are dropped (repeatedly, since dropping one can strand another) and counted in the stats,
 so the trips left out are reported rather than hidden.
@@ -29,7 +32,8 @@ BOOL = npt.NDArray[np.bool_]
 
 COLUMN_NATURE: dict[str, DataNature] = {
     "population": DataNature.ESTIMATED,
-    "has_access": DataNature.SIMULATED,  # walk network search from the zone point
+    "has_access": DataNature.SIMULATED,  # walk (or ride) to a stop: may produce trips
+    "has_walk_access": DataNature.SIMULATED,  # walk network search: may attract trips
     "employment_score": DataNature.ESTIMATED,
     "origin": DataNature.ESTIMATED,
     "destination_proxy": DataNature.ESTIMATED,  # employment proxy scaled to ΣO
@@ -81,6 +85,8 @@ class TripEndStats(BaseModel):
     population: float
     population_with_access: float
     population_unreachable: float  # with access, but no destination reachable
+    zones_ride_only: int = 0  # access only by riding to a station
+    population_ride_only: float = 0.0
     trips: float  # ΣO = ΣD
     trips_low: float  # trip rate and transit share both at the low end of their ranges
     trips_high: float
@@ -99,19 +105,26 @@ def trip_ends(
     has_access: BOOL,
     pairs: pl.DataFrame,
     demand: DemandConfig,
+    *,
+    walk_access: BOOL | None = None,
 ) -> TripEnds:
-    """Productions and attractions per zone; ``zones`` is sorted by ``zone_idx`` = position."""
+    """Productions and attractions per zone; ``zones`` is sorted by ``zone_idx`` = position.
+
+    ``has_access`` lets a zone produce trips; ``walk_access`` (default: the same) lets it
+    attract them.
+    """
     n = zones.height
     zone_idx = zones["zone_idx"].to_numpy()
     if not np.array_equal(zone_idx, np.arange(n)):
         raise DemandError("zone_idx must be 0..n-1 in order")
-    if employment_score.size != n or has_access.size != n:
+    walk = has_access if walk_access is None else walk_access
+    if employment_score.size != n or has_access.size != n or walk.size != n:
         raise DemandError("employment score and access flags must cover every zone")
     population = zones["population"].to_numpy().astype(np.float64)
     origin = pairs["origin_zone"].to_numpy().astype(np.uint32)
     dest = pairs["dest_zone"].to_numpy().astype(np.uint32)
     produces, attracts = _connected(
-        origin, dest, has_access & (population > 0), has_access & (employment_score > 0)
+        origin, dest, has_access & (population > 0), walk & (employment_score > 0)
     )
     if not produces.any():
         raise DemandError("no zone with transit access can reach a zone with employment")
@@ -125,6 +138,7 @@ def trip_ends(
     table = zones.select("zone_idx", "h3_cell").with_columns(
         pl.Series("population", population),
         pl.Series("has_access", has_access),
+        pl.Series("has_walk_access", walk),
         pl.Series("employment_score", employment_score),
         pl.Series("origin", o),
         pl.Series("destination", d),
@@ -139,6 +153,8 @@ def trip_ends(
         population=float(population.sum()),
         population_with_access=float(population[has_access].sum()),
         population_unreachable=float(population[has_access & ~produces].sum()),
+        zones_ride_only=int((has_access & ~walk).sum()),
+        population_ride_only=float(population[has_access & ~walk].sum()),
         trips=total,
         trips_low=total * low,
         trips_high=total * high,
