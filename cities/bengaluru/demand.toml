@@ -68,10 +68,11 @@ column = "p50_s"
 
 [demand.gravity]
 # Exponential friction exp(-beta x minutes of p50 time). Calibrated 2026-10-09 by
-# `glacies demand calibrate` on station entry shares (ADR 0014): best RMSE 0.0168 at 0.0321
-# (1/beta = 31 min). The objective is nearly flat over 0.027-0.037, so beta is only weakly
-# identified (docs/validation/demand.md).
-beta_per_min = 0.0321
+# `glacies demand calibrate` on station entry shares (ADR 0014), with rides to stations
+# (ADR 0015): best RMSE 0.0127 at 0.0259 (1/beta = 39 min). The objective is nearly flat over
+# 0.019-0.037, so beta is only weakly identified (docs/validation/demand.md). Walk access only,
+# it was 0.0321.
+beta_per_min = 0.0259
 tolerance = 1e-6       # largest relative error of any row or column sum
 max_iterations = 5000
 
