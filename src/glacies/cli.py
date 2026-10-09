@@ -16,6 +16,7 @@ from glacies import pipeline
 from glacies.cities import CityConfig, CityConfigError, load_city
 from glacies.config import Settings, get_settings
 from glacies.demand.calibrate import SweepPoint
+from glacies.demand.sensitivity import VariantResult
 from glacies.ingest import archive, download
 from glacies.model.transit.schema import TABLES
 from glacies.model.zones.build import population_check
@@ -418,6 +419,25 @@ def calibrate_demand(city: CityOption = None) -> None:
             f"mean GEH {f.mean_geh:.1f}, level {f.level_ratio:.2f} ({f.items} items)"
         )
     typer.echo("  set [demand.gravity] beta_per_min in demand.toml to use it")
+
+
+@demand_app.command("sensitivity")
+def demand_sensitivity(city: CityOption = None) -> None:
+    """Re-run demand under alternative β, employment proxies and priors."""
+    settings, config = _load(city)
+
+    def variant(r: VariantResult) -> None:
+        typer.echo(
+            f"  {r.name}: {r.trips:,.0f} trips, {r.mean_km:.1f} km, metro "
+            f"{r.metro_trip_share:.1%}, R² held-out {r.r2_held_out:.2f}",
+            err=True,
+        )
+
+    try:
+        _, out_dir = pipeline.run_sensitivity(settings, config, on_variant=variant)
+    except PipelineError as exc:
+        _fail(str(exc))
+    typer.echo(f"demand sensitivity (Estimated) -> {out_dir}")
 
 
 @app.command("accessibility")

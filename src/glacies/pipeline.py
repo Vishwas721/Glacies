@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 import psycopg
 from pydantic import BaseModel
@@ -37,7 +38,13 @@ from glacies.analytics.travel_times import (
     zone_points,
     zone_walks,
 )
-from glacies.cities import CityConfig, CityConfigError, DemandConfig, load_demand
+from glacies.cities import (
+    CityConfig,
+    CityConfigError,
+    DemandCalibration,
+    DemandConfig,
+    load_demand,
+)
 from glacies.config import Settings
 from glacies.db import postgis
 from glacies.demand.attraction import (
@@ -46,6 +53,7 @@ from glacies.demand.attraction import (
     AttractionManifest,
     build_attraction,
     employment_score,
+    hub_zones,
     read_hubs,
     write_attraction,
 )
@@ -92,6 +100,13 @@ from glacies.demand.ridership import (
     observed_pairs,
     read_ridership,
     write_ridership,
+)
+from glacies.demand.sensitivity import (
+    SensitivityInput,
+    SensitivityManifest,
+    VariantResult,
+    run_variants,
+    write_sensitivity,
 )
 from glacies.demand.stations import check_calibration_names, network_stations
 from glacies.ingest import archive
@@ -584,9 +599,17 @@ def run_paths(
 
 
 def _prepare(
-    settings: Settings, config: CityConfig, demand: DemandConfig, mode: str, scenario: str
+    settings: Settings,
+    config: CityConfig,
+    demand: DemandConfig,
+    mode: str,
+    scenario: str,
+    score: npt.NDArray[np.float64] | None = None,
 ) -> tuple[Prepared, dict[str, Path]]:
-    """Trip ends and the pairs to balance, from the built stages (β-independent)."""
+    """Trip ends and the pairs to balance, from the built stages (β-independent).
+
+    ``score`` replaces the baseline employment proxy (sensitivity runs).
+    """
     base = city_dir(settings, config)
     stages = {
         "transit": base / "transit",
@@ -604,7 +627,7 @@ def _prepare(
         check_calibration_names(stages["transit"], mode, demand.calibration)
         prepared = prepare_demand(
             zones,
-            attraction["employment_score"].to_numpy(),
+            attraction["employment_score"].to_numpy() if score is None else score,
             access["has_access"].to_numpy(),
             pl.scan_parquet(stages["tt_matrix"] / "part-*.parquet"),
             demand,
@@ -641,6 +664,27 @@ def run_demand(
     return manifest, result, out_dir
 
 
+def _targets(stages: dict[str, Path], cal: DemandCalibration) -> Targets:
+    """Observed station entries and pairs for the calibration window, and the path table."""
+    paths_dir, ridership = stages["paths"], stages["ridership"]
+    stations = pl.read_parquet(paths_dir / STATIONS_NAME)
+    entries = observed_entries(
+        pl.read_parquet(ridership / RIDERSHIP_STATIONS), cal.dates, cal.hours
+    )
+    observed, pair_dates = observed_pairs(
+        pl.read_parquet(ridership / RIDERSHIP_PAIRS), cal.dates, cal.hours
+    )
+    return Targets(
+        sets=station_sets(stations, cal),
+        entries=entries,
+        pairs=observed,
+        pair_dates=pair_dates,
+        reach=pl.read_parquet(paths_dir / REACH_NAME),
+        paths=pl.read_parquet(paths_dir / PATHS_NAME),
+        stations=stations,
+    )
+
+
 def run_calibration(
     settings: Settings,
     config: CityConfig,
@@ -655,25 +699,8 @@ def run_calibration(
     base = city_dir(settings, config)
     stages["ridership"] = base / "ridership" / cal.dataset
     _require({"ridership": stages["ridership"]})
-    paths_dir = stages["paths"]
-    stations = pl.read_parquet(paths_dir / STATIONS_NAME)
     try:
-        ridership = stages["ridership"]
-        entries = observed_entries(
-            pl.read_parquet(ridership / RIDERSHIP_STATIONS), cal.dates, cal.hours
-        )
-        observed, pair_dates = observed_pairs(
-            pl.read_parquet(ridership / RIDERSHIP_PAIRS), cal.dates, cal.hours
-        )
-        targets = Targets(
-            sets=station_sets(stations, cal),
-            entries=entries,
-            pairs=observed,
-            pair_dates=pair_dates,
-            reach=pl.read_parquet(paths_dir / REACH_NAME),
-            paths=pl.read_parquet(paths_dir / PATHS_NAME),
-            stations=stations,
-        )
+        targets = _targets(stages, cal)
         result = calibrate(prepared, demand, targets, on_point=on_point)
     except DemandError as exc:
         raise PipelineError(str(exc)) from exc
@@ -684,9 +711,68 @@ def run_calibration(
         city=config.city.id,
         scenario=scenario,
         calibration=cal,
-        pair_dates=pair_dates,
+        pair_dates=targets.pair_dates,
         inputs=[
             CalibrationInput(stage=stage, manifest_sha256=sha256_file(directory / "manifest.json"))
+            for stage, directory in stages.items()
+        ],
+    )
+    return manifest, out_dir
+
+
+def run_sensitivity(
+    settings: Settings,
+    config: CityConfig,
+    *,
+    scenario: str = "baseline",
+    on_variant: Callable[[VariantResult], None] | None = None,
+) -> tuple[SensitivityManifest, Path]:
+    """Headline demand metrics under alternative β, proxies and priors (Phase 5 M5)."""
+    demand, mode = _demand_settings(settings, config)
+    proxy = config.attraction
+    if proxy is None:
+        raise PipelineError(f"city {config.city.id!r} has no [attraction] section in city.toml")
+    base = city_dir(settings, config)
+    zones = pl.read_parquet(base / "zones" / "zones.parquet").sort("zone_idx")
+    weightings = {w.name: w for w in (proxy.baseline, *proxy.sensitivity)}
+
+    def prepare(name: str) -> Prepared:
+        score = (
+            None
+            if name == proxy.baseline.name
+            else employment_score(zones, weightings[name], proxy.job_poi_categories)
+        )
+        return _prepare(settings, config, demand, mode, scenario, score)[0]
+
+    _, stages = _prepare(settings, config, demand, mode, scenario)
+    stages["ridership"] = base / "ridership" / demand.calibration.dataset
+    _require({"ridership": stages["ridership"]})
+    hubs: set[int] = set()
+    if proxy.validation_hubs:
+        try:
+            found = read_hubs(settings.cities_dir / config.city.id / proxy.validation_hubs)
+        except AttractionError as exc:
+            raise PipelineError(str(exc)) from exc
+        hubs = {int(z) for z in hub_zones(found, zones)["zone_idx"].to_list()}
+    try:
+        results = run_variants(
+            prepare,
+            demand,
+            _targets(stages, demand.calibration),
+            list(weightings),
+            hubs,
+            on_variant=on_variant,
+        )
+    except DemandError as exc:
+        raise PipelineError(str(exc)) from exc
+    out_dir = base / "demand_sensitivity" / scenario
+    manifest = write_sensitivity(
+        results,
+        out_dir,
+        city=config.city.id,
+        scenario=scenario,
+        inputs=[
+            SensitivityInput(stage=stage, manifest_sha256=sha256_file(directory / "manifest.json"))
             for stage, directory in stages.items()
         ],
     )
