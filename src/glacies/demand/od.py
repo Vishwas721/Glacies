@@ -24,8 +24,9 @@ from pydantic import BaseModel
 
 from glacies import __version__
 from glacies.analytics.travel_times import zone_points
-from glacies.cities import DemandConfig
+from glacies.cities import DemandConfig, Purpose
 from glacies.demand.feasibility import attainable
+from glacies.demand.gateways import GatewayModel, gateway_od
 from glacies.demand.gravity import F64, U32, exponential, furness
 from glacies.demand.production import (
     BOOL,
@@ -44,13 +45,16 @@ MANIFEST_NAME = "manifest.json"
 REPORT_NAME = "BUILD_REPORT.md"
 TRIP_ENDS_NAME = "trip_ends.parquet"
 OD_NAME = "od.parquet"
+GATEWAYS_NAME = "gateways.parquet"
 TIME_BANDS_MIN = (15, 30, 45, 60, 90, 120)
 # Row-error checkpoints kept in the manifest; the full history can be thousands of values.
 HISTORY_POINTS = (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000)
 # Largest max-flow deficit, as a share of a block's trips, still treated as feasible.
 FEASIBILITY_TOLERANCE = 1e-7
 
+GATEWAY = "gateway"
 OD_NATURE: dict[str, DataNature] = {
+    "purpose": DataNature.ASSUMED,  # which purpose's priors produced the trips
     "cost_s": DataNature.SIMULATED,
     "trips": DataNature.ESTIMATED,
     "distance_km": DataNature.ESTIMATED,  # straight line x detour factor (Assumed)
@@ -124,6 +128,34 @@ class Prepared:
     detour_factor: float
 
 
+def straight_km(pairs: pl.DataFrame, zones: pl.DataFrame) -> F64:
+    """Straight-line km between the zone points of each (origin_zone, dest_zone)."""
+    points = zone_points(zones).select("zone_idx", "lat", "lon")
+    return (
+        pairs.select("origin_zone", "dest_zone")
+        .join(points.rename({"zone_idx": "origin_zone"}), on="origin_zone", how="left")
+        .join(
+            points.rename({"zone_idx": "dest_zone", "lat": "lat_to", "lon": "lon_to"}),
+            on="dest_zone",
+            how="left",
+        )
+        .select(
+            haversine_m(pl.col("lat"), pl.col("lon"), pl.col("lat_to"), pl.col("lon_to")) / 1000
+        )
+        .to_series()
+        .to_numpy()
+        .astype(np.float64)
+    )
+
+
+def for_purpose(demand: DemandConfig, purpose: Purpose) -> DemandConfig:
+    """``demand`` with the purpose's name, trip rate and transit share."""
+    priors = demand.priors.model_copy(
+        update={"trip_rate": purpose.trip_rate, "transit_share": purpose.transit_share}
+    )
+    return demand.model_copy(update={"trip_purpose": purpose.name, "priors": priors})
+
+
 def prepare_demand(
     zones: pl.DataFrame,
     employment_score: np.ndarray,
@@ -162,21 +194,7 @@ def prepare_demand(
     ends.table = ends.table.rename({"destination": "destination_proxy"}).with_columns(
         pl.Series("destination", feasible.attractions)
     )
-    points = zone_points(zones).select("zone_idx", "lat", "lon")
-    straight = (
-        live.select("origin_zone", "dest_zone")
-        .join(points.rename({"zone_idx": "origin_zone"}), on="origin_zone", how="left")
-        .join(
-            points.rename({"zone_idx": "dest_zone", "lat": "lat_to", "lon": "lon_to"}),
-            on="dest_zone",
-            how="left",
-        )
-        .select(
-            haversine_m(pl.col("lat"), pl.col("lon"), pl.col("lat_to"), pl.col("lon_to")) / 1000
-        )
-        .to_series()
-        .to_numpy()
-    )
+    straight = straight_km(live, zones)
     return Prepared(
         ends=ends,
         pairs=live,
@@ -185,7 +203,7 @@ def prepare_demand(
         cost_min=live["cost_s"].to_numpy().astype(np.float64) / 60,
         productions=o,
         attractions=feasible.attractions,
-        straight_km=np.asarray(straight, dtype=np.float64),
+        straight_km=straight,
         attainability=Attainability(
             walk_pairs_excluded=walk_excluded,
             blocks=feasible.blocks,
@@ -295,6 +313,124 @@ def build_demand(
     return balance(prepared, demand, demand.gravity.beta_per_min)[0]
 
 
+@dataclass
+class PurposeModel:
+    config: DemandConfig  # the city's demand.toml with this purpose's priors
+    prepared: Prepared
+
+
+@dataclass
+class DemandModel:
+    """Every purpose up to balancing (β-independent): the main purpose of demand.toml, the
+    further ``[[demand.purposes]]`` and the gateways."""
+
+    main: PurposeModel
+    purposes: list[PurposeModel]
+    gateways: GatewayModel | None = None
+
+
+class PartSummary(BaseModel):
+    purpose: str
+    trips: float
+    mean_km: float
+    mean_cost_min: float
+
+
+@dataclass
+class ModelBuild:
+    """The OD matrix of every purpose for one β (and gateway factor)."""
+
+    main_name: str  # [demand] trip_purpose
+    main: DemandBuild
+    purposes: dict[str, DemandBuild]
+    gateway_od: pl.DataFrame | None
+    gateway_factor: float
+    beta_per_min: float
+
+    def parts(self) -> list[tuple[str, pl.DataFrame]]:
+        """(purpose, od) per purpose, main first, gateways last."""
+        found = [(self.main_name, self.main.od)]
+        found += [(name, build.od) for name, build in self.purposes.items()]
+        if self.gateway_od is not None:
+            found.append((GATEWAY, self.gateway_od))
+        return found
+
+    @property
+    def od(self) -> pl.DataFrame:
+        """origin_zone, dest_zone, purpose, cost_s, trips, distance_km of every purpose."""
+        columns = ["origin_zone", "dest_zone", "cost_s", "trips", "distance_km"]
+        return (
+            pl.concat(
+                [od.select(columns).with_columns(pl.lit(name).alias("purpose")) for name, od in
+                 self.parts()]
+            )
+            .select("origin_zone", "dest_zone", "purpose", *columns[2:])
+            .sort("origin_zone", "dest_zone", "purpose")
+        )  # fmt: skip
+
+    def summaries(self) -> list[PartSummary]:
+        """Per purpose, then "all"."""
+        rows = [_summary(name, od) for name, od in self.parts()]
+        return [*rows, _summary("all", self.od)]
+
+
+MAIN = "__main__"  # warm-start key of the main purpose
+
+
+def _summary(purpose: str, od: pl.DataFrame) -> PartSummary:
+    trips = float(od["trips"].sum())
+    if trips <= 0:
+        return PartSummary(purpose=purpose, trips=0.0, mean_km=0.0, mean_cost_min=0.0)
+    return PartSummary(
+        purpose=purpose,
+        trips=trips,
+        mean_km=float((od["trips"] * od["distance_km"]).sum()) / trips,
+        mean_cost_min=float((od["trips"] * od["cost_s"]).sum()) / trips / 60,
+    )
+
+
+def build_model(
+    model: DemandModel,
+    beta_per_min: float,
+    *,
+    gateway_factor: float | None = None,
+    tolerance: float | None = None,
+    warm: dict[str, F64] | None = None,
+) -> ModelBuild:
+    """Balance every purpose at ``beta_per_min``; ``warm`` (purpose -> Furness column
+    factors) is read and updated so the next β starts close. ``gateway_factor`` defaults to
+    ``[demand.gateways] factor``."""
+    warm = {} if warm is None else warm
+    main, warm[MAIN] = balance(
+        model.main.prepared,
+        model.main.config,
+        beta_per_min,
+        tolerance=tolerance,
+        initial_b=warm.get(MAIN),
+    )
+    purposes = {}
+    for part in model.purposes:
+        name = part.config.trip_purpose
+        purposes[name], warm[name] = balance(
+            part.prepared, part.config, beta_per_min, tolerance=tolerance,
+            initial_b=warm.get(name),
+        )  # fmt: skip
+    gateways = model.main.config.gateways
+    factor = 0.0
+    gateway = None
+    if model.gateways is not None and gateways is not None:
+        factor = gateways.factor if gateway_factor is None else gateway_factor
+        gateway = gateway_od(model.gateways, beta_per_min, factor)
+    return ModelBuild(
+        main_name=model.main.config.trip_purpose,
+        main=main,
+        purposes=purposes,
+        gateway_od=gateway,
+        gateway_factor=factor,
+        beta_per_min=beta_per_min,
+    )
+
+
 # --- outputs ----------------------------------------------------------------------------------
 
 
@@ -304,7 +440,11 @@ class DemandInput(BaseModel):
 
 
 def od_version(
-    builder_version: str, demand: DemandConfig, beta_per_min: float, inputs: list[DemandInput]
+    builder_version: str,
+    demand: DemandConfig,
+    beta_per_min: float,
+    inputs: list[DemandInput],
+    gateway_factor: float = 0.0,
 ) -> str:
     """Short id of everything an OD matrix depends on: the same id means the same matrix."""
     payload = json.dumps(
@@ -312,6 +452,7 @@ def od_version(
             "builder": builder_version,
             "demand": demand.model_dump(mode="json"),
             "beta_per_min": beta_per_min,
+            "gateway_factor": gateway_factor,
             "inputs": [i.model_dump() for i in inputs],
         },
         sort_keys=True,
@@ -334,11 +475,40 @@ class DemandManifest(BaseModel):
     convergence: Convergence
     trip_length: TripLength
     od_pairs: int
+    purposes: list[PartSummary]  # per purpose and "all"
+    gateway_factor: float
     outputs: dict[str, str]
 
 
+def _trip_ends_name(purpose: str) -> str:
+    return f"trip_ends_{purpose}.parquet"
+
+
+def _gateway_table(build: ModelBuild, model: DemandModel) -> pl.DataFrame | None:
+    if build.gateway_od is None or model.gateways is None:
+        return None
+    sent = build.gateway_od.group_by("origin_zone").agg(pl.col("trips").sum())
+    # Gateways sharing a zone split its trips by their passengers.
+    return (
+        model.gateways.zones.with_columns(
+            (pl.col("daily_passengers") / pl.col("daily_passengers").sum().over("zone_idx")).alias(
+                "zone_share"
+            )
+        )
+        .join(sent.rename({"origin_zone": "zone_idx"}), on="zone_idx", how="left")
+        .select(
+            "name",
+            "zone_idx",
+            "daily_passengers",
+            (pl.col("trips").fill_null(0.0) * pl.col("zone_share")).alias("trips"),
+        )
+        .sort("name")
+    )
+
+
 def write_demand(
-    build: DemandBuild,
+    build: ModelBuild,
+    model: DemandModel,
     out_dir: Path,
     *,
     city: str,
@@ -351,31 +521,42 @@ def write_demand(
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
     outputs = {}
-    for name, frame in ((TRIP_ENDS_NAME, build.ends.table), (OD_NAME, build.od)):
+    main = build.main
+    od = build.od
+    tables = [(TRIP_ENDS_NAME, main.ends.table), (OD_NAME, od)]
+    tables += [(_trip_ends_name(n), b.ends.table) for n, b in build.purposes.items()]
+    gateways = _gateway_table(build, model)
+    if gateways is not None:
+        tables.append((GATEWAYS_NAME, gateways))
+    for name, frame in tables:
         # Rechunk so the bytes depend only on the rows (one row group per chunk otherwise).
         frame.rechunk().write_parquet(staging / name, compression="zstd", statistics=True)
         outputs[name] = sha256_file(staging / name)
     manifest = DemandManifest(
         city=city,
         scenario=scenario,
-        version=od_version(__version__, demand, build.beta_per_min, inputs),
+        version=od_version(__version__, demand, build.beta_per_min, inputs, build.gateway_factor),
         builder_version=__version__,
         nature=DataNature.ESTIMATED,
         inputs=inputs,
         demand=demand,
         column_nature={TRIP_ENDS_NAME: COLUMN_NATURE, OD_NAME: OD_NATURE},
         beta_per_min=build.beta_per_min,
-        trip_ends=build.ends.stats,
-        attainability=build.attainability,
-        convergence=build.convergence,
-        trip_length=build.trip_length,
-        od_pairs=build.od.height,
+        trip_ends=main.ends.stats,
+        attainability=main.attainability,
+        convergence=main.convergence,
+        trip_length=main.trip_length,
+        od_pairs=od.height,
+        purposes=build.summaries(),
+        gateway_factor=build.gateway_factor,
         outputs=outputs,
     )
     (staging / MANIFEST_NAME).write_text(
         manifest.model_dump_json(indent=2) + "\n", encoding="utf-8", newline="\n"
     )
-    (staging / REPORT_NAME).write_text(report(manifest, build), encoding="utf-8", newline="\n")
+    (staging / REPORT_NAME).write_text(
+        report(manifest, build, gateways), encoding="utf-8", newline="\n"
+    )
     if out_dir.exists():
         shutil.rmtree(out_dir)
     out_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -387,15 +568,71 @@ def _cite(name: str, value: str, source: str, verified: bool) -> str:
     return f"- {name}: {value} — {source}{'' if verified else ' (not verified)'}"
 
 
-def report(m: DemandManifest, build: DemandBuild) -> str:
+def _purpose_lines(m: DemandManifest, gateways: pl.DataFrame | None) -> list[str]:
+    if len(m.purposes) <= 2:  # the main purpose and "all"
+        return []
+    lines = [
+        "## Purposes",
+        "",
+        "Every purpose shares β and the travel-time cost; trips add up in `od.parquet` "
+        "(column `purpose`).",
+        "",
+        "| Purpose | Trips | Share | Mean km | Mean min |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    total = m.purposes[-1].trips
+    lines += [
+        f"| {s.purpose} | {s.trips:,.0f} | {s.trips / total:.1%} | {s.mean_km:.1f} | "
+        f"{s.mean_cost_min:.1f} |"
+        for s in m.purposes
+    ]
+    for purpose in m.demand.purposes:
+        lines += [
+            "",
+            f"**{purpose.name}** (attractor `{purpose.attractor}`, Estimated):",
+            _cite(
+                "Trip rate",
+                f"{purpose.trip_rate.value:g} per person (range {purpose.trip_rate.range[0]:g}-"
+                f"{purpose.trip_rate.range[1]:g})",
+                purpose.trip_rate.source,
+                purpose.trip_rate.verified,
+            ),
+            _cite(
+                "Transit share",
+                f"{purpose.transit_share.value:g} (range {purpose.transit_share.range[0]:g}-"
+                f"{purpose.transit_share.range[1]:g})",
+                purpose.transit_share.source,
+                purpose.transit_share.verified,
+            ),
+        ]
+    if gateways is not None:
+        lines += [
+            "",
+            f"**Gateways**: factor {m.gateway_factor:.4f} x daily passengers (fitted on "
+            "training stations, see `glacies demand calibrate`); destinations by the main "
+            "purpose's attractions and the friction.",
+            "",
+            "| Gateway | Zone | Daily passengers | Trips |",
+            "|---|---:|---:|---:|",
+            *(
+                f"| {r['name']} | {r['zone_idx']} | {r['daily_passengers']:,.0f} | "
+                f"{r['trips']:,.0f} |"
+                for r in gateways.iter_rows(named=True)
+            ),
+        ]
+    return [*lines, ""]
+
+
+def report(m: DemandManifest, build: ModelBuild, gateways: pl.DataFrame | None = None) -> str:
     p = m.demand.priors
+    main = build.main
     s, a, c, t = m.trip_ends, m.attainability, m.convergence, m.trip_length
     top = (
-        build.ends.table.sort("destination", "zone_idx", descending=[True, False])
+        main.ends.table.sort("destination", "zone_idx", descending=[True, False])
         .head(10)
         .select("zone_idx", "h3_cell", "destination")
     )
-    top20 = build.ends.table["destination"].sort(descending=True).head(max(1, s.zones // 20))
+    top20 = main.ends.table["destination"].sort(descending=True).head(max(1, s.zones // 20))
     lines = [
         f"# Synthetic demand — `{m.city}` / `{m.scenario}` (Estimated)",
         "",
@@ -490,6 +727,7 @@ def report(m: DemandManifest, build: DemandBuild) -> str:
             for r in top.iter_rows(named=True)
         ),
         "",
+        *_purpose_lines(m, gateways),
         "## Column labels",
         "",
         *(
