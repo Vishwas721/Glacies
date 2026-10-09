@@ -7,6 +7,7 @@ message meant for the user.
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import subprocess
 from collections.abc import Callable, Sequence
@@ -47,6 +48,7 @@ from glacies.cities import (
 )
 from glacies.config import Settings
 from glacies.db import postgis
+from glacies.demand.access import ride_access
 from glacies.demand.attraction import (
     AttractionBuild,
     AttractionError,
@@ -73,6 +75,7 @@ from glacies.demand.metro import (
     STATIONS_NAME,
     MetroInput,
     MetroManifest,
+    MetroNetwork,
     PathsManifest,
     metro_network,
     metro_paths,
@@ -127,7 +130,7 @@ from glacies.model.zones.build import (
     write_zones,
 )
 from glacies.provenance import DatasetManifest, sha256_file
-from glacies.routing.network import RouterError, load_router
+from glacies.routing.network import Router, RouterError, load_router
 from glacies.validate.gtfs.report import Severity, Thresholds, ValidationReport
 from glacies.validate.gtfs.validator import ValidationOptions, validate_feed
 
@@ -537,6 +540,78 @@ def _inputs(stages: dict[str, Path]) -> list[MetroInput]:
     ]
 
 
+def _cost_dir(base: Path, scenario: str, demand: DemandConfig) -> tuple[str, Path]:
+    """The travel-time matrix demand uses: with rides to stations, its own matrix."""
+    if demand.ride_access is None:
+        return "tt_matrix", base / "tt_matrix" / scenario
+    return "demand_matrix", base / "demand_matrix" / scenario
+
+
+def _demand_walks(
+    router: Router,
+    base: Path,
+    zones: pl.DataFrame,
+    config: CityConfig,
+    demand: DemandConfig,
+    mode: str,
+) -> tuple[ZoneWalks, MetroNetwork]:
+    """Zone walks, plus board-only rides to ``mode`` platforms if demand.toml asks for them."""
+    metro = metro_network(router, base / "transit", mode)
+    points = zone_points(zones)
+    walks = zone_walks(router, base / "walk", points, config.accessibility)
+    if demand.ride_access is not None:
+        walks.ride = ride_access(points, metro.platforms, walks.access, demand.ride_access)
+    return walks, metro
+
+
+def run_demand_matrix(
+    settings: Settings,
+    config: CityConfig,
+    *,
+    scenario: str = "baseline",
+    on_chunk: Callable[[int, int], None] | None = None,
+) -> MatrixResult:
+    """The travel-time matrix of demand: walks, plus rides to stations at the origin (ADR 0015).
+
+    Accessibility keeps the walk-only ``tt_matrix``; only demand uses this one.
+    """
+    demand, mode = _demand_settings(settings, config)
+    if demand.ride_access is None:
+        raise PipelineError(
+            "demand.toml has no [demand.ride_access]; demand uses the tt-matrix as it is"
+        )
+    base = city_dir(settings, config)
+    stages = {"transit": base / "transit", "walk": base / "walk", "zones": base / "zones"}
+    _require(stages)
+    zones = pl.read_parquet(stages["zones"] / "zones.parquet").sort("zone_idx")
+    rides = demand.ride_access.model_dump_json().encode()
+    try:
+        router = load_router(base, config.routing, config.city.crs_projected)
+        walks, _ = _demand_walks(router, base, zones, config, demand, mode)
+        return build_matrix(
+            router,
+            zones,
+            base / "walk",
+            config.accessibility,
+            base / "demand_matrix" / scenario,
+            city=config.city.id,
+            scenario=scenario,
+            inputs=[
+                *(
+                    MatrixInput(stage=stage, manifest_sha256=sha256_file(d / "manifest.json"))
+                    for stage, d in stages.items()
+                ),
+                MatrixInput(
+                    stage="demand.ride_access", manifest_sha256=hashlib.sha256(rides).hexdigest()
+                ),
+            ],
+            walks=walks,
+            on_chunk=on_chunk,
+        )
+    except (DemandError, RouterError, MatrixError) as exc:
+        raise PipelineError(str(exc)) from exc
+
+
 def run_paths(
     settings: Settings,
     config: CityConfig,
@@ -551,26 +626,33 @@ def run_paths(
     """
     demand, mode = _demand_settings(settings, config)
     base = city_dir(settings, config)
+    cost_stage, cost_dir = _cost_dir(base, scenario, demand)
     stages = {
         "transit": base / "transit",
         "walk": base / "walk",
         "zones": base / "zones",
-        "tt_matrix": base / "tt_matrix" / scenario,
+        cost_stage: cost_dir,
     }
-    _require(stages, {"tt_matrix": "tt-matrix"})
+    _require(stages, {"tt_matrix": "tt-matrix", "demand_matrix": "demand-matrix"})
     zones = pl.read_parquet(stages["zones"] / "zones.parquet").sort("zone_idx")
     try:
         router = load_router(base, config.routing, config.city.crs_projected)
-        metro = metro_network(router, stages["transit"], mode)
-        walks = zone_walks(router, base / "walk", zone_points(zones), config.accessibility)
-        has_access = np.array([stops.size > 0 for stops, _ in walks.access])
-        served = pl.Series(np.flatnonzero(has_access).astype(np.uint32))
+        walks, metro = _demand_walks(router, base, zones, config, demand, mode)
+        has_walk = np.array([stops.size > 0 for stops, _ in walks.access])
+        ride_stations = np.array(
+            [stops.size for stops, _ in walks.ride] if walks.ride else [0] * zones.height,
+            dtype=np.uint32,
+        )
+        has_access = has_walk | (ride_stations > 0)
+        # Trips start with a walk or a ride but always end with a walk.
+        origins = pl.Series(np.flatnonzero(has_access).astype(np.uint32))
+        served = pl.Series(np.flatnonzero(has_walk).astype(np.uint32))
         pairs = candidate_pairs(
-            pl.scan_parquet(stages["tt_matrix"] / "part-*.parquet"),
+            pl.scan_parquet(cost_dir / "part-*.parquet"),
             demand.cost.column,
             exclude_intrazonal=demand.exclude_intrazonal,
         ).filter(
-            pl.col("origin_zone").is_in(served.implode())
+            pl.col("origin_zone").is_in(origins.implode())
             & pl.col("dest_zone").is_in(served.implode())
         )
         reach, segments = metro_paths(
@@ -580,7 +662,9 @@ def run_paths(
         raise PipelineError(str(exc)) from exc
     access = zones.select("zone_idx").with_columns(
         pl.Series("has_access", has_access),
+        pl.Series("has_walk_access", has_walk),
         pl.Series("access_stops", [stops.size for stops, _ in walks.access], dtype=pl.UInt32),
+        pl.Series("ride_stations", ride_stations),
     )
     out_dir = base / "paths" / scenario
     manifest = write_paths(
@@ -611,14 +695,15 @@ def _prepare(
     ``score`` replaces the baseline employment proxy (sensitivity runs).
     """
     base = city_dir(settings, config)
+    cost_stage, cost_dir = _cost_dir(base, scenario, demand)
     stages = {
         "transit": base / "transit",
         "zones": base / "zones",
         "attraction": base / "attraction",
-        "tt_matrix": base / "tt_matrix" / scenario,
+        cost_stage: cost_dir,
         "paths": base / "paths" / scenario,
     }
-    _require(stages, {"tt_matrix": "tt-matrix"})
+    _require(stages, {"tt_matrix": "tt-matrix", "demand_matrix": "demand-matrix"})
     zones = pl.read_parquet(stages["zones"] / "zones.parquet").sort("zone_idx")
     attraction = pl.read_parquet(stages["attraction"] / "attraction.parquet").sort("zone_idx")
     access = pl.read_parquet(stages["paths"] / ACCESS_NAME).sort("zone_idx")
@@ -629,10 +714,11 @@ def _prepare(
             zones,
             attraction["employment_score"].to_numpy() if score is None else score,
             access["has_access"].to_numpy(),
-            pl.scan_parquet(stages["tt_matrix"] / "part-*.parquet"),
+            pl.scan_parquet(cost_dir / "part-*.parquet"),
             demand,
             detour_factor=config.scenario.detour_factor,
             walk_pairs=walk_pairs(reach) if demand.exclude_walk_pairs else None,
+            walk_access=access["has_walk_access"].to_numpy(),
         )
     except DemandError as exc:
         raise PipelineError(str(exc)) from exc

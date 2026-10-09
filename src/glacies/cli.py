@@ -341,6 +341,26 @@ def build_synthetic_demand(city: CityOption = None) -> None:
     )
 
 
+@build_app.command("demand-matrix")
+def build_demand_matrix(city: CityOption = None) -> None:
+    """Travel times for demand: walks plus rides to stations at the origin (Simulated)."""
+    settings, config = _load(city)
+    started = time.perf_counter()
+
+    def progress(done: int, total: int) -> None:
+        typer.echo(f"  {done:,}/{total:,} origins ({time.perf_counter() - started:.0f} s)")
+
+    try:
+        result = pipeline.run_demand_matrix(settings, config, on_chunk=progress)
+    except PipelineError as exc:
+        _fail(str(exc))
+    m = result.manifest
+    typer.echo(
+        f"demand travel-time matrix: {m.zones:,} zones x {m.departures} departures, "
+        f"{m.rows:,} rows in {time.perf_counter() - started:.0f} s -> {result.out_dir}"
+    )
+
+
 @build_app.command("paths")
 def build_journey_paths(city: CityOption = None) -> None:
     """How the fastest journeys between transit-served zones travel (Simulated)."""
@@ -374,7 +394,8 @@ def build_station_flows(city: CityOption = None) -> None:
     typer.echo(
         f"  {s.trips:,.0f} trips: {s.trips_using_metro:,.0f} use the {manifest.mode} "
         f"({s.trips_using_metro / s.trips:.1%}), {s.entries:,.0f} station entries, "
-        f"{s.trips_walked:,.0f} walk all the way, {s.trips_unreached:,.0f} not reached"
+        f"{s.trips_walked:,.0f} walk all the way, {s.trips_unreached:,.0f} not reached, "
+        f"{s.trips_ridden:,.0f} ride to the station"
     )
 
 

@@ -192,3 +192,44 @@ def test_walk_pairs_are_left_out_when_configured(
 
     assert result.exit_code != 0
     assert "no zone with transit access" in result.output
+
+
+def test_rides_to_stations_use_their_own_matrix(
+    city: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With [demand.ride_access], demand gets its own matrix and the walk-only tt-matrix (used
+    by accessibility) is left alone; zones reached only by the ride produce but never attract."""
+    cities = shutil.copytree(FIXTURES / "cities", tmp_path / "cities")
+    demand = cities / "toyville" / "demand.toml"
+    text = (
+        demand.read_text(encoding="utf-8")
+        .replace(
+            "\n[demand.priors.trip_rate]",
+            "\n[demand.ride_access]\nmax_km = 50.0\nspeed_kmh = 15.0\ndetour_factor = 1.3\n"
+            'penalty_min = 5.0\nsource = "Glacies test fixture"\nverified = false\n'
+            "\n[demand.priors.trip_rate]",
+        )
+        .replace("beta_per_min = 0.1\n", "beta_per_min = 0.1\nmax_iterations = 100000\n")
+    )
+    demand.write_text(text, encoding="utf-8")
+    monkeypatch.setenv("GLACIES_CITIES_DIR", str(cities))
+    walk_only = {
+        p.name: p.read_bytes() for p in sorted((city / "tt_matrix" / "baseline").iterdir())
+    }
+
+    missing = runner.invoke(app, ["build", "paths"])
+    assert missing.exit_code != 0
+    assert "demand-matrix" in missing.output
+    for command in (["build", "demand-matrix"], ["build", "paths"], ["build", "demand"]):
+        result = runner.invoke(app, command)
+        assert result.exit_code == 0, result.output
+
+    assert (city / "demand_matrix" / "baseline" / "manifest.json").is_file()
+    assert {
+        p.name: p.read_bytes() for p in sorted((city / "tt_matrix" / "baseline").iterdir())
+    } == walk_only
+    access = pl.read_parquet(city / "paths" / "baseline" / "zone_access.parquet")
+    assert (access["ride_stations"] > 0).all()  # every zone is within 50 km of a station
+    ends = pl.read_parquet(city / "demand" / "baseline" / "trip_ends.parquet")
+    assert (ends.filter(~pl.col("has_walk_access"))["destination"] == 0).all()
+    assert ends["has_access"].sum() > ends["has_walk_access"].sum()
