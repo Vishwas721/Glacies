@@ -35,30 +35,34 @@ verified = false
 
 [demand.priors.trip_rate]
 # HBW trips per person starting 08:00-10:00.
-# Derivation (Assumed): 0.4 work trips/person/day (user's reading of the CMP; page needed)
-# / 2 for the return leg x 0.5 of morning work departures inside 08:00-10:00.
+# Derivation: 1.24 trips/person/day including walk (CMP p.2-50) x 25 % work and business
+# (CMP p.2-51, Fig 2-23; return trips are a separate 50 %, so these are outbound) = 0.31
+# outbound work trips/person/day, x 0.5 of them starting 08:00-10:00 (Assumed; range 0.4-0.6).
 # Sanity check (Observed): metro entries in hours 8-9 are 47 % of 05:00-12:59 entries.
-value = 0.10
-range = [0.08, 0.14]
-source = "Bengaluru CMP 2020 (DULT): 1.24 trips/person/day incl. walk, 0.91 motorised"
-verified = false
+# Changed 2026-10-09 from 0.10 (which assumed 0.4 / 2 = 0.2 outbound work trips/person/day).
+value = 0.155
+range = [0.12, 0.19]
+source = "Bengaluru CMP 2020 (DULT) final report, p.2-50 (trip rate 1.24) and p.2-51 (purposes)"
+verified = true
 
 [demand.priors.transit_share]
-# Share of those trips made by public transport. The CMP's existing PT share is 42-48 % of all
-# trips depending on the source; the 70 % figure is a 2030+ target and must not be used.
+# Share of those trips made by public transport: 47.8 % of motorised peak-hour trips (CMP
+# Table 2-36, p.2-57; bus, minibus, school and chartered bus; base year 2015, before most of
+# the metro). Including walking, PT is 32 % of all trips (Fig 2-22), but work trips are rarely
+# walked. The 70 % figure is a 2030+ target and must not be used.
 value = 0.45
 range = [0.35, 0.50]
-source = "Bengaluru CMP 2020 (DULT), existing modal split as quoted by secondary sources"
-verified = false
+source = "Bengaluru CMP 2020 (DULT) final report, Table 2-36 p.2-57 (peak-hour motorised split)"
+verified = true
 
 [demand.priors.trip_length]
 # Mean trip length used for the "within a stated range" check in the definition of done.
-# CMP bus trip length 10.7-12 km (secondary sources). Observed: metro AM trips travel 11.2
-# stations on average (stationpair-hourly-enhanced, hours 8-9, 2025-08-11 onwards).
+# CMP bus trip length 10.7 km (Table 2-30, p.2-51) or "about 12 km" (p.2-57). Observed: metro
+# AM trips travel 11.2 stations on average (stationpair-hourly-enhanced, hours 8-9).
 mean_km = 11.0
 accept_km = [8.0, 14.0]
-source = "Bengaluru CMP 2020 (DULT), bus average trip length as quoted by secondary sources"
-verified = false
+source = "Bengaluru CMP 2020 (DULT) final report, Table 2-30 p.2-51 and p.2-57 (bus)"
+verified = true
 
 [demand.cost]
 # The Phase 2 matrix stores door-to-door time percentiles, not generalised cost. p50 over the
