@@ -42,6 +42,7 @@ PATHS_NAME = "metro_paths.parquet"
 REACH_NAME = "od_reach.parquet"
 FLOWS_NAME = "station_pairs.parquet"
 STATIONS_NAME = "stations.parquet"
+ACCESS_NAME = "zone_access.parquet"
 
 COLUMN_NATURE: dict[str, dict[str, DataNature]] = {
     PATHS_NAME: {"departures": DataNature.SIMULATED, "share": DataNature.SIMULATED},
@@ -163,6 +164,13 @@ def metro_paths(
     return reach, segments
 
 
+def walk_pairs(reach: pl.DataFrame) -> pl.DataFrame:
+    """Pairs whose fastest journey is on foot at half or more of the departures reaching them."""
+    return reach.filter(pl.col("walked") * 2 >= pl.col("reached")).select(
+        "origin_zone", "dest_zone"
+    )
+
+
 def path_shares(reach: pl.DataFrame, segments: pl.DataFrame) -> pl.DataFrame:
     """Share of an OD pair's trips on each station pair (departures / departures reached)."""
     return segments.join(
@@ -193,7 +201,7 @@ class StationFlows:
 
 
 def station_flows(
-    od: pl.DataFrame, reach: pl.DataFrame, paths: pl.DataFrame, metro: MetroNetwork
+    od: pl.DataFrame, reach: pl.DataFrame, paths: pl.DataFrame, stations: pl.DataFrame
 ) -> StationFlows:
     """Metro entries, exits and station-pair flows implied by ``od`` (origin, dest, trips)."""
     keys = ["origin_zone", "dest_zone"]
@@ -223,7 +231,7 @@ def station_flows(
         pl.col("trips").sum().alias("exits")
     )
     stations = (
-        metro.stations.join(entries, on="station_idx", how="left")
+        stations.join(entries, on="station_idx", how="left")
         .join(exits, on="station_idx", how="left")
         .with_columns(pl.col("entries").fill_null(0.0), pl.col("exits").fill_null(0.0))
         .sort("station_idx")
@@ -249,7 +257,32 @@ class MetroInput(BaseModel):
     manifest_sha256: str
 
 
-class MetroManifest(BaseModel):
+def _write(
+    out_dir: Path, tables: dict[str, pl.DataFrame], manifest: BaseModel, report_text: str
+) -> dict[str, str]:
+    """Write tables, then ``manifest`` (its ``outputs`` filled in) and the report, atomically."""
+    staging = out_dir.with_name(f".{out_dir.name}.staging")
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    outputs = {}
+    for name, frame in tables.items():
+        # Rechunk so the bytes depend only on the rows (one row group per chunk otherwise).
+        frame.rechunk().write_parquet(staging / name, compression="zstd", statistics=True)
+        outputs[name] = sha256_file(staging / name)
+    manifest = manifest.model_copy(update={"outputs": outputs})
+    (staging / MANIFEST_NAME).write_text(
+        manifest.model_dump_json(indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
+    (staging / REPORT_NAME).write_text(report_text, encoding="utf-8", newline="\n")
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
+    rename_with_retry(staging, out_dir)
+    return outputs
+
+
+class PathsManifest(BaseModel):
     city: str
     scenario: str
     builder_version: str
@@ -257,17 +290,19 @@ class MetroManifest(BaseModel):
     mode: str
     inputs: list[MetroInput]
     departures: int
+    zones_with_access: int
     od_pairs: int
+    walk_pairs: int
     metro_path_rows: int
-    stats: FlowStats
     column_nature: dict[str, dict[str, DataNature]]
-    outputs: dict[str, str]
+    outputs: dict[str, str] = {}
 
 
-def write_metro(
+def write_paths(
+    access: pl.DataFrame,
     reach: pl.DataFrame,
     paths: pl.DataFrame,
-    flows: StationFlows,
+    stations: pl.DataFrame,
     out_dir: Path,
     *,
     city: str,
@@ -275,22 +310,8 @@ def write_metro(
     mode: str,
     departures: int,
     inputs: list[MetroInput],
-) -> MetroManifest:
-    staging = out_dir.with_name(f".{out_dir.name}.staging")
-    if staging.exists():
-        shutil.rmtree(staging)
-    staging.mkdir(parents=True)
-    outputs = {}
-    tables = {
-        PATHS_NAME: paths,
-        REACH_NAME: reach,
-        FLOWS_NAME: flows.pairs,
-        STATIONS_NAME: flows.stations,
-    }
-    for name, frame in tables.items():
-        frame.rechunk().write_parquet(staging / name, compression="zstd", statistics=True)
-        outputs[name] = sha256_file(staging / name)
-    manifest = MetroManifest(
+) -> PathsManifest:
+    manifest = PathsManifest(
         city=city,
         scenario=scenario,
         builder_version=__version__,
@@ -298,21 +319,74 @@ def write_metro(
         mode=mode,
         inputs=inputs,
         departures=departures,
+        zones_with_access=int(access["has_access"].sum()),
         od_pairs=reach.height,
+        walk_pairs=walk_pairs(reach).height,
         metro_path_rows=paths.height,
+        column_nature={k: v for k, v in COLUMN_NATURE.items() if k in (PATHS_NAME, REACH_NAME)},
+    )
+    lines = [
+        f"# Journey paths — `{city}` / `{scenario}` (Simulated)",
+        "",
+        f"Builder {__version__} · {departures} departures per pair · fastest journey each "
+        "(all-or-nothing)",
+        "",
+        f"- Zones with a stop within the access walk: {manifest.zones_with_access:,}.",
+        f"- Zone pairs between them reached at the median: {manifest.od_pairs:,}; fastest on "
+        f"foot at half or more of the departures: {manifest.walk_pairs:,}.",
+        f"- OD-to-{mode}-station-pair rows: {manifest.metro_path_rows:,}.",
+        "",
+        "These tables do not depend on demand: `glacies build demand` drops the walking pairs "
+        "and `glacies build station-flows` turns any OD matrix into station flows with them.",
+        "",
+    ]
+    outputs = _write(
+        out_dir,
+        {ACCESS_NAME: access, REACH_NAME: reach, PATHS_NAME: paths, STATIONS_NAME: stations},
+        manifest,
+        "\n".join(lines),
+    )
+    return manifest.model_copy(update={"outputs": outputs})
+
+
+class MetroManifest(BaseModel):
+    city: str
+    scenario: str
+    builder_version: str
+    nature: DataNature
+    mode: str
+    inputs: list[MetroInput]
+    stats: FlowStats
+    column_nature: dict[str, dict[str, DataNature]]
+    outputs: dict[str, str] = {}
+
+
+def write_station_flows(
+    flows: StationFlows,
+    out_dir: Path,
+    *,
+    city: str,
+    scenario: str,
+    mode: str,
+    inputs: list[MetroInput],
+) -> MetroManifest:
+    manifest = MetroManifest(
+        city=city,
+        scenario=scenario,
+        builder_version=__version__,
+        nature=DataNature.SIMULATED,
+        mode=mode,
+        inputs=inputs,
         stats=flows.stats,
-        column_nature=COLUMN_NATURE,
-        outputs=outputs,
+        column_nature={k: v for k, v in COLUMN_NATURE.items() if k in (FLOWS_NAME, STATIONS_NAME)},
     )
-    (staging / MANIFEST_NAME).write_text(
-        manifest.model_dump_json(indent=2) + "\n", encoding="utf-8", newline="\n"
+    outputs = _write(
+        out_dir,
+        {FLOWS_NAME: flows.pairs, STATIONS_NAME: flows.stations},
+        manifest,
+        report(manifest, flows),
     )
-    (staging / REPORT_NAME).write_text(report(manifest, flows), encoding="utf-8", newline="\n")
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
-    out_dir.parent.mkdir(parents=True, exist_ok=True)
-    rename_with_retry(staging, out_dir)
-    return manifest
+    return manifest.model_copy(update={"outputs": outputs})
 
 
 def report(m: MetroManifest, flows: StationFlows) -> str:
@@ -336,8 +410,7 @@ def report(m: MetroManifest, flows: StationFlows) -> str:
         [
             f"# Simulated {m.mode} station flows — `{m.city}` / `{m.scenario}` (Simulated)",
             "",
-            f"Builder {m.builder_version} · {m.od_pairs:,} OD pairs · {m.departures} departures "
-            f"each · {m.metro_path_rows:,} OD-to-station-pair rows",
+            f"Builder {m.builder_version} · paths from `glacies build paths`",
             "",
             "Each OD pair's trips (Estimated) are spread evenly over the departures that reach "
             "it; each departure takes its fastest journey (all-or-nothing, no crowding). One "

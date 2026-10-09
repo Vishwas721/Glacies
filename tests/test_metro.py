@@ -1,10 +1,9 @@
 """Station flows from OD trips and a path table, by hand (Phase 5 M3)."""
 
-import numpy as np
 import polars as pl
 import pytest
 
-from glacies.demand.metro import MetroNetwork, path_shares, station_flows
+from glacies.demand.metro import path_shares, station_flows, walk_pairs
 
 U32 = pl.UInt32
 
@@ -15,13 +14,9 @@ def frame(rows: list[tuple[object, ...]], columns: list[str]) -> pl.DataFrame:
     )
 
 
-METRO = MetroNetwork(
-    metro_trip=np.zeros(1, dtype=np.uint8),
-    station=np.zeros(1, dtype=np.uint32),
-    stations=pl.DataFrame(
-        {"station_idx": [10, 11, 12], "name": ["X", "Y", "Z"], "lines": ["P", "P", "G+P"]},
-        schema={"station_idx": U32, "name": pl.String, "lines": pl.String},
-    ),
+STATIONS = pl.DataFrame(
+    {"station_idx": [10, 11, 12], "name": ["X", "Y", "Z"], "lines": ["P", "P", "G+P"]},
+    schema={"station_idx": U32, "name": pl.String, "lines": pl.String},
 )
 
 
@@ -42,7 +37,7 @@ def test_flows_by_hand() -> None:
         ["origin_zone", "dest_zone", "entry_station", "exit_station", "departures"],
     )
 
-    flows = station_flows(od, reach, path_shares(reach, segments), METRO)
+    flows = station_flows(od, reach, path_shares(reach, segments), STATIONS)
 
     assert flows.pairs.rows() == [(10, 11, 60.0), (10, 12, 30.0), (12, 11, 30.0)]
     assert flows.stations.select("name", "entries", "exits").rows() == [
@@ -63,7 +58,16 @@ def test_unreached_pairs_are_counted() -> None:
         [], ["origin_zone", "dest_zone", "entry_station", "exit_station", "departures"]
     )
 
-    flows = station_flows(od, reach, path_shares(reach, segments), METRO)
+    flows = station_flows(od, reach, path_shares(reach, segments), STATIONS)
 
     assert flows.stats.trips_unreached == 50
     assert flows.pairs.height == 0
+
+
+def test_walk_pairs_take_half_or_more_departures_on_foot() -> None:
+    reach = frame(
+        [(0, 1, 4, 2, 0), (0, 2, 4, 1, 3), (0, 3, 3, 2, 0)],
+        ["origin_zone", "dest_zone", "reached", "walked", "metro"],
+    )
+
+    assert walk_pairs(reach).rows() == [(0, 1), (0, 3)]
