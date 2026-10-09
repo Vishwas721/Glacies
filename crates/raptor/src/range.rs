@@ -84,14 +84,29 @@ pub(crate) fn range_search_each(
     let mut rounds: Vec<Round> = (0..=params.max_rounds).map(|_| Round::unreached(n)).collect();
     for &i in &order {
         let departure = departures[i];
-        for o in origins {
+        // Walks first: a stop that can be walked to is reached on foot, and a board-only
+        // access to it is ignored (so `best` always comes from some round's label).
+        for o in origins.iter().filter(|o| !o.board_only) {
             let s = o.stop.0 as usize;
             let arrival =
                 departure.saturating_add(o.duration.saturating_add(tt.entry_time(o.stop)));
             if arrival < rounds[0].walk[s] {
                 rounds[0].walk[s] = arrival;
-                rounds[0].walk_label[s] = Label::Access { duration: o.duration };
+                rounds[0].walk_label[s] = Label::Access { duration: o.duration, board_only: false };
                 state.reached(s, arrival);
+            }
+        }
+        for o in origins.iter().filter(|o| o.board_only) {
+            let s = o.stop.0 as usize;
+            if matches!(rounds[0].walk_label[s], Label::Access { board_only: false, .. }) {
+                continue;
+            }
+            let arrival =
+                departure.saturating_add(o.duration.saturating_add(tt.entry_time(o.stop)));
+            if arrival < rounds[0].walk[s] {
+                rounds[0].walk[s] = arrival;
+                rounds[0].walk_label[s] = Label::Access { duration: o.duration, board_only: true };
+                state.marked[s] = true; // board here in round 1, but not "reached"
             }
         }
         // Round labels are not copied upwards between rounds: every stored arrival is

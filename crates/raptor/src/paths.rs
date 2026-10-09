@@ -148,7 +148,7 @@ pub fn zone_paths(
             let arrival = best[s];
             let round = rounds
                 .iter()
-                .position(|r| r.ride[s].min(r.walk[s]) == arrival)
+                .position(|r| r.ride[s].min(r.arrived_on_foot(s)) == arrival)
                 .expect("the best arrival comes from some round");
             let journey = rebuild(
                 tt,

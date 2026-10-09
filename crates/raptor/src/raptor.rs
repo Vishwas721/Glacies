@@ -27,10 +27,15 @@ pub struct Params {
 }
 
 /// A walk between the origin (or destination) and a stop, in seconds.
+///
+/// A `board_only` access (say a ride to a station) may only be used to board a vehicle at
+/// `stop`: the stop does not count as reached from it, so an egress walk cannot follow it
+/// directly. Only the range search honours it ([`search`] rejects it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Access {
     pub stop: StopIdx,
     pub duration: u32,
+    pub board_only: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +51,7 @@ pub(crate) enum Label {
     None,
     Access {
         duration: u32,
+        board_only: bool,
     },
     Ride {
         route: RouteIdx,
@@ -75,6 +81,15 @@ impl Round {
             walk: vec![Time::UNREACHED; stops],
             ride_label: vec![Label::None; stops],
             walk_label: vec![Label::None; stops],
+        }
+    }
+
+    /// Walk arrival at stop `s`, unless it is a board-only access (not an arrival).
+    pub(crate) fn arrived_on_foot(&self, s: usize) -> Time {
+        if matches!(self.walk_label[s], Label::Access { board_only: true, .. }) {
+            Time::UNREACHED
+        } else {
+            self.walk[s]
         }
     }
 
@@ -140,7 +155,7 @@ impl Profile<'_> {
 /// given time, no label at or after that time is kept.
 ///
 /// # Panics
-/// If the timetable has more than `u32::MAX` stops or routes.
+/// If the timetable has more than `u32::MAX` stops or routes, or an origin is board-only.
 #[must_use]
 pub fn search<'a>(
     tt: &'a Timetable,
@@ -149,6 +164,10 @@ pub fn search<'a>(
     departure: Time,
     egress: &[Access],
 ) -> Profile<'a> {
+    assert!(
+        !origins.iter().any(|o| o.board_only),
+        "board-only access needs the range search; rounds here inherit round 0's arrivals"
+    );
     let mut state = Search::new(tt, *params, egress);
     let mut rounds = vec![state.initial_round(origins, departure)];
     for _ in 1..=params.max_rounds {
@@ -223,7 +242,7 @@ impl<'a> Search<'a> {
                 departure.saturating_add(o.duration.saturating_add(self.tt.entry_time(o.stop)));
             if arrival < first.walk[s] {
                 first.walk[s] = arrival;
-                first.walk_label[s] = Label::Access { duration: o.duration };
+                first.walk_label[s] = Label::Access { duration: o.duration, board_only: false };
             }
         }
         for s in 0..first.walk.len() {

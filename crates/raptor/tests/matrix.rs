@@ -29,7 +29,7 @@ fn zones() -> ZoneEgress {
 }
 
 fn run(max_minutes: u32) -> glacies_raptor::ZoneTimes {
-    let origin = [Access { stop: A, duration: 60 }];
+    let origin = [Access { stop: A, duration: 60, board_only: false }];
     let departures = ["07:58", "07:59", "08:00", "08:01"].map(t);
     zone_travel_times(
         &toy5(),
