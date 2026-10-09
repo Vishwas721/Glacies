@@ -49,6 +49,15 @@ from glacies.demand.attraction import (
     read_hubs,
     write_attraction,
 )
+from glacies.demand.calibrate import (
+    CalibrationInput,
+    CalibrationManifest,
+    SweepPoint,
+    Targets,
+    calibrate,
+    station_sets,
+    write_calibration,
+)
 from glacies.demand.metro import (
     ACCESS_NAME,
     PATHS_NAME,
@@ -65,9 +74,25 @@ from glacies.demand.metro import (
     write_paths,
     write_station_flows,
 )
-from glacies.demand.od import DemandBuild, DemandInput, DemandManifest, build_demand, write_demand
+from glacies.demand.od import (
+    DemandBuild,
+    DemandInput,
+    DemandManifest,
+    Prepared,
+    balance,
+    prepare_demand,
+    write_demand,
+)
 from glacies.demand.production import DemandError, candidate_pairs
-from glacies.demand.ridership import RidershipManifest, read_ridership, write_ridership
+from glacies.demand.ridership import PAIRS_NAME as RIDERSHIP_PAIRS
+from glacies.demand.ridership import STATIONS_NAME as RIDERSHIP_STATIONS
+from glacies.demand.ridership import (
+    RidershipManifest,
+    observed_entries,
+    observed_pairs,
+    read_ridership,
+    write_ridership,
+)
 from glacies.demand.stations import check_calibration_names, network_stations
 from glacies.ingest import archive
 from glacies.model.transit.build import FeedInput, TransitBuildError, build_transit
@@ -558,11 +583,10 @@ def run_paths(
     return manifest, out_dir
 
 
-def run_demand(
-    settings: Settings, config: CityConfig, *, scenario: str = "baseline"
-) -> tuple[DemandManifest, DemandBuild, Path]:
-    """AM-peak trip ends and the balanced gravity OD matrix (Phase 5 M1-M2)."""
-    demand, mode = _demand_settings(settings, config)
+def _prepare(
+    settings: Settings, config: CityConfig, demand: DemandConfig, mode: str, scenario: str
+) -> tuple[Prepared, dict[str, Path]]:
+    """Trip ends and the pairs to balance, from the built stages (β-independent)."""
     base = city_dir(settings, config)
     stages = {
         "transit": base / "transit",
@@ -578,7 +602,7 @@ def run_demand(
     reach = pl.read_parquet(stages["paths"] / REACH_NAME)
     try:
         check_calibration_names(stages["transit"], mode, demand.calibration)
-        result = build_demand(
+        prepared = prepare_demand(
             zones,
             attraction["employment_score"].to_numpy(),
             access["has_access"].to_numpy(),
@@ -589,7 +613,20 @@ def run_demand(
         )
     except DemandError as exc:
         raise PipelineError(str(exc)) from exc
-    out_dir = base / "demand" / scenario
+    return prepared, stages
+
+
+def run_demand(
+    settings: Settings, config: CityConfig, *, scenario: str = "baseline"
+) -> tuple[DemandManifest, DemandBuild, Path]:
+    """AM-peak trip ends and the balanced gravity OD matrix (Phase 5 M1-M2)."""
+    demand, mode = _demand_settings(settings, config)
+    prepared, stages = _prepare(settings, config, demand, mode, scenario)
+    try:
+        result, _ = balance(prepared, demand, demand.gravity.beta_per_min)
+    except DemandError as exc:
+        raise PipelineError(str(exc)) from exc
+    out_dir = city_dir(settings, config) / "demand" / scenario
     manifest = write_demand(
         result,
         out_dir,
@@ -602,6 +639,58 @@ def run_demand(
         ],
     )
     return manifest, result, out_dir
+
+
+def run_calibration(
+    settings: Settings,
+    config: CityConfig,
+    *,
+    scenario: str = "baseline",
+    on_point: Callable[[SweepPoint], None] | None = None,
+) -> tuple[CalibrationManifest, Path]:
+    """Choose β by fitting station entry shares on the training stations (Phase 5 M4)."""
+    demand, mode = _demand_settings(settings, config)
+    cal = demand.calibration
+    prepared, stages = _prepare(settings, config, demand, mode, scenario)
+    base = city_dir(settings, config)
+    stages["ridership"] = base / "ridership" / cal.dataset
+    _require({"ridership": stages["ridership"]})
+    paths_dir = stages["paths"]
+    stations = pl.read_parquet(paths_dir / STATIONS_NAME)
+    try:
+        ridership = stages["ridership"]
+        entries = observed_entries(
+            pl.read_parquet(ridership / RIDERSHIP_STATIONS), cal.dates, cal.hours
+        )
+        observed, pair_dates = observed_pairs(
+            pl.read_parquet(ridership / RIDERSHIP_PAIRS), cal.dates, cal.hours
+        )
+        targets = Targets(
+            sets=station_sets(stations, cal),
+            entries=entries,
+            pairs=observed,
+            pair_dates=pair_dates,
+            reach=pl.read_parquet(paths_dir / REACH_NAME),
+            paths=pl.read_parquet(paths_dir / PATHS_NAME),
+            stations=stations,
+        )
+        result = calibrate(prepared, demand, targets, on_point=on_point)
+    except DemandError as exc:
+        raise PipelineError(str(exc)) from exc
+    out_dir = base / "calibration" / scenario
+    manifest = write_calibration(
+        result,
+        out_dir,
+        city=config.city.id,
+        scenario=scenario,
+        calibration=cal,
+        pair_dates=pair_dates,
+        inputs=[
+            CalibrationInput(stage=stage, manifest_sha256=sha256_file(directory / "manifest.json"))
+            for stage, directory in stages.items()
+        ],
+    )
+    return manifest, out_dir
 
 
 def run_station_flows(

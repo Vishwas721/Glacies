@@ -15,6 +15,7 @@ import typer
 from glacies import pipeline
 from glacies.cities import CityConfig, CityConfigError, load_city
 from glacies.config import Settings, get_settings
+from glacies.demand.calibrate import SweepPoint
 from glacies.ingest import archive, download
 from glacies.model.transit.schema import TABLES
 from glacies.model.zones.build import population_check
@@ -42,6 +43,8 @@ load_app = typer.Typer(help="Copy canonical layers into databases.", no_args_is_
 app.add_typer(load_app, name="load")
 bench_app = typer.Typer(help="Measure performance on the real network.", no_args_is_help=True)
 app.add_typer(bench_app, name="bench")
+demand_app = typer.Typer(help="Calibrate and test synthetic demand.", no_args_is_help=True)
+app.add_typer(demand_app, name="demand")
 scenario_app = typer.Typer(help="Define and check network scenarios.", no_args_is_help=True)
 app.add_typer(scenario_app, name="scenario")
 
@@ -388,6 +391,33 @@ def build_ridership(city: CityOption = None) -> None:
         f"{manifest.stations} stations, {manifest.station_rows:,} station-hours, "
         f"{manifest.pair_rows:,} station-pair-hours"
     )
+
+
+@demand_app.command("calibrate")
+def calibrate_demand(city: CityOption = None) -> None:
+    """Choose the gravity model's β against observed metro station entries."""
+    settings, config = _load(city)
+
+    def point(p: SweepPoint) -> None:
+        typer.echo(
+            f"  β {p.beta_per_min:.4f} ({p.stage}): RMSE {p.rmse_share_training:.5f}, "
+            f"R² {p.r2_share_training:.3f}, {p.mean_km:.1f} km, {p.iterations} iterations",
+            err=True,
+        )
+
+    try:
+        manifest, out_dir = pipeline.run_calibration(settings, config, on_point=point)
+    except PipelineError as exc:
+        _fail(str(exc))
+    typer.echo(f"calibration -> {out_dir}")
+    edge = " (at the edge of the range)" if manifest.at_boundary else ""
+    typer.echo(f"  β = {manifest.beta_per_min:.4f} per minute{edge}")
+    for name, f in manifest.fits.items():
+        typer.echo(
+            f"  {name}: R² (share) {f.r2_share:.2f}, RMSE {f.rmse_share:.4f}, "
+            f"mean GEH {f.mean_geh:.1f}, level {f.level_ratio:.2f} ({f.items} items)"
+        )
+    typer.echo("  set [demand.gravity] beta_per_min in demand.toml to use it")
 
 
 @app.command("accessibility")
