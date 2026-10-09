@@ -84,6 +84,7 @@ kind = "ridership"
 mode = "metro"
 source = "Glacies test fixture"
 url = "https://example.invalid/toy-ridership"
+format = "vonter-hourly"
 license = "CC0-1.0"
 verified = true
 nature = "observed"

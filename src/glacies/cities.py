@@ -98,6 +98,9 @@ class Source(_Strict):
         "non-revenue (e.g. test runs) and are left out of the canonical network.",
     )
     coverage_reference: CoverageReference | None = None
+    format: str | None = Field(
+        default=None, description="Layout of the files, for sources read by name (ridership)."
+    )
 
     @model_validator(mode="after")
     def _check_patterns(self) -> Source:
