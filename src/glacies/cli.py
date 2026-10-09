@@ -374,6 +374,22 @@ def build_station_flows(city: CityOption = None) -> None:
     )
 
 
+@build_app.command("ridership")
+def build_ridership(city: CityOption = None) -> None:
+    """Validate the calibration ridership snapshot into canonical tables (Observed)."""
+    settings, config = _load(city)
+    try:
+        manifest, out_dir = pipeline.run_ridership(settings, config)
+    except PipelineError as exc:
+        _fail(str(exc))
+    typer.echo(f"ridership (Observed) -> {out_dir}")
+    typer.echo(
+        f"  {manifest.dates} dates {manifest.first_date}..{manifest.last_date}, "
+        f"{manifest.stations} stations, {manifest.station_rows:,} station-hours, "
+        f"{manifest.pair_rows:,} station-pair-hours"
+    )
+
+
 @app.command("accessibility")
 def accessibility_report(
     city: Annotated[

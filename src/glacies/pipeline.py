@@ -67,7 +67,8 @@ from glacies.demand.metro import (
 )
 from glacies.demand.od import DemandBuild, DemandInput, DemandManifest, build_demand, write_demand
 from glacies.demand.production import DemandError, candidate_pairs
-from glacies.demand.stations import check_calibration_names
+from glacies.demand.ridership import RidershipManifest, read_ridership, write_ridership
+from glacies.demand.stations import check_calibration_names, network_stations
 from glacies.ingest import archive
 from glacies.model.transit.build import FeedInput, TransitBuildError, build_transit
 from glacies.model.transit.writer import MANIFEST_NAME as TRANSIT_MANIFEST
@@ -624,6 +625,48 @@ def run_station_flows(
     out_dir = base / "metro" / scenario
     manifest = write_station_flows(
         flows, out_dir, city=config.city.id, scenario=scenario, mode=mode, inputs=_inputs(stages)
+    )
+    return manifest, out_dir
+
+
+def run_ridership(settings: Settings, config: CityConfig) -> tuple[RidershipManifest, Path]:
+    """Validate the calibration ridership snapshot into canonical tables (Observed)."""
+    demand, mode = _demand_settings(settings, config)
+    dataset, snapshot = demand.calibration.dataset, demand.calibration.snapshot
+    source = config.source(dataset)
+    if source.format is None:
+        raise PipelineError(f"source {dataset!r} has no `format` in city.toml")
+    manifests = [
+        m
+        for m in archive.list_snapshots(settings.raw_dir, config.city.id, dataset)
+        if m.snapshot == snapshot
+    ]
+    if not manifests:
+        raise PipelineError(
+            f"no archived snapshot {snapshot!r} of {dataset!r}; run `glacies ingest register`"
+        )
+    data_dir = (
+        archive.dataset_dir(settings.raw_dir, config.city.id, dataset)
+        / snapshot
+        / archive.DATA_DIR_NAME
+    )
+    base = city_dir(settings, config)
+    _require({"transit": base / "transit"})
+    try:
+        ridership = read_ridership(
+            data_dir, source.format, network_stations(base / "transit", mode)
+        )
+    except DemandError as exc:
+        raise PipelineError(str(exc)) from exc
+    out_dir = base / "ridership" / dataset
+    manifest = write_ridership(
+        ridership,
+        out_dir,
+        city=config.city.id,
+        dataset=dataset,
+        snapshot=snapshot,
+        checksum=manifests[0].checksum_sha256,
+        fmt=source.format,
     )
     return manifest, out_dir
 
