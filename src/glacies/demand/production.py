@@ -32,7 +32,8 @@ COLUMN_NATURE: dict[str, DataNature] = {
     "has_access": DataNature.SIMULATED,  # walk network search from the zone point
     "employment_score": DataNature.ESTIMATED,
     "origin": DataNature.ESTIMATED,
-    "destination": DataNature.ESTIMATED,
+    "destination_proxy": DataNature.ESTIMATED,  # employment proxy scaled to ΣO
+    "destination": DataNature.ESTIMATED,  # what the network can deliver (demand.feasibility)
 }
 
 

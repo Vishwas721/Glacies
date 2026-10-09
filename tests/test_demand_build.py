@@ -1,0 +1,144 @@
+"""Attainable attractions on toys, and `glacies build demand` on the toy city (Phase 5 M1-M2)."""
+
+import shutil
+from pathlib import Path
+
+import numpy as np
+import polars as pl
+import pytest
+from typer.testing import CliRunner
+
+from glacies.cli import app
+from glacies.demand.feasibility import attainable
+from glacies.demand.gravity import furness
+from tests.gtfs_edit import TOY_FEED
+from tests.zone_inputs import write_buildings, write_landcover, write_population
+
+FIXTURES = Path(__file__).parent / "fixtures"
+runner = CliRunner()
+
+
+def pairs(cells: list[tuple[int, int]]) -> tuple[np.ndarray, np.ndarray]:
+    o, d = zip(*cells, strict=True)
+    return np.array(o, dtype=np.uint32), np.array(d, dtype=np.uint32)
+
+
+def test_feasible_targets_are_untouched() -> None:
+    origin, dest = pairs([(0, 0), (0, 1), (1, 0), (1, 1)])
+    result = attainable(
+        origin, dest, np.array([60.0, 40.0]), np.array([50.0, 50.0]), tolerance=1e-9
+    )
+
+    np.testing.assert_allclose(result.attractions, [50, 50])
+    assert result.keep.all()
+    assert (result.blocks, result.trips_moved) == (1, 0)
+
+
+def test_bottleneck_is_split_by_hand() -> None:
+    """O = (10, 90), D = (50, 50); origin 0 reaches both zones, origin 1 only zone 0.
+
+    Origin 1's 90 trips can only go to zone 0, which wants 50: the bottleneck is {origin 1} ->
+    {zone 0}. In the balanced limit origin 0 sends nothing to zone 0, so that pair is dropped,
+    zone 0 gets 90 and zone 1 the remaining 10: 40 trips of attraction move.
+    """
+    origin, dest = pairs([(0, 0), (0, 1), (1, 0)])
+    o, d = np.array([10.0, 90.0]), np.array([50.0, 50.0])
+
+    result = attainable(origin, dest, o, d, tolerance=1e-9)
+
+    np.testing.assert_allclose(result.attractions, [90, 10])
+    assert result.keep.tolist() == [False, True, True]
+    assert result.blocks == 2
+    assert result.trips_moved == pytest.approx(40)
+    balanced = furness(
+        origin[result.keep], dest[result.keep], np.ones(2), o, result.attractions,
+        tolerance=1e-12, max_iterations=100,
+    )  # fmt: skip
+    assert balanced.converged
+    np.testing.assert_allclose(balanced.trips, [10, 90])
+
+
+def test_isolated_groups_are_balanced_separately() -> None:
+    """Zones 0 and 1 reach only each other: 0 -> 1 carries 5 trips, 1 -> 0 carries 10, so the
+    attractions must be (10, 5) whatever the proxy says (here 7.5 each)."""
+    origin, dest = pairs([(0, 1), (1, 0)])
+
+    result = attainable(origin, dest, np.array([5.0, 10.0]), np.array([7.5, 7.5]), tolerance=1e-9)
+
+    np.testing.assert_allclose(result.attractions, [10, 5])
+    assert result.keep.all()
+    assert result.trips_moved == pytest.approx(2.5)
+
+
+@pytest.fixture
+def city(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Toyville built from raw with a baseline matrix and the employment proxy."""
+    monkeypatch.setenv("GLACIES_CITIES_DIR", str(FIXTURES / "cities"))
+    monkeypatch.setenv("GLACIES_CITY", "toyville")
+    monkeypatch.setenv("GLACIES_DATA_DIR", str(tmp_path / "data"))
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    sources = {
+        "toy_gtfs": shutil.copytree(TOY_FEED, downloads / "toy_feed"),
+        "toy_osm": shutil.copy(FIXTURES / "osm" / "toy.osm", downloads / "toy.osm"),
+        "toy_population": write_population(downloads / "pop.tif"),
+        "toy_landcover": write_landcover(downloads / "lc.tif"),
+        "toy_buildings": write_buildings(downloads / "buildings.csv.gz"),
+    }
+    for name, path in sources.items():
+        result = runner.invoke(app, ["ingest", "register", name, str(path), "--snapshot", "v1"])
+        assert result.exit_code == 0, result.output
+    for command in (["build-city"], ["build", "tt-matrix"]):
+        result = runner.invoke(app, command)
+        assert result.exit_code == 0, result.output
+    processed = tmp_path / "data" / "processed" / "toyville"
+    # The toy's buildings and POIs lie away from its stops; equal scores everywhere let every
+    # zone with a stop attract trips.
+    path = processed / "attraction" / "attraction.parquet"
+    table = pl.read_parquet(path)
+    table.with_columns(pl.lit(1 / table.height).alias("employment_score")).write_parquet(path)
+    return processed
+
+
+def test_build_demand_balances_and_is_reproducible(city: Path) -> None:
+    result = runner.invoke(app, ["build", "demand"])
+    assert result.exit_code == 0, result.output
+    out = city / "demand" / "baseline"
+    ends = pl.read_parquet(out / "trip_ends.parquet")
+    od = pl.read_parquet(out / "od.parquet")
+    first = {p.name: p.read_bytes() for p in sorted(out.glob("*.parquet"))}
+
+    assert od.height > 0
+    assert (od["origin_zone"] != od["dest_zone"]).all()
+    rows = od.group_by("origin_zone").agg(pl.col("trips").sum())
+    cols = od.group_by("dest_zone").agg(pl.col("trips").sum())
+    check = ends.join(rows, left_on="zone_idx", right_on="origin_zone", how="left").join(
+        cols, left_on="zone_idx", right_on="dest_zone", how="left", suffix="_in"
+    )
+    np.testing.assert_allclose(check["trips"].fill_null(0), check["origin"], rtol=1e-5, atol=1e-9)
+    np.testing.assert_allclose(
+        check["trips_in"].fill_null(0), check["destination"], rtol=1e-5, atol=1e-9
+    )
+    assert (ends.filter(~pl.col("has_access"))["origin"] == 0).all()
+    report = (out / "BUILD_REPORT.md").read_text(encoding="utf-8")
+    assert "Estimated" in report
+    assert "Glacies test fixture (not verified)" in report
+
+    again = runner.invoke(app, ["build", "demand"])
+    assert again.exit_code == 0, again.output
+    assert {p.name: p.read_bytes() for p in sorted(out.glob("*.parquet"))} == first
+
+
+def test_misspelt_held_out_station_fails(
+    city: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cities = shutil.copytree(FIXTURES / "cities", tmp_path / "cities")
+    demand = cities / "toyville" / "demand.toml"
+    text = demand.read_text(encoding="utf-8").replace('"Central Station"', '"Centrl Station"')
+    demand.write_text(text, encoding="utf-8")
+    monkeypatch.setenv("GLACIES_CITIES_DIR", str(cities))
+
+    result = runner.invoke(app, ["build", "demand"])
+
+    assert result.exit_code != 0
+    assert "Centrl Station" in result.output
