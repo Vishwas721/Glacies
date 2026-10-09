@@ -34,8 +34,52 @@ fn accesses(stops: &[u32], seconds: &[u32], what: &str) -> PyResult<Vec<core::Ac
     Ok(stops
         .iter()
         .zip(seconds)
-        .map(|(&stop, &duration)| core::Access { stop: core::StopIdx(stop), duration })
+        .map(|(&stop, &duration)| core::Access {
+            stop: core::StopIdx(stop),
+            duration,
+            board_only: false,
+        })
         .collect())
+}
+
+/// Board-only rides to stops, one `(stops, seconds)` pair per origin.
+type RideAccess<'py> = Option<Vec<(PyReadonlyArray1<'py, u32>, PyReadonlyArray1<'py, u32>)>>;
+
+/// Origin `i`'s access walks plus its board-only rides, checked against the stop count.
+fn origin_access(
+    stops: &PyReadonlyArray1<'_, u32>,
+    seconds: &PyReadonlyArray1<'_, u32>,
+    rides: &RideAccess<'_>,
+    i: usize,
+    stop_count: usize,
+) -> PyResult<Vec<core::Access>> {
+    let mut access =
+        accesses(slice(stops, "access stops")?, slice(seconds, "access seconds")?, "origins")?;
+    if let Some(rides) = rides {
+        let (ride_stops, ride_seconds) = &rides[i];
+        access.extend(
+            accesses(
+                slice(ride_stops, "ride stops")?,
+                slice(ride_seconds, "ride seconds")?,
+                "ride_access",
+            )?
+            .into_iter()
+            .map(|a| core::Access { board_only: true, ..a }),
+        );
+    }
+    if let Some(a) = access.iter().find(|a| a.stop.0 as usize >= stop_count) {
+        return Err(value_error(format!("origin references unknown stop {}", a.stop.0)));
+    }
+    Ok(access)
+}
+
+fn check_rides(rides: &RideAccess<'_>, origins: usize) -> PyResult<()> {
+    match rides {
+        Some(rides) if rides.len() != origins => {
+            Err(value_error("ride_access must have one entry per origin"))
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Zone egress walks from `(zone, stop, seconds)` columns.
@@ -369,13 +413,15 @@ impl Timetable {
 
     /// Travel-time percentiles from many origins to zones, in parallel (Phase 3 M2).
     ///
-    /// Each origin is `(access stops, access seconds, walk-only zones, walk-only seconds)`.
-    /// Zone egress walks are `(zone, stop, seconds)` triples. Returns `(origin, zone, times)`:
+    /// Each origin is `(access stops, access seconds, walk-only zones, walk-only seconds)`;
+    /// `ride_access`, if given, adds board-only `(stops, seconds)` per origin (rides that must
+    /// be followed by a vehicle). Zone egress walks are `(zone, stop, seconds)` triples.
+    /// Returns `(origin, zone, times)`:
     /// the origin's position in `origins`, the zone, and one row of `percentiles` seconds per
     /// reached zone (`UNREACHED` = above `max_travel_time`), ordered by origin then zone.
     #[pyo3(signature = (
         origins, departures, zone_count, egress_zones, egress_stops, egress_seconds,
-        percentiles, max_travel_time, max_rounds, min_transfer_time,
+        percentiles, max_travel_time, max_rounds, min_transfer_time, ride_access=None,
     ))]
     #[allow(clippy::too_many_arguments)] // mirrors the columnar layout of the inputs
     #[allow(clippy::type_complexity)] // one tuple of arrays per origin
@@ -397,7 +443,9 @@ impl Timetable {
         max_travel_time: u32,
         max_rounds: usize,
         min_transfer_time: u32,
+        ride_access: RideAccess<'py>,
     ) -> PyResult<(U32Array<'py>, U32Array<'py>, Bound<'py, PyArray2<u32>>)> {
+        check_rides(&ride_access, origins.len())?;
         let (ez, es, esec) = (
             slice(&egress_zones, "egress_zones")?,
             slice(&egress_stops, "egress_stops")?,
@@ -419,18 +467,9 @@ impl Timetable {
         let egress = core::ZoneEgress::new(zone_count, &walks).map_err(value_error)?;
         let sets = origins
             .iter()
-            .map(|(stops, seconds, zones, walk_seconds)| {
-                let access = accesses(
-                    slice(stops, "access stops")?,
-                    slice(seconds, "access seconds")?,
-                    "origins",
-                )?;
-                if let Some(&stop) = access.iter().find(|a| a.stop.0 as usize >= stop_count) {
-                    return Err(value_error(format!(
-                        "origin references unknown stop {}",
-                        stop.stop.0
-                    )));
-                }
+            .enumerate()
+            .map(|(i, (stops, seconds, zones, walk_seconds))| {
+                let access = origin_access(stops, seconds, &ride_access, i, stop_count)?;
                 let (zones, walk_seconds) =
                     (slice(zones, "walk-only zones")?, slice(walk_seconds, "walk-only seconds")?);
                 if zones.len() != walk_seconds.len() {
@@ -482,9 +521,10 @@ impl Timetable {
     /// target zones)`. `metro_trip` flags trips by id (1 = metro); `station` gives each stop's
     /// station or `UNREACHED` outside the metro. Returns `(origin, zone, reached, walked,
     /// metro)` per target and `(origin, zone, entry, exit, departures)` per segment, ordered by origin.
+    /// `ride_access` is as in `zone_travel_times_many`.
     #[pyo3(signature = (
         origins, departures, zone_count, egress_zones, egress_stops, egress_seconds,
-        metro_trip, station, max_travel_time, max_rounds, min_transfer_time,
+        metro_trip, station, max_travel_time, max_rounds, min_transfer_time, ride_access=None,
     ))]
     #[allow(clippy::too_many_arguments)] // mirrors the columnar layout of the inputs
     #[allow(clippy::type_complexity)] // one tuple of arrays per origin, nine arrays back
@@ -508,10 +548,12 @@ impl Timetable {
         max_travel_time: u32,
         max_rounds: usize,
         min_transfer_time: u32,
+        ride_access: RideAccess<'py>,
     ) -> PyResult<(
         (U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>),
         (U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>),
     )> {
+        check_rides(&ride_access, origins.len())?;
         let stop_count = self.inner.stop_count();
         let egress =
             zone_egress(stop_count, zone_count, &egress_zones, &egress_stops, &egress_seconds)?;
@@ -525,18 +567,9 @@ impl Timetable {
         };
         let sets = origins
             .iter()
-            .map(|(stops, seconds, zones, walk_seconds, targets)| {
-                let access = accesses(
-                    slice(stops, "access stops")?,
-                    slice(seconds, "access seconds")?,
-                    "origins",
-                )?;
-                if let Some(&stop) = access.iter().find(|a| a.stop.0 as usize >= stop_count) {
-                    return Err(value_error(format!(
-                        "origin references unknown stop {}",
-                        stop.stop.0
-                    )));
-                }
+            .enumerate()
+            .map(|(i, (stops, seconds, zones, walk_seconds, targets))| {
+                let access = origin_access(stops, seconds, &ride_access, i, stop_count)?;
                 let (zones, walk_seconds) =
                     (slice(zones, "walk-only zones")?, slice(walk_seconds, "walk-only seconds")?);
                 if zones.len() != walk_seconds.len() {

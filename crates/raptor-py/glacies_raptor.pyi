@@ -93,6 +93,7 @@ class Timetable:
         max_travel_time: int,
         max_rounds: int,
         min_transfer_time: int,
+        ride_access: list[tuple[U32, U32]] | None = None,
     ) -> tuple[U32, U32, npt.NDArray[np.uint32]]: ...
     def zone_paths_many(
         self,
@@ -107,6 +108,7 @@ class Timetable:
         max_travel_time: int,
         max_rounds: int,
         min_transfer_time: int,
+        ride_access: list[tuple[U32, U32]] | None = None,
     ) -> tuple[tuple[U32, U32, U32, U32, U32], tuple[U32, U32, U32, U32, U32]]: ...
     def plan(
         self,
