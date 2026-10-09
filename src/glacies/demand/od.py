@@ -24,7 +24,7 @@ from glacies import __version__
 from glacies.analytics.travel_times import zone_points
 from glacies.cities import DemandConfig
 from glacies.demand.feasibility import attainable
-from glacies.demand.gravity import exponential, furness
+from glacies.demand.gravity import F64, U32, exponential, furness
 from glacies.demand.production import (
     BOOL,
     COLUMN_NATURE,
@@ -92,6 +92,7 @@ class DemandBuild:
     attainability: Attainability
     convergence: Convergence
     trip_length: TripLength
+    beta_per_min: float
 
 
 def _bands(cost_min: np.ndarray, trips: np.ndarray) -> dict[str, float]:
@@ -105,7 +106,23 @@ def _bands(cost_min: np.ndarray, trips: np.ndarray) -> dict[str, float]:
     return bands
 
 
-def build_demand(
+@dataclass
+class Prepared:
+    """Everything up to Furness: it does not depend on β, so calibration reuses it."""
+
+    ends: TripEnds  # with destination_proxy and the attainable destination
+    pairs: pl.DataFrame  # origin_zone, dest_zone, cost_s: the pairs that can carry trips
+    origin: U32
+    dest: U32
+    cost_min: F64
+    productions: F64
+    attractions: F64
+    straight_km: F64  # zone point to zone point, per pair
+    attainability: Attainability
+    detour_factor: float
+
+
+def prepare_demand(
     zones: pl.DataFrame,
     employment_score: np.ndarray,
     has_access: BOOL,
@@ -114,8 +131,8 @@ def build_demand(
     *,
     detour_factor: float,
     walk_pairs: pl.DataFrame | None = None,
-) -> DemandBuild:
-    """Trip ends and the balanced OD matrix; ``zones`` sorted by ``zone_idx``.
+) -> Prepared:
+    """Trip ends, attainable attractions and the pairs to balance; ``zones`` by ``zone_idx``.
 
     ``walk_pairs`` (origin_zone, dest_zone) are left out: walking is their fastest journey.
     """
@@ -136,33 +153,74 @@ def build_demand(
     )
     origin = live["origin_zone"].to_numpy().astype(np.uint32)
     dest = live["dest_zone"].to_numpy().astype(np.uint32)
-    g = demand.gravity
     feasible = attainable(origin, dest, o, d, tolerance=FEASIBILITY_TOLERANCE)
     live = live.filter(pl.Series(feasible.keep))
-    cost_min = live["cost_s"].to_numpy().astype(np.float64) / 60
-    balanced = furness(
-        origin[feasible.keep],
-        dest[feasible.keep],
-        exponential(cost_min, g.beta_per_min),
-        o,
-        feasible.attractions,
-        tolerance=g.tolerance,
-        max_iterations=g.max_iterations,
-    )
     ends.table = ends.table.rename({"destination": "destination_proxy"}).with_columns(
         pl.Series("destination", feasible.attractions)
     )
-    attainability = Attainability(
-        walk_pairs_excluded=walk_excluded,
-        blocks=feasible.blocks,
-        trips_moved=feasible.trips_moved,
-        pairs_dropped=int((~feasible.keep).sum()),
-        pairs_kept=int(feasible.keep.sum()),
+    points = zone_points(zones).select("zone_idx", "lat", "lon")
+    straight = (
+        live.select("origin_zone", "dest_zone")
+        .join(points.rename({"zone_idx": "origin_zone"}), on="origin_zone", how="left")
+        .join(
+            points.rename({"zone_idx": "dest_zone", "lat": "lat_to", "lon": "lon_to"}),
+            on="dest_zone",
+            how="left",
+        )
+        .select(
+            haversine_m(pl.col("lat"), pl.col("lon"), pl.col("lat_to"), pl.col("lon_to")) / 1000
+        )
+        .to_series()
+        .to_numpy()
+    )
+    return Prepared(
+        ends=ends,
+        pairs=live,
+        origin=origin[feasible.keep],
+        dest=dest[feasible.keep],
+        cost_min=live["cost_s"].to_numpy().astype(np.float64) / 60,
+        productions=o,
+        attractions=feasible.attractions,
+        straight_km=np.asarray(straight, dtype=np.float64),
+        attainability=Attainability(
+            walk_pairs_excluded=walk_excluded,
+            blocks=feasible.blocks,
+            trips_moved=feasible.trips_moved,
+            pairs_dropped=int((~feasible.keep).sum()),
+            pairs_kept=int(feasible.keep.sum()),
+        ),
+        detour_factor=detour_factor,
+    )
+
+
+def balance(
+    prepared: Prepared,
+    demand: DemandConfig,
+    beta_per_min: float,
+    *,
+    tolerance: float | None = None,
+    initial_b: F64 | None = None,
+) -> tuple[DemandBuild, F64]:
+    """The balanced OD matrix for one β, and Furness's column factors (to warm-start the next).
+
+    ``tolerance`` overrides ``[demand.gravity] tolerance`` (calibration sweeps use a coarser one).
+    """
+    g = demand.gravity
+    tol = g.tolerance if tolerance is None else tolerance
+    balanced = furness(
+        prepared.origin,
+        prepared.dest,
+        exponential(prepared.cost_min, beta_per_min),
+        prepared.productions,
+        prepared.attractions,
+        tolerance=tol,
+        max_iterations=g.max_iterations,
+        initial_b=initial_b,
     )
     convergence = Convergence(
         iterations=balanced.iterations,
         converged=balanced.converged,
-        tolerance=g.tolerance,
+        tolerance=tol,
         max_row_error=balanced.max_row_error,
         max_column_error=balanced.max_column_error,
         row_error_at={
@@ -174,55 +232,63 @@ def build_demand(
     if not balanced.converged:
         raise DemandError(
             f"Furness did not converge in {balanced.iterations} iterations: largest row error "
-            f"{balanced.max_row_error:.3g} (tolerance {g.tolerance:g})"
+            f"{balanced.max_row_error:.3g} (tolerance {tol:g})"
         )
-
-    points = zone_points(zones).select("zone_idx", "lat", "lon")
-    od = (
-        live.with_columns(pl.Series("trips", balanced.trips))
-        .filter(pl.col("trips") > 0)
-        .join(points.rename({"zone_idx": "origin_zone"}), on="origin_zone")
-        .join(
-            points.rename({"zone_idx": "dest_zone", "lat": "lat_to", "lon": "lon_to"}),
-            on="dest_zone",
-        )
-        .with_columns(
-            (
-                haversine_m(pl.col("lat"), pl.col("lon"), pl.col("lat_to"), pl.col("lon_to")) / 1000
-            ).alias("straight_km")
-        )
-        .select(
-            "origin_zone",
-            "dest_zone",
-            "cost_s",
-            "trips",
-            (pl.col("straight_km") * detour_factor).alias("distance_km"),
-            "straight_km",
-        )
-        .sort("origin_zone", "dest_zone")
-    )
-    trips = od["trips"].to_numpy()
+    detour = prepared.detour_factor
+    od = prepared.pairs.select(
+        "origin_zone",
+        "dest_zone",
+        "cost_s",
+        pl.Series("trips", balanced.trips),
+        pl.Series("distance_km", prepared.straight_km * detour),
+    ).filter(pl.col("trips") > 0)
+    trips = balanced.trips
     total = float(trips.sum())
-    straight = float((od["straight_km"].to_numpy() * trips).sum() / total)
-    mean_km = straight * detour_factor
+    straight = float((prepared.straight_km * trips).sum() / total)
+    mean_km = straight * detour
     prior = demand.priors.trip_length
     trip_length = TripLength(
-        mean_cost_min=float((od["cost_s"].to_numpy() / 60 * trips).sum() / total),
+        mean_cost_min=float((prepared.cost_min * trips).sum() / total),
         mean_straight_km=straight,
         mean_km=mean_km,
-        detour_factor=detour_factor,
+        detour_factor=detour,
         prior_mean_km=prior.mean_km,
         accept_km=prior.accept_km,
         within_accepted_range=prior.accept_km[0] <= mean_km <= prior.accept_km[1],
-        share_by_time_band=_bands(od["cost_s"].to_numpy() / 60, trips),
+        share_by_time_band=_bands(prepared.cost_min, trips),
     )
-    return DemandBuild(
-        ends=ends,
-        od=od.drop("straight_km"),
-        attainability=attainability,
+    build = DemandBuild(
+        ends=prepared.ends,
+        od=od,
+        attainability=prepared.attainability,
         convergence=convergence,
         trip_length=trip_length,
+        beta_per_min=beta_per_min,
     )
+    return build, balanced.b
+
+
+def build_demand(
+    zones: pl.DataFrame,
+    employment_score: np.ndarray,
+    has_access: BOOL,
+    matrix: pl.LazyFrame,
+    demand: DemandConfig,
+    *,
+    detour_factor: float,
+    walk_pairs: pl.DataFrame | None = None,
+) -> DemandBuild:
+    """Trip ends and the balanced OD matrix at ``[demand.gravity] beta_per_min``."""
+    prepared = prepare_demand(
+        zones,
+        employment_score,
+        has_access,
+        matrix,
+        demand,
+        detour_factor=detour_factor,
+        walk_pairs=walk_pairs,
+    )
+    return balance(prepared, demand, demand.gravity.beta_per_min)[0]
 
 
 # --- outputs ----------------------------------------------------------------------------------
@@ -241,6 +307,7 @@ class DemandManifest(BaseModel):
     inputs: list[DemandInput]
     demand: DemandConfig  # every prior with its source and verified flag
     column_nature: dict[str, dict[str, DataNature]]
+    beta_per_min: float  # the β this matrix was balanced with
     trip_ends: TripEndStats
     attainability: Attainability
     convergence: Convergence
@@ -275,6 +342,7 @@ def write_demand(
         inputs=inputs,
         demand=demand,
         column_nature={TRIP_ENDS_NAME: COLUMN_NATURE, OD_NAME: OD_NATURE},
+        beta_per_min=build.beta_per_min,
         trip_ends=build.ends.stats,
         attainability=build.attainability,
         convergence=build.convergence,
@@ -334,7 +402,7 @@ def report(m: DemandManifest, build: DemandBuild) -> str:
             p.trip_length.source,
             p.trip_length.verified,
         ),
-        f"- Friction: exp(-{m.demand.gravity.beta_per_min:g} x minutes of "
+        f"- Friction: exp(-{m.beta_per_min:g} x minutes of "
         f"`{m.demand.cost.column}` door-to-door time (Simulated); β is provisional until "
         "calibrated.",
         "",
