@@ -88,7 +88,7 @@ def city(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     for name, path in sources.items():
         result = runner.invoke(app, ["ingest", "register", name, str(path), "--snapshot", "v1"])
         assert result.exit_code == 0, result.output
-    for command in (["build-city"], ["build", "tt-matrix"]):
+    for command in (["build-city"], ["build", "tt-matrix"], ["build", "paths"]):
         result = runner.invoke(app, command)
         assert result.exit_code == 0, result.output
     processed = tmp_path / "data" / "processed" / "toyville"
@@ -153,7 +153,7 @@ def test_station_flows_on_the_toy_city(city: Path) -> None:
     out = city / "metro" / "baseline"
     stations = pl.read_parquet(out / "stations.parquet")
     pairs = pl.read_parquet(out / "station_pairs.parquet")
-    reach = pl.read_parquet(out / "od_reach.parquet")
+    reach = pl.read_parquet(city / "paths" / "baseline" / "od_reach.parquet")
     od = pl.read_parquet(city / "demand" / "baseline" / "od.parquet")
     first = {p.name: p.read_bytes() for p in sorted(out.glob("*.parquet"))}
 
@@ -167,3 +167,23 @@ def test_station_flows_on_the_toy_city(city: Path) -> None:
     again = runner.invoke(app, ["build", "station-flows"])
     assert again.exit_code == 0, again.output
     assert {p.name: p.read_bytes() for p in sorted(out.glob("*.parquet"))} == first
+
+
+def test_walk_pairs_are_left_out_when_configured(
+    city: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every toy pair is fastest on foot, so excluding walk pairs leaves no transit demand."""
+    cities = shutil.copytree(FIXTURES / "cities", tmp_path / "cities")
+    demand = cities / "toyville" / "demand.toml"
+    text = demand.read_text(encoding="utf-8").replace(
+        "exclude_walk_pairs = false", "exclude_walk_pairs = true"
+    )
+    demand.write_text(text, encoding="utf-8")
+    monkeypatch.setenv("GLACIES_CITIES_DIR", str(cities))
+    reach = pl.read_parquet(city / "paths" / "baseline" / "od_reach.parquet")
+    assert (reach["walked"] * 2 >= reach["reached"]).all()
+
+    result = runner.invoke(app, ["build", "demand"])
+
+    assert result.exit_code != 0
+    assert "no zone with transit access" in result.output

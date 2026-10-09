@@ -337,16 +337,32 @@ def build_synthetic_demand(city: CityOption = None) -> None:
     )
 
 
-@build_app.command("station-flows")
-def build_station_flows(city: CityOption = None) -> None:
-    """Simulated metro entries, exits and station-pair flows of the OD matrix."""
+@build_app.command("paths")
+def build_journey_paths(city: CityOption = None) -> None:
+    """How the fastest journeys between transit-served zones travel (Simulated)."""
     settings, config = _load(city)
 
     def progress(done: int, total: int) -> None:
         typer.echo(f"  {done:,}/{total:,} origins", err=True)
 
     try:
-        manifest, out_dir = pipeline.run_station_flows(settings, config, on_chunk=progress)
+        manifest, out_dir = pipeline.run_paths(settings, config, on_chunk=progress)
+    except PipelineError as exc:
+        _fail(str(exc))
+    typer.echo(f"journey paths (Simulated) -> {out_dir}")
+    typer.echo(
+        f"  {manifest.od_pairs:,} zone pairs between {manifest.zones_with_access:,} zones; "
+        f"{manifest.walk_pairs:,} fastest on foot; {manifest.metro_path_rows:,} "
+        f"pair-to-{manifest.mode}-station-pair rows"
+    )
+
+
+@build_app.command("station-flows")
+def build_station_flows(city: CityOption = None) -> None:
+    """Simulated metro entries, exits and station-pair flows of the OD matrix."""
+    settings, config = _load(city)
+    try:
+        manifest, out_dir = pipeline.run_station_flows(settings, config)
     except PipelineError as exc:
         _fail(str(exc))
     s = manifest.stats
