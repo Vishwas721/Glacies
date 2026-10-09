@@ -109,7 +109,7 @@ class Timetable:
         max_rounds: int,
         min_transfer_time: int,
         ride_access: list[tuple[U32, U32]] | None = None,
-    ) -> tuple[tuple[U32, U32, U32, U32, U32], tuple[U32, U32, U32, U32, U32]]: ...
+    ) -> tuple[tuple[U32, U32, U32, U32, U32, U32], tuple[U32, U32, U32, U32, U32]]: ...
     def plan(
         self,
         origin_stops: U32,

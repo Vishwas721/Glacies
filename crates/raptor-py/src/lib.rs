@@ -520,7 +520,7 @@ impl Timetable {
     /// Each origin is `(access stops, access seconds, walk-only zones, walk-only seconds,
     /// target zones)`. `metro_trip` flags trips by id (1 = metro); `station` gives each stop's
     /// station or `UNREACHED` outside the metro. Returns `(origin, zone, reached, walked,
-    /// metro)` per target and `(origin, zone, entry, exit, departures)` per segment, ordered by origin.
+    /// metro, ridden)` per target and `(origin, zone, entry, exit, departures)` per segment, ordered by origin.
     /// `ride_access` is as in `zone_travel_times_many`.
     #[pyo3(signature = (
         origins, departures, zone_count, egress_zones, egress_stops, egress_seconds,
@@ -550,7 +550,7 @@ impl Timetable {
         min_transfer_time: u32,
         ride_access: RideAccess<'py>,
     ) -> PyResult<(
-        (U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>),
+        (U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>),
         (U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>),
     )> {
         check_rides(&ride_access, origins.len())?;
@@ -604,8 +604,8 @@ impl Timetable {
                     .collect::<Result<Vec<_>, _>>()
             })
             .map_err(value_error)?;
-        let (mut origin, mut zone, mut reached, mut walked, mut used) =
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let (mut origin, mut zone, mut reached, mut walked, mut used, mut ridden) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
         let (mut s_origin, mut s_zone, mut entry, mut exit, mut count) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
         for (i, result) in results.into_iter().enumerate() {
@@ -622,6 +622,7 @@ impl Timetable {
             reached.extend(result.reached);
             walked.extend(result.walked);
             used.extend(result.metro);
+            ridden.extend(result.ridden);
         }
         Ok((
             (
@@ -630,6 +631,7 @@ impl Timetable {
                 reached.into_pyarray(py),
                 walked.into_pyarray(py),
                 used.into_pyarray(py),
+                ridden.into_pyarray(py),
             ),
             (
                 s_origin.into_pyarray(py),
