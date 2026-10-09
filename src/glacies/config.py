@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     def city_config_path(self) -> Path:
         return self.cities_dir / self.city / "city.toml"
 
+    @property
+    def demand_config_path(self) -> Path:
+        return self.cities_dir / self.city / "demand.toml"
+
 
 def get_settings() -> Settings:
     return Settings()
