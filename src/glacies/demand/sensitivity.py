@@ -6,8 +6,8 @@ one thing against the baseline (the configured β and the baseline employment pr
 * β halved and doubled (the calibrated value is uncertain; see the sweep);
 * every alternative employment-proxy weighting in ``[attraction]`` of city.toml;
 * trip rate and transit share at both ends of their ranges. These only scale the level of
-  demand (every trip end is multiplied by the same factor), so they are derived from the
-  baseline rather than re-run.
+  demand (each purpose's trip ends by its own priors' factor; gateway trips are fitted and
+  stay), so they are derived from the baseline rather than re-run.
 
 Metrics: trips, mean trip length and door-to-door time, the share of trips using the metro,
 station entries, the fit of station entry shares on training and held-out stations, and the
@@ -25,10 +25,10 @@ import polars as pl
 from pydantic import BaseModel
 
 from glacies import __version__
-from glacies.cities import DemandConfig
+from glacies.cities import DemandConfig, Prior
 from glacies.demand.calibrate import HELD_OUT, TRAINING, Targets, set_fit, station_table
 from glacies.demand.metro import station_flows
-from glacies.demand.od import DemandBuild, Prepared, balance
+from glacies.demand.od import GATEWAY, DemandModel, ModelBuild, build_model
 from glacies.demand.production import DemandError
 from glacies.fsutil import rename_with_retry
 from glacies.provenance import DataNature, sha256_file
@@ -44,7 +44,7 @@ class Variant:
     kind: str  # "baseline", "beta", "proxy" or "level"
     beta_per_min: float
     proxy: str
-    level: float = 1.0  # multiplier on every trip end (trip rate x transit share)
+    end: int | None = None  # level variants: 0 = low, 1 = high end of every purpose's ranges
 
 
 class VariantResult(BaseModel):
@@ -64,37 +64,72 @@ class VariantResult(BaseModel):
     top5_zone_trip_share: float
 
 
+def _level(trip_rate: Prior, transit_share: Prior, end: int) -> float:
+    return trip_rate.range[end] * transit_share.range[end] / (trip_rate.value * transit_share.value)
+
+
+def level_factors(demand: DemandConfig, build: ModelBuild, end: int | None) -> dict[str, float]:
+    """Multiplier per purpose: 1, or both priors at one end of their ranges (gateways stay)."""
+    factors = {name: 1.0 for name, _ in build.parts()}
+    if end is None:
+        return factors
+    factors[build.main_name] = _level(demand.priors.trip_rate, demand.priors.transit_share, end)
+    for purpose in demand.purposes:
+        factors[purpose.name] = _level(purpose.trip_rate, purpose.transit_share, end)
+    return factors
+
+
 def _result(
-    variant: Variant, build: DemandBuild, targets: Targets, hub_zones: set[int]
+    variant: Variant,
+    build: ModelBuild,
+    targets: Targets,
+    hub_zones: set[int],
+    factors: dict[str, float],
 ) -> VariantResult:
-    flows = station_flows(build.od, targets.reach, targets.paths, targets.stations)
-    stations, _ = station_table(build, targets)
-    attracted = build.ends.table.select("zone_idx", "destination")
+    trips = metro = entries = km = minutes = 0.0
+    simulated = None
+    stations = None
+    for name, od in build.parts():
+        f = factors[name] if name != GATEWAY else 1.0
+        flows = station_flows(od, targets.reach, targets.paths, targets.stations)
+        table, _ = station_table(od, targets)
+        part = float(od["trips"].sum())
+        trips += f * part
+        metro += f * flows.stats.trips_using_metro
+        entries += f * flows.stats.entries
+        km += f * float((od["trips"] * od["distance_km"]).sum())
+        minutes += f * float((od["trips"] * od["cost_s"]).sum()) / 60
+        values = table["simulated"].to_numpy() * f
+        simulated = values if simulated is None else simulated + values
+        stations = table
+    if stations is None or simulated is None:
+        raise DemandError("the build has no purposes")
+    stations = stations.with_columns(pl.Series("simulated", simulated))
+    attracted = build.main.ends.table.select("zone_idx", "destination")
     total = float(attracted["destination"].sum())
     hub = float(attracted.filter(pl.col("zone_idx").is_in(sorted(hub_zones)))["destination"].sum())
     top = attracted["destination"].sort(descending=True).head(max(1, attracted.height // 20))
     training = set_fit(stations, TRAINING)
-    level = variant.level
     return VariantResult(
         name=variant.name,
         kind=variant.kind,
         beta_per_min=variant.beta_per_min,
         proxy=variant.proxy,
-        trips=total * level,
-        mean_km=build.trip_length.mean_km,
-        mean_cost_min=build.trip_length.mean_cost_min,
-        metro_trip_share=flows.stats.trips_using_metro / flows.stats.trips,
-        station_entries=flows.stats.entries * level,
+        trips=trips,
+        mean_km=km / trips if trips else 0.0,
+        mean_cost_min=minutes / trips if trips else 0.0,
+        metro_trip_share=metro / trips if trips else 0.0,
+        station_entries=entries,
         r2_training=training.r2_share,
         r2_held_out=set_fit(stations, HELD_OUT).r2_share,
-        level_ratio_training=training.level_ratio * level,
+        level_ratio_training=training.level_ratio,
         hub_trip_share=hub / total if total else 0.0,
         top5_zone_trip_share=float(top.sum()) / total if total else 0.0,
     )
 
 
 def run_variants(
-    prepare: Callable[[str], Prepared],
+    prepare: Callable[[str], DemandModel],
     demand: DemandConfig,
     targets: Targets,
     proxies: list[str],
@@ -103,11 +138,9 @@ def run_variants(
     on_variant: Callable[[VariantResult], None] | None = None,
 ) -> list[VariantResult]:
     """``prepare(proxy)`` gives the β-independent model for an employment-proxy weighting;
-    ``proxies[0]`` is the baseline."""
+    ``proxies[0]`` is the baseline. Gateways keep the configured factor throughout."""
     beta = demand.gravity.beta_per_min
     base = proxies[0]
-    priors = demand.priors
-    rate = priors.trip_rate.value * priors.transit_share.value
     variants = [
         Variant("baseline", "baseline", beta, base),
         Variant("beta x 0.5", "beta", beta / 2, base),
@@ -115,29 +148,29 @@ def run_variants(
         *(Variant(f"proxy {name}", "proxy", beta, name) for name in proxies[1:]),
     ]
     results: list[VariantResult] = []
-    prepared: dict[str, Prepared] = {}
-    baseline_build: DemandBuild | None = None
+    models: dict[str, DemandModel] = {}
+    baseline_build: ModelBuild | None = None
+
+    def record(variant: Variant, build: ModelBuild) -> None:
+        factors = level_factors(demand, build, variant.end)
+        results.append(_result(variant, build, targets, hub_zones, factors))
+        if on_variant is not None:
+            on_variant(results[-1])
+
     for variant in variants:
-        if variant.proxy not in prepared:
-            prepared[variant.proxy] = prepare(variant.proxy)
-        build, _ = balance(prepared[variant.proxy], demand, variant.beta_per_min)
+        if variant.proxy not in models:
+            models[variant.proxy] = prepare(variant.proxy)
+        build = build_model(models[variant.proxy], variant.beta_per_min)
         if variant.kind == "baseline":
             baseline_build = build
-        results.append(_result(variant, build, targets, hub_zones))
-        if on_variant is not None:
-            on_variant(results[-1])
+        record(variant, build)
     if baseline_build is None:
         raise DemandError("the baseline variant did not run")
-    low = priors.trip_rate.range[0] * priors.transit_share.range[0] / rate
-    high = priors.trip_rate.range[1] * priors.transit_share.range[1] / rate
-    for name, factor in (
-        ("trip rate and transit share low", low),
-        ("trip rate and transit share high", high),
+    for name, end in (
+        ("trip rate and transit share low", 0),
+        ("trip rate and transit share high", 1),
     ):
-        variant = Variant(name, "level", beta, base, factor)
-        results.append(_result(variant, baseline_build, targets, hub_zones))
-        if on_variant is not None:
-            on_variant(results[-1])
+        record(Variant(name, "level", beta, base, end), baseline_build)
     return results
 
 

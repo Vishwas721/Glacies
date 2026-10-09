@@ -8,7 +8,7 @@ import pytest
 
 from glacies.cities import load_demand
 from glacies.demand.calibrate import Targets, station_sets
-from glacies.demand.od import Prepared, prepare_demand
+from glacies.demand.od import DemandModel, PurposeModel, prepare_demand
 from glacies.demand.sensitivity import run_variants
 
 TOY = Path(__file__).parent / "fixtures" / "cities" / "toyville" / "demand.toml"
@@ -76,10 +76,11 @@ def test_variants_change_one_thing_each() -> None:
         "other": np.array([0.4, 0.3, 0.2, 0.1]),
     }
 
-    def prepare(name: str) -> Prepared:
-        return prepare_demand(
+    def prepare(name: str) -> DemandModel:
+        prepared = prepare_demand(
             zones(), scores[name], np.ones(4, dtype=bool), MATRIX, demand, detour_factor=1.0
         )
+        return DemandModel(main=PurposeModel(config=demand, prepared=prepared), purposes=[])
 
     results = {r.name: r for r in run_variants(prepare, demand, targets(), ["baseline", "other"],
                                                {3})}  # fmt: skip
