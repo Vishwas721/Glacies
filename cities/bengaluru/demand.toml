@@ -166,7 +166,14 @@ verified = false
 # station categorisation as reported by Deccan Herald (11 Sep 2024); SWR's 2023-24 list
 # confirms the categories but gives no counts. Terminating passengers are assumed equal
 # (SWR 2024-25: Bengaluru's total footfall is about twice its originating passengers).
-factor = 0.0      # set from the calibration
+# Switched off 2026-10-09: with one factor for every terminal the calibration (beta 0.0173)
+# fitted 0.141 x daily passengers, which fixed Majestic (training share 4.3 % observed, 1.8 %
+# -> 4.3 % simulated) but over-sent rail passengers into Yeshwantpur (held out: 5.8 %
+# observed, 6.8 % -> 9.2 %), so held-out R² fell from 0.39 to 0.31 (docs/validation/demand.md).
+# Outward passengers per day are a poor proxy for AM arrivals that continue by metro; a
+# per-terminal arrival count (e.g. from timetables) is needed before switching this on.
+enabled = false
+factor = 0.0
 factor_max = 0.5  # at most half a day's passengers in two hours, all by transit
 
 [[demand.gateways.stations]]
