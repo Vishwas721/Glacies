@@ -13,6 +13,9 @@ trip_purpose = "HBW_AM_peak"   # home-based work, outbound, 08:00-10:00
 # population and trips are reported, not hidden.
 origins = "transit_served_zones"
 exclude_intrazonal = true        # a zone reaches itself in 0 s; transit does not serve these
+# Zone pairs whose fastest journey is on foot at half or more of the departures are not
+# transit trips (2026-10-09: they took 20 % of the trips before this rule).
+exclude_walk_pairs = true
 
 [demand.priors.trip_rate]
 # HBW trips per person starting 08:00-10:00.

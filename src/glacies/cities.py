@@ -418,6 +418,11 @@ class DemandConfig(_Strict):
         "walk. Other zones reach only walkable zones in the travel-time matrix."
     )
     exclude_intrazonal: bool = True
+    exclude_walk_pairs: bool = Field(
+        default=True,
+        description="Leave out zone pairs where walking all the way is fastest for at least "
+        "half the departures: they are not transit trips.",
+    )
     priors: DemandPriors
     cost: DemandCost
     gravity: Gravity

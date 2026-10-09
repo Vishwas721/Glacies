@@ -2,6 +2,8 @@
 trip_purpose = "HBW_AM_peak"
 origins = "transit_served_zones"
 exclude_intrazonal = true
+# Every toy pair is fastest on foot; keep them so the toy city has demand to test with.
+exclude_walk_pairs = false
 
 [demand.priors.trip_rate]
 value = 0.10
