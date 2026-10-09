@@ -401,8 +401,8 @@ def calibrate_demand(city: CityOption = None) -> None:
 
     def point(p: SweepPoint) -> None:
         typer.echo(
-            f"  β {p.beta_per_min:.4f} ({p.stage}): RMSE {p.rmse_share_training:.5f}, "
-            f"R² {p.r2_share_training:.3f}, {p.mean_km:.1f} km, {p.iterations} iterations",
+            f"  beta {p.beta_per_min:.4f} ({p.stage}): RMSE {p.rmse_share_training:.5f}, "
+            f"R2 {p.r2_share_training:.3f}, {p.mean_km:.1f} km, {p.iterations} iterations",
             err=True,
         )
 
@@ -412,10 +412,10 @@ def calibrate_demand(city: CityOption = None) -> None:
         _fail(str(exc))
     typer.echo(f"calibration -> {out_dir}")
     edge = " (at the edge of the range)" if manifest.at_boundary else ""
-    typer.echo(f"  β = {manifest.beta_per_min:.4f} per minute{edge}")
+    typer.echo(f"  beta = {manifest.beta_per_min:.4f} per minute{edge}")
     for name, f in manifest.fits.items():
         typer.echo(
-            f"  {name}: R² (share) {f.r2_share:.2f}, RMSE {f.rmse_share:.4f}, "
+            f"  {name}: R2 (share) {f.r2_share:.2f}, RMSE {f.rmse_share:.4f}, "
             f"mean GEH {f.mean_geh:.1f}, level {f.level_ratio:.2f} ({f.items} items)"
         )
     typer.echo("  set [demand.gravity] beta_per_min in demand.toml to use it")
@@ -429,7 +429,7 @@ def demand_sensitivity(city: CityOption = None) -> None:
     def variant(r: VariantResult) -> None:
         typer.echo(
             f"  {r.name}: {r.trips:,.0f} trips, {r.mean_km:.1f} km, metro "
-            f"{r.metro_trip_share:.1%}, R² held-out {r.r2_held_out:.2f}",
+            f"{r.metro_trip_share:.1%}, R2 held-out {r.r2_held_out:.2f}",
             err=True,
         )
 
