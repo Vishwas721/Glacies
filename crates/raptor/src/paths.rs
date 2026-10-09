@@ -76,6 +76,8 @@ pub struct ZonePaths {
     pub reached: Vec<u32>,
     /// Of those, departures where walking all the way is at least as fast.
     pub walked: Vec<u32>,
+    /// Of those, departures whose journey has at least one metro segment.
+    pub metro: Vec<u32>,
     /// `(target position, entry station, exit station, departures)`, sorted.
     pub segments: Vec<(u32, u32, u32, u32)>,
 }
@@ -110,6 +112,7 @@ pub fn zone_paths(
     }
     let mut reached = vec![0_u32; targets.len()];
     let mut walked = vec![0_u32; targets.len()];
+    let mut metro_used = vec![0_u32; targets.len()];
     let mut counts: BTreeMap<(u32, u32, u32), u32> = BTreeMap::new();
     range_search_each(tt, params, origin, departures, |i, rounds, best| {
         let departure = departures[i];
@@ -156,7 +159,11 @@ pub fn zone_paths(
                 seconds,
                 arrival.saturating_add(seconds),
             );
-            for (entry, exit) in metro.segments(&journey.legs) {
+            let segments = metro.segments(&journey.legs);
+            if !segments.is_empty() {
+                metro_used[pos] += 1;
+            }
+            for (entry, exit) in segments {
                 *counts.entry((u32::try_from(pos).expect("fits u32"), entry, exit)).or_insert(0) +=
                     1;
             }
@@ -166,6 +173,7 @@ pub fn zone_paths(
         zones: targets.to_vec(),
         reached,
         walked,
+        metro: metro_used,
         segments: counts.into_iter().map(|((pos, entry, exit), n)| (pos, entry, exit, n)).collect(),
     })
 }

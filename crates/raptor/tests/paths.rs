@@ -74,6 +74,7 @@ fn segments_match_hand_reading() {
     assert_eq!(result.zones, [0, 1, 2, 3, 4, 5]);
     assert_eq!(result.reached, [1, 1, 1, 1, 2, 0]);
     assert_eq!(result.walked, [0, 0, 0, 0, 2, 0]);
+    assert_eq!(result.metro, [1, 1, 1, 1, 0, 0]);
     assert_eq!(
         result.segments,
         [(0, 10, 11, 1), (1, 10, 12, 1), (2, 10, 12, 1), (3, 10, 12, 1), (3, 13, 14, 1)]
