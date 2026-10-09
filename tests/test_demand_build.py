@@ -233,3 +233,53 @@ def test_rides_to_stations_use_their_own_matrix(
     ends = pl.read_parquet(city / "demand" / "baseline" / "trip_ends.parquet")
     assert (ends.filter(~pl.col("has_walk_access"))["destination"] == 0).all()
     assert ends["has_access"].sum() > ends["has_walk_access"].sum()
+
+
+def test_purposes_and_gateways_add_up(
+    city: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second purpose and a gateway: each purpose balances to its own trip ends, the gateway
+    sends factor x daily passengers, and od.parquet holds them all, reproducibly."""
+    reach = pl.read_parquet(city / "paths" / "baseline" / "od_reach.parquet")
+    busiest = reach.group_by("origin_zone").len().sort("len", "origin_zone", descending=True)
+    zones = pl.read_parquet(city / "zones" / "zones.parquet")
+    terminal = zones.filter(pl.col("zone_idx") == busiest["origin_zone"][0])
+    lat, lon = terminal["lat"][0], terminal["lon"][0]  # the cell centre
+    cities = shutil.copytree(FIXTURES / "cities", tmp_path / "cities")
+    demand = cities / "toyville" / "demand.toml"
+    demand.write_text(
+        demand.read_text(encoding="utf-8") + "\n[[demand.purposes]]\n"
+        'name = "education"\nattractor = "population"\n'
+        "[demand.purposes.trip_rate]\nvalue = 0.05\nrange = [0.04, 0.06]\n"
+        'source = "Glacies test fixture"\nverified = false\n'
+        "[demand.purposes.transit_share]\nvalue = 0.4\nrange = [0.3, 0.5]\n"
+        'source = "Glacies test fixture"\nverified = false\n'
+        "\n[demand.gateways]\nfactor = 0.01\n"
+        f'[[demand.gateways.stations]]\nname = "Toy Terminal"\nlat = {lat}\nlon = {lon}\n'
+        'daily_passengers = 2000\nsource = "Glacies test fixture"\nverified = false\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GLACIES_CITIES_DIR", str(cities))
+
+    result = runner.invoke(app, ["build", "demand"])
+    assert result.exit_code == 0, result.output
+    out = city / "demand" / "baseline"
+    od = pl.read_parquet(out / "od.parquet")
+    first = {p.name: p.read_bytes() for p in sorted(out.glob("*.parquet"))}
+
+    by_purpose = dict(od.group_by("purpose").agg(pl.col("trips").sum()).iter_rows())
+    assert set(by_purpose) == {"HBW_AM_peak", "education", "gateway"}
+    education = pl.read_parquet(out / "trip_ends_education.parquet")
+    assert by_purpose["education"] == pytest.approx(education["origin"].sum(), rel=1e-5)
+    assert by_purpose["gateway"] == pytest.approx(2000 * 0.01)
+    gateways = pl.read_parquet(out / "gateways.parquet")
+    assert gateways["trips"].to_list() == pytest.approx([20.0])
+    report = (out / "BUILD_REPORT.md").read_text(encoding="utf-8")
+    assert "## Purposes" in report
+    assert "Toy Terminal" in report
+
+    again = runner.invoke(app, ["build", "demand"])
+    assert again.exit_code == 0, again.output
+    assert {p.name: p.read_bytes() for p in sorted(out.glob("*.parquet"))} == first
+    flows = runner.invoke(app, ["build", "station-flows"])
+    assert flows.exit_code == 0, flows.output
