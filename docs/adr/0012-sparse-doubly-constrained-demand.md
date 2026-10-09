@@ -41,7 +41,8 @@ iterations.
 ## Consequences
 
 - Row sums equal `O` exactly; column sums equal the attainable `D`, which differs from the
-  proxy-scaled `D` by a reported amount (Bengaluru baseline: 7,373 trips, 1.9 %, in 238 blocks).
+  proxy-scaled `D` by a reported amount (Bengaluru baseline: 7,373 trips, 1.9 %, in 238 blocks;
+  1,440 trips, 0.4 %, in 45 blocks once walking pairs are left out, ADR 0013).
   Both columns are kept in `trip_ends.parquet`.
 - Furness needs about 1,600 iterations on Bengaluru (~85 s). Calibration sweeps over β will want
   warm starts or a coarser tolerance.

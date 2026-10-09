@@ -65,8 +65,9 @@ class Convergence(BaseModel):
 
 
 class Attainability(BaseModel):
-    """Where the network cannot deliver the employment proxy's attraction totals."""
+    """Pairs left out, and where the network cannot deliver the proxy's attraction totals."""
 
+    walk_pairs_excluded: int  # fastest on foot at half or more of the departures
     blocks: int  # independent groups of zones after splitting at bottlenecks
     trips_moved: float  # Σ|D - D_proxy| / 2
     pairs_dropped: int  # reachable pairs that carry no trips in the balanced limit
@@ -112,12 +113,20 @@ def build_demand(
     demand: DemandConfig,
     *,
     detour_factor: float,
+    walk_pairs: pl.DataFrame | None = None,
 ) -> DemandBuild:
-    """Trip ends and the balanced OD matrix; ``zones`` sorted by ``zone_idx``."""
+    """Trip ends and the balanced OD matrix; ``zones`` sorted by ``zone_idx``.
+
+    ``walk_pairs`` (origin_zone, dest_zone) are left out: walking is their fastest journey.
+    """
     zones = zones.sort("zone_idx")
     pairs = candidate_pairs(
         matrix, demand.cost.column, exclude_intrazonal=demand.exclude_intrazonal
     )
+    before = pairs.height
+    if walk_pairs is not None:
+        pairs = pairs.join(walk_pairs, on=["origin_zone", "dest_zone"], how="anti")
+    walk_excluded = before - pairs.height
     ends = trip_ends(zones, employment_score, has_access, pairs, demand)
     o = ends.table["origin"].to_numpy()
     d = ends.table["destination"].to_numpy()
@@ -144,6 +153,7 @@ def build_demand(
         pl.Series("destination", feasible.attractions)
     )
     attainability = Attainability(
+        walk_pairs_excluded=walk_excluded,
         blocks=feasible.blocks,
         trips_moved=feasible.trips_moved,
         pairs_dropped=int((~feasible.keep).sum()),
@@ -340,7 +350,10 @@ def report(m: DemandManifest, build: DemandBuild) -> str:
         f"- **Trips: {s.trips:,.0f}** (ΣO = ΣD; Estimated). With the trip rate and transit "
         f"share both at the ends of their ranges: {s.trips_low:,.0f} to {s.trips_high:,.0f}.",
         "",
-        "## Attainable attractions",
+        "## Pairs and attainable attractions",
+        "",
+        f"{a.walk_pairs_excluded:,} reachable zone pairs are left out because walking all the "
+        "way is their fastest journey at half or more of the departures (not transit trips).",
         "",
         f"Some destinations cannot receive their share of the employment proxy: the origins "
         f"that reach them by transit make too few trips (checked as a max flow). Splitting at "

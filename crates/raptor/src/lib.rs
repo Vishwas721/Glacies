@@ -4,6 +4,7 @@
 
 mod journey;
 mod matrix;
+mod paths;
 mod range;
 mod raptor;
 mod timetable;
@@ -11,6 +12,7 @@ mod walkgraph;
 
 pub use journey::{plan, Journey, Leg};
 pub use matrix::{zone_travel_times, MatrixError, ZoneEgress, ZoneTimes, NOT_REACHED};
+pub use paths::{zone_paths, MetroNetwork, ZonePaths, NO_STATION};
 pub use range::{range_search, RangeProfile};
 pub use raptor::{search, Access, Params, Profile};
 pub use timetable::{

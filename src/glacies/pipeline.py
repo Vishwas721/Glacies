@@ -34,10 +34,10 @@ from glacies.analytics.travel_times import (
     Reuse,
     ZoneWalks,
     build_matrix,
-    zone_access,
     zone_points,
+    zone_walks,
 )
-from glacies.cities import CityConfig, CityConfigError, load_demand
+from glacies.cities import CityConfig, CityConfigError, DemandConfig, load_demand
 from glacies.config import Settings
 from glacies.db import postgis
 from glacies.demand.attraction import (
@@ -49,8 +49,24 @@ from glacies.demand.attraction import (
     read_hubs,
     write_attraction,
 )
+from glacies.demand.metro import (
+    ACCESS_NAME,
+    PATHS_NAME,
+    REACH_NAME,
+    STATIONS_NAME,
+    MetroInput,
+    MetroManifest,
+    PathsManifest,
+    metro_network,
+    metro_paths,
+    path_shares,
+    station_flows,
+    walk_pairs,
+    write_paths,
+    write_station_flows,
+)
 from glacies.demand.od import DemandBuild, DemandInput, DemandManifest, build_demand, write_demand
-from glacies.demand.production import DemandError
+from glacies.demand.production import DemandError, candidate_pairs
 from glacies.demand.stations import check_calibration_names
 from glacies.ingest import archive
 from glacies.model.transit.build import FeedInput, TransitBuildError, build_transit
@@ -454,47 +470,123 @@ def run_accessibility(
     return manifest, out_dir
 
 
-def run_demand(
-    settings: Settings, config: CityConfig, *, scenario: str = "baseline"
-) -> tuple[DemandManifest, DemandBuild, Path]:
-    """AM-peak trip ends and the balanced gravity OD matrix (Phase 5 M1-M2)."""
+def _demand_settings(settings: Settings, config: CityConfig) -> tuple[DemandConfig, str]:
+    """The city's demand.toml and the mode its calibration ridership counts."""
     try:
         demand = load_demand(settings.demand_config_path)
         mode = config.source(demand.calibration.dataset).mode
     except CityConfigError as exc:
         raise PipelineError(str(exc)) from exc
+    if mode is None:
+        raise PipelineError(f"source {demand.calibration.dataset!r} has no mode")
+    return demand, mode
+
+
+def _require(stages: dict[str, Path], commands: dict[str, str] | None = None) -> None:
+    for stage, directory in stages.items():
+        if not (directory / "manifest.json").is_file():
+            command = (commands or {}).get(stage, stage)
+            raise PipelineError(f"missing {directory}; run `glacies build {command}` first")
+
+
+def _inputs(stages: dict[str, Path]) -> list[MetroInput]:
+    return [
+        MetroInput(stage=stage, manifest_sha256=sha256_file(directory / "manifest.json"))
+        for stage, directory in stages.items()
+    ]
+
+
+def run_paths(
+    settings: Settings,
+    config: CityConfig,
+    *,
+    scenario: str = "baseline",
+    on_chunk: Callable[[int, int], None] | None = None,
+) -> tuple[PathsManifest, Path]:
+    """How the fastest journeys between transit-served zones travel (Phase 5 M3).
+
+    Per zone pair: departures reached, walked all the way, and using the metro; per metro
+    station pair: departures. Independent of demand, so it is built once per network.
+    """
+    demand, mode = _demand_settings(settings, config)
     base = city_dir(settings, config)
     stages = {
         "transit": base / "transit",
         "walk": base / "walk",
         "zones": base / "zones",
-        "attraction": base / "attraction",
         "tt_matrix": base / "tt_matrix" / scenario,
     }
-    commands = {"tt_matrix": "tt-matrix"}
-    for stage, directory in stages.items():
-        if not (directory / "manifest.json").is_file():
-            command = commands.get(stage, stage)
-            raise PipelineError(f"missing {directory}; run `glacies build {command}` first")
+    _require(stages, {"tt_matrix": "tt-matrix"})
+    zones = pl.read_parquet(stages["zones"] / "zones.parquet").sort("zone_idx")
+    try:
+        router = load_router(base, config.routing, config.city.crs_projected)
+        metro = metro_network(router, stages["transit"], mode)
+        walks = zone_walks(router, base / "walk", zone_points(zones), config.accessibility)
+        has_access = np.array([stops.size > 0 for stops, _ in walks.access])
+        served = pl.Series(np.flatnonzero(has_access).astype(np.uint32))
+        pairs = candidate_pairs(
+            pl.scan_parquet(stages["tt_matrix"] / "part-*.parquet"),
+            demand.cost.column,
+            exclude_intrazonal=demand.exclude_intrazonal,
+        ).filter(
+            pl.col("origin_zone").is_in(served.implode())
+            & pl.col("dest_zone").is_in(served.implode())
+        )
+        reach, segments = metro_paths(
+            router, walks, pairs, metro, config.accessibility, on_chunk=on_chunk
+        )
+    except (DemandError, RouterError) as exc:
+        raise PipelineError(str(exc)) from exc
+    access = zones.select("zone_idx").with_columns(
+        pl.Series("has_access", has_access),
+        pl.Series("access_stops", [stops.size for stops, _ in walks.access], dtype=pl.UInt32),
+    )
+    out_dir = base / "paths" / scenario
+    manifest = write_paths(
+        access,
+        reach,
+        path_shares(reach, segments),
+        metro.stations,
+        out_dir,
+        city=config.city.id,
+        scenario=scenario,
+        mode=mode,
+        departures=len(config.accessibility.departures()),
+        inputs=_inputs(stages),
+    )
+    return manifest, out_dir
+
+
+def run_demand(
+    settings: Settings, config: CityConfig, *, scenario: str = "baseline"
+) -> tuple[DemandManifest, DemandBuild, Path]:
+    """AM-peak trip ends and the balanced gravity OD matrix (Phase 5 M1-M2)."""
+    demand, mode = _demand_settings(settings, config)
+    base = city_dir(settings, config)
+    stages = {
+        "transit": base / "transit",
+        "zones": base / "zones",
+        "attraction": base / "attraction",
+        "tt_matrix": base / "tt_matrix" / scenario,
+        "paths": base / "paths" / scenario,
+    }
+    _require(stages, {"tt_matrix": "tt-matrix"})
     zones = pl.read_parquet(stages["zones"] / "zones.parquet").sort("zone_idx")
     attraction = pl.read_parquet(stages["attraction"] / "attraction.parquet").sort("zone_idx")
-    score = attraction["employment_score"].to_numpy()
+    access = pl.read_parquet(stages["paths"] / ACCESS_NAME).sort("zone_idx")
+    reach = pl.read_parquet(stages["paths"] / REACH_NAME)
     try:
-        if mode is None:
-            raise DemandError(f"source {demand.calibration.dataset!r} has no mode")
         check_calibration_names(stages["transit"], mode, demand.calibration)
-        router = load_router(base, config.routing, config.city.crs_projected)
-        access = zone_access(router, zone_points(zones))
-        has_access = np.array([stops.size > 0 for stops, _ in access])
         result = build_demand(
             zones,
-            score,
-            has_access,
+            attraction["employment_score"].to_numpy(),
+            access["has_access"].to_numpy(),
             pl.scan_parquet(stages["tt_matrix"] / "part-*.parquet"),
             demand,
             detour_factor=config.scenario.detour_factor,
+            walk_pairs=walk_pairs(reach) if demand.exclude_walk_pairs else None,
         )
-    except (DemandError, RouterError) as exc:
+    except DemandError as exc:
         raise PipelineError(str(exc)) from exc
     out_dir = base / "demand" / scenario
     manifest = write_demand(
@@ -509,6 +601,31 @@ def run_demand(
         ],
     )
     return manifest, result, out_dir
+
+
+def run_station_flows(
+    settings: Settings, config: CityConfig, *, scenario: str = "baseline"
+) -> tuple[MetroManifest, Path]:
+    """Simulated metro entries, exits and station-pair flows of the OD matrix (Phase 5 M3)."""
+    _, mode = _demand_settings(settings, config)
+    base = city_dir(settings, config)
+    stages = {"paths": base / "paths" / scenario, "demand": base / "demand" / scenario}
+    _require(stages)
+    paths_dir = stages["paths"]
+    try:
+        flows = station_flows(
+            pl.read_parquet(stages["demand"] / "od.parquet"),
+            pl.read_parquet(paths_dir / REACH_NAME),
+            pl.read_parquet(paths_dir / PATHS_NAME),
+            pl.read_parquet(paths_dir / STATIONS_NAME),
+        )
+    except DemandError as exc:
+        raise PipelineError(str(exc)) from exc
+    out_dir = base / "metro" / scenario
+    manifest = write_station_flows(
+        flows, out_dir, city=config.city.id, scenario=scenario, mode=mode, inputs=_inputs(stages)
+    )
+    return manifest, out_dir
 
 
 def run_report(

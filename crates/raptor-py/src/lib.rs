@@ -38,6 +38,34 @@ fn accesses(stops: &[u32], seconds: &[u32], what: &str) -> PyResult<Vec<core::Ac
         .collect())
 }
 
+/// Zone egress walks from `(zone, stop, seconds)` columns.
+fn zone_egress(
+    stop_count: usize,
+    zone_count: usize,
+    zones: &PyReadonlyArray1<'_, u32>,
+    stops: &PyReadonlyArray1<'_, u32>,
+    seconds: &PyReadonlyArray1<'_, u32>,
+) -> PyResult<core::ZoneEgress> {
+    let (ez, es, esec) = (
+        slice(zones, "egress_zones")?,
+        slice(stops, "egress_stops")?,
+        slice(seconds, "egress_seconds")?,
+    );
+    if es.len() != ez.len() || esec.len() != ez.len() {
+        return Err(value_error("egress arrays differ in length"));
+    }
+    if let Some(&stop) = es.iter().find(|&&s| s as usize >= stop_count) {
+        return Err(value_error(format!("egress references unknown stop {stop}")));
+    }
+    let walks: Vec<(u32, core::StopIdx, u32)> = ez
+        .iter()
+        .zip(es)
+        .zip(esec)
+        .map(|((&zone, &stop), &seconds)| (zone, core::StopIdx(stop), seconds))
+        .collect();
+    core::ZoneEgress::new(zone_count, &walks).map_err(value_error)
+}
+
 fn params(max_rounds: usize, min_transfer_time: u32) -> core::Params {
     core::Params { max_rounds, min_transfer_time }
 }
@@ -445,6 +473,139 @@ impl Timetable {
             .map_err(value_error)?
             .into_pyarray(py);
         Ok((origin.into_pyarray(py), zone.into_pyarray(py), matrix))
+    }
+
+    /// Metro gate segments of the best journeys from many origins to their target zones, in
+    /// parallel (Phase 5 M3).
+    ///
+    /// Each origin is `(access stops, access seconds, walk-only zones, walk-only seconds,
+    /// target zones)`. `metro_trip` flags trips by id (1 = metro); `station` gives each stop's
+    /// station or `UNREACHED` outside the metro. Returns `(origin, zone, reached, walked,
+    /// metro)` per target and `(origin, zone, entry, exit, departures)` per segment, ordered by origin.
+    #[pyo3(signature = (
+        origins, departures, zone_count, egress_zones, egress_stops, egress_seconds,
+        metro_trip, station, max_travel_time, max_rounds, min_transfer_time,
+    ))]
+    #[allow(clippy::too_many_arguments)] // mirrors the columnar layout of the inputs
+    #[allow(clippy::type_complexity)] // one tuple of arrays per origin, nine arrays back
+    fn zone_paths_many<'py>(
+        &self,
+        py: Python<'py>,
+        origins: Vec<(
+            PyReadonlyArray1<'py, u32>,
+            PyReadonlyArray1<'py, u32>,
+            PyReadonlyArray1<'py, u32>,
+            PyReadonlyArray1<'py, u32>,
+            PyReadonlyArray1<'py, u32>,
+        )>,
+        departures: PyReadonlyArray1<'_, u32>,
+        zone_count: usize,
+        egress_zones: PyReadonlyArray1<'_, u32>,
+        egress_stops: PyReadonlyArray1<'_, u32>,
+        egress_seconds: PyReadonlyArray1<'_, u32>,
+        metro_trip: PyReadonlyArray1<'_, u8>,
+        station: PyReadonlyArray1<'_, u32>,
+        max_travel_time: u32,
+        max_rounds: usize,
+        min_transfer_time: u32,
+    ) -> PyResult<(
+        (U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>),
+        (U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>, U32Array<'py>),
+    )> {
+        let stop_count = self.inner.stop_count();
+        let egress =
+            zone_egress(stop_count, zone_count, &egress_zones, &egress_stops, &egress_seconds)?;
+        let station = slice(&station, "station")?.to_vec();
+        if station.len() != stop_count {
+            return Err(value_error("station must have one entry per stop"));
+        }
+        let metro = core::MetroNetwork {
+            metro_trip: slice(&metro_trip, "metro_trip")?.iter().map(|&m| m != 0).collect(),
+            station, // UNREACHED (u32::MAX) is NO_STATION
+        };
+        let sets = origins
+            .iter()
+            .map(|(stops, seconds, zones, walk_seconds, targets)| {
+                let access = accesses(
+                    slice(stops, "access stops")?,
+                    slice(seconds, "access seconds")?,
+                    "origins",
+                )?;
+                if let Some(&stop) = access.iter().find(|a| a.stop.0 as usize >= stop_count) {
+                    return Err(value_error(format!(
+                        "origin references unknown stop {}",
+                        stop.stop.0
+                    )));
+                }
+                let (zones, walk_seconds) =
+                    (slice(zones, "walk-only zones")?, slice(walk_seconds, "walk-only seconds")?);
+                if zones.len() != walk_seconds.len() {
+                    return Err(value_error("walk-only zones and seconds differ in length"));
+                }
+                Ok((
+                    access,
+                    zones.iter().copied().zip(walk_seconds.iter().copied()).collect(),
+                    slice(targets, "targets")?.to_vec(),
+                ))
+            })
+            .collect::<PyResult<Vec<(Vec<core::Access>, Vec<(u32, u32)>, Vec<u32>)>>>()?;
+        let times: Vec<core::Time> =
+            slice(&departures, "departures")?.iter().map(|&d| core::Time(d)).collect();
+        let p = params(max_rounds, min_transfer_time);
+        let results = py
+            .detach(|| {
+                sets.par_iter()
+                    .map(|(access, walk_only, targets)| {
+                        core::zone_paths(
+                            &self.inner,
+                            &p,
+                            access,
+                            &times,
+                            &egress,
+                            walk_only,
+                            targets,
+                            &metro,
+                            max_travel_time,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(value_error)?;
+        let (mut origin, mut zone, mut reached, mut walked, mut used) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let (mut s_origin, mut s_zone, mut entry, mut exit, mut count) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for (i, result) in results.into_iter().enumerate() {
+            let i = u32::try_from(i).map_err(value_error)?;
+            origin.extend(std::iter::repeat_n(i, result.zones.len()));
+            for &(pos, from, to, n) in &result.segments {
+                s_origin.push(i);
+                s_zone.push(result.zones[pos as usize]);
+                entry.push(from);
+                exit.push(to);
+                count.push(n);
+            }
+            zone.extend(result.zones);
+            reached.extend(result.reached);
+            walked.extend(result.walked);
+            used.extend(result.metro);
+        }
+        Ok((
+            (
+                origin.into_pyarray(py),
+                zone.into_pyarray(py),
+                reached.into_pyarray(py),
+                walked.into_pyarray(py),
+                used.into_pyarray(py),
+            ),
+            (
+                s_origin.into_pyarray(py),
+                s_zone.into_pyarray(py),
+                entry.into_pyarray(py),
+                exit.into_pyarray(py),
+                count.into_pyarray(py),
+            ),
+        ))
     }
 
     /// `range_arrivals` for many origins in parallel: shape `(origins, departures, stops)`

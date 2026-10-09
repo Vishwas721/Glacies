@@ -94,6 +94,20 @@ class Timetable:
         max_rounds: int,
         min_transfer_time: int,
     ) -> tuple[U32, U32, npt.NDArray[np.uint32]]: ...
+    def zone_paths_many(
+        self,
+        origins: list[tuple[U32, U32, U32, U32, U32]],
+        departures: U32,
+        zone_count: int,
+        egress_zones: U32,
+        egress_stops: U32,
+        egress_seconds: U32,
+        metro_trip: npt.NDArray[np.uint8],
+        station: U32,
+        max_travel_time: int,
+        max_rounds: int,
+        min_transfer_time: int,
+    ) -> tuple[tuple[U32, U32, U32, U32, U32], tuple[U32, U32, U32, U32, U32]]: ...
     def plan(
         self,
         origin_stops: U32,

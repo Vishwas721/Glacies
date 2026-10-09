@@ -73,7 +73,7 @@ impl ZoneEgress {
         self.starts.len() - 1
     }
 
-    fn of(&self, zone: usize) -> &[(StopIdx, u32)] {
+    pub(crate) fn of(&self, zone: usize) -> &[(StopIdx, u32)] {
         &self.walks[self.starts[zone] as usize..self.starts[zone + 1] as usize]
     }
 }
