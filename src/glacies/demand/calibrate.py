@@ -123,7 +123,7 @@ class Targets:
     stations: pl.DataFrame
 
 
-def _station_table(build: DemandBuild, targets: Targets) -> tuple[pl.DataFrame, pl.DataFrame]:
+def station_table(build: DemandBuild, targets: Targets) -> tuple[pl.DataFrame, pl.DataFrame]:
     flows = station_flows(build.od, targets.reach, targets.paths, targets.stations)
     stations = (
         targets.sets.join(targets.entries, on="station_idx", how="left")
@@ -246,7 +246,7 @@ def calibrate(
             prepared, demand, beta, tolerance=cal.sweep_tolerance, initial_b=warm.get("b")
         )
         warm["b"] = b
-        stations, _ = _station_table(build, targets)
+        stations, _ = station_table(build, targets)
         training = set_fit(stations, TRAINING)
         point = SweepPoint(
             beta_per_min=beta,
@@ -266,7 +266,7 @@ def calibrate(
         evaluate, cal.beta_min, cal.beta_max, cal.grid_points, cal.refine_steps
     )
     build, _ = balance(prepared, demand, chosen)
-    stations, simulated_pairs = _station_table(build, targets)
+    stations, simulated_pairs = station_table(build, targets)
     pairs = _pair_table(simulated_pairs, targets)
     fits = {which: set_fit(stations, which) for which in (TRAINING, HELD_OUT, EXCLUDED)}
     for which in (TRAINING, HELD_OUT):
