@@ -1,6 +1,6 @@
 //! Journeys rebuilt from a search's labels, and the one-to-one query that returns them.
 
-use crate::raptor::{search, to_u32, Label, Profile, Via};
+use crate::raptor::{search, to_u32, Label, Profile, Round, Via};
 use crate::{Access, Params, RouteIdx, StopIdx, Time, Timetable};
 
 /// One part of a journey.
@@ -123,62 +123,76 @@ fn best_destination(
 impl Profile<'_> {
     /// Rebuild the journey that reaches `stop` in `round`, then walks `egress` seconds.
     fn journey(&self, round: usize, stop: StopIdx, egress: u32, arrival: Time) -> Journey {
-        let mut legs = Vec::new();
-        if egress > 0 {
-            legs.push(Leg::Egress { from: stop, duration: egress });
-        }
-        let s = stop.0 as usize;
-        let last = &self.rounds[round];
-        let mut via = if last.ride[s] <= last.walk[s] { Via::Ride } else { Via::Walk };
-        let (mut round, mut stop) = (round, stop);
-        loop {
-            let (r, label) = self.label(round, stop, via);
-            match label {
-                Label::Access { duration } => {
-                    if duration > 0 {
-                        legs.push(Leg::Access { to: stop, duration });
-                    }
-                    break;
-                }
-                Label::Ride { route, trip, board_pos, alight_pos, boarded_via } => {
-                    let view = self.tt.route(route);
-                    let (trip, board, alight) =
-                        (trip as usize, board_pos as usize, alight_pos as usize);
-                    let from = view.stops()[board];
-                    legs.push(Leg::Ride {
-                        route,
-                        trip_id: view.trip_id(trip),
-                        from,
-                        to: stop,
-                        board: view.departure(trip, board),
-                        alight: view.arrival(trip, alight),
-                    });
-                    (round, stop, via) = (r - 1, from, boarded_via);
-                }
-                Label::Walk { from, duration } => {
-                    legs.push(Leg::Transfer { from, to: stop, duration });
-                    (round, stop, via) = (r, from, Via::Ride);
-                }
-                Label::None => unreachable!("labels on a reached stop lead back to an origin"),
-            }
-        }
-        legs.reverse();
-        Journey { departure: self.departure, arrival, legs }
+        rebuild(self.tt, self.departure, &self.rounds, round, stop, egress, arrival)
     }
+}
 
-    /// The label that set `stop`'s `via` arrival in `round` or, if inherited, the latest
-    /// earlier round that did.
-    fn label(&self, round: usize, stop: StopIdx, via: Via) -> (usize, Label) {
-        let s = stop.0 as usize;
-        for r in (0..=round).rev() {
-            let label = match via {
-                Via::Ride => self.rounds[r].ride_label[s],
-                Via::Walk => self.rounds[r].walk_label[s],
-            };
-            if label != Label::None {
-                return (r, label);
-            }
-        }
-        unreachable!("stop {} has no {via:?} label up to round {round}", to_u32(s))
+/// Rebuild the journey that reaches `stop` in `round` of `rounds`, then walks `egress`
+/// seconds to arrive at `arrival`.
+pub(crate) fn rebuild(
+    tt: &Timetable,
+    departure: Time,
+    rounds: &[Round],
+    round: usize,
+    stop: StopIdx,
+    egress: u32,
+    arrival: Time,
+) -> Journey {
+    let mut legs = Vec::new();
+    if egress > 0 {
+        legs.push(Leg::Egress { from: stop, duration: egress });
     }
+    let s = stop.0 as usize;
+    let last = &rounds[round];
+    let mut via = if last.ride[s] <= last.walk[s] { Via::Ride } else { Via::Walk };
+    let (mut round, mut stop) = (round, stop);
+    loop {
+        let (r, label) = label(rounds, round, stop, via);
+        match label {
+            Label::Access { duration } => {
+                if duration > 0 {
+                    legs.push(Leg::Access { to: stop, duration });
+                }
+                break;
+            }
+            Label::Ride { route, trip, board_pos, alight_pos, boarded_via } => {
+                let view = tt.route(route);
+                let (trip, board, alight) =
+                    (trip as usize, board_pos as usize, alight_pos as usize);
+                let from = view.stops()[board];
+                legs.push(Leg::Ride {
+                    route,
+                    trip_id: view.trip_id(trip),
+                    from,
+                    to: stop,
+                    board: view.departure(trip, board),
+                    alight: view.arrival(trip, alight),
+                });
+                (round, stop, via) = (r - 1, from, boarded_via);
+            }
+            Label::Walk { from, duration } => {
+                legs.push(Leg::Transfer { from, to: stop, duration });
+                (round, stop, via) = (r, from, Via::Ride);
+            }
+            Label::None => unreachable!("labels on a reached stop lead back to an origin"),
+        }
+    }
+    legs.reverse();
+    Journey { departure, arrival, legs }
+}
+
+/// The label that set `stop`'s `via` arrival in `round` or, if inherited, the latest earlier
+/// round that did.
+fn label(rounds: &[Round], round: usize, stop: StopIdx, via: Via) -> (usize, Label) {
+    let s = stop.0 as usize;
+    for r in (0..=round).rev() {
+        let label = match via {
+            Via::Ride => rounds[r].ride_label[s],
+            Via::Walk => rounds[r].walk_label[s],
+        };
+        if label != Label::None {
+            return (r, label);
+        }
+    }
+    unreachable!("stop {} has no {via:?} label up to round {round}", to_u32(s))
 }

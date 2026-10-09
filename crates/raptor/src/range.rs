@@ -58,12 +58,30 @@ pub fn range_search(
     departures: &[Time],
 ) -> RangeProfile {
     let n = tt.stop_count();
+    let mut arrivals = vec![Time::UNREACHED; departures.len() * n];
+    range_search_each(tt, params, origins, departures, |i, _, best| {
+        arrivals[i * n..(i + 1) * n].copy_from_slice(best);
+    });
+    RangeProfile { departures: departures.to_vec(), stop_count: n, arrivals }
+}
+
+/// The range search, calling `visit(i, rounds, best)` after the `i`-th departure is done
+/// (latest departure first). `best` is the earliest arrival per stop; `rounds` hold labels
+/// that rebuild a journey achieving it (labels kept from later departures are journeys that
+/// wait at the origin, so they are valid for this departure too).
+pub(crate) fn range_search_each(
+    tt: &Timetable,
+    params: &Params,
+    origins: &[Access],
+    departures: &[Time],
+    mut visit: impl FnMut(usize, &[Round], &[Time]),
+) {
+    let n = tt.stop_count();
     let mut order: Vec<usize> = (0..departures.len()).collect();
     order.sort_by(|&a, &b| departures[b].cmp(&departures[a]).then(a.cmp(&b))); // latest first
 
     let mut state = Search::new(tt, *params, &[]);
     let mut rounds: Vec<Round> = (0..=params.max_rounds).map(|_| Round::unreached(n)).collect();
-    let mut arrivals = vec![Time::UNREACHED; departures.len() * n];
     for &i in &order {
         let departure = departures[i];
         for o in origins {
@@ -93,7 +111,6 @@ pub fn range_search(
             }
         }
         state.marked.fill(false);
-        arrivals[i * n..(i + 1) * n].copy_from_slice(&state.best);
+        visit(i, &rounds, &state.best);
     }
-    RangeProfile { departures: departures.to_vec(), stop_count: n, arrivals }
 }
