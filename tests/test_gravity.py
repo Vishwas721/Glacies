@@ -153,3 +153,23 @@ def test_identical_inputs_give_identical_bytes() -> None:
     second = furness(origin, dest, f, o, d, tolerance=1e-10, max_iterations=500)
 
     assert first.trips.tobytes() == second.trips.tobytes()
+
+
+def test_warm_start_converges_to_the_same_matrix_in_fewer_iterations() -> None:
+    cost = np.array([[5.0, 20.0, 40.0], [20.0, 5.0, 25.0], [40.0, 25.0, 5.0]])
+    origin, dest, _ = dense_pairs(np.ones((3, 3)).tolist())
+    o, d = np.array([100.0, 200.0, 300.0]), np.array([250.0, 250.0, 100.0])
+    near = furness(
+        origin, dest, exponential(cost.ravel(), 0.10), o, d, tolerance=1e-12, max_iterations=999
+    )
+
+    cold = furness(
+        origin, dest, exponential(cost.ravel(), 0.11), o, d, tolerance=1e-12, max_iterations=999
+    )
+    warm = furness(
+        origin, dest, exponential(cost.ravel(), 0.11), o, d, tolerance=1e-12, max_iterations=999,
+        initial_b=near.b,
+    )  # fmt: skip
+
+    np.testing.assert_allclose(warm.trips, cold.trips, rtol=1e-9)
+    assert warm.iterations < cold.iterations
