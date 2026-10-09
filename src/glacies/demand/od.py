@@ -12,6 +12,8 @@ and the straight line between zone points times the network detour factor of
 
 from __future__ import annotations
 
+import hashlib
+import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -299,9 +301,26 @@ class DemandInput(BaseModel):
     manifest_sha256: str
 
 
+def od_version(
+    builder_version: str, demand: DemandConfig, beta_per_min: float, inputs: list[DemandInput]
+) -> str:
+    """Short id of everything an OD matrix depends on: the same id means the same matrix."""
+    payload = json.dumps(
+        {
+            "builder": builder_version,
+            "demand": demand.model_dump(mode="json"),
+            "beta_per_min": beta_per_min,
+            "inputs": [i.model_dump() for i in inputs],
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
 class DemandManifest(BaseModel):
     city: str
     scenario: str
+    version: str  # od_version(...): changes whenever any input, setting or the code version does
     builder_version: str
     nature: DataNature
     inputs: list[DemandInput]
@@ -337,6 +356,7 @@ def write_demand(
     manifest = DemandManifest(
         city=city,
         scenario=scenario,
+        version=od_version(__version__, demand, build.beta_per_min, inputs),
         builder_version=__version__,
         nature=DataNature.ESTIMATED,
         inputs=inputs,
@@ -377,7 +397,8 @@ def report(m: DemandManifest, build: DemandBuild) -> str:
     lines = [
         f"# Synthetic demand — `{m.city}` / `{m.scenario}` (Estimated)",
         "",
-        f"Builder {m.builder_version} · purpose {m.demand.trip_purpose} · "
+        f"Version `{m.version}` · builder {m.builder_version} · purpose "
+        f"{m.demand.trip_purpose} · "
         f"{m.od_pairs:,} OD pairs with trips",
         "",
         "## Priors (Assumed)",
