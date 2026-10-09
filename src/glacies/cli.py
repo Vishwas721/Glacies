@@ -337,6 +337,27 @@ def build_synthetic_demand(city: CityOption = None) -> None:
     )
 
 
+@build_app.command("station-flows")
+def build_station_flows(city: CityOption = None) -> None:
+    """Simulated metro entries, exits and station-pair flows of the OD matrix."""
+    settings, config = _load(city)
+
+    def progress(done: int, total: int) -> None:
+        typer.echo(f"  {done:,}/{total:,} origins", err=True)
+
+    try:
+        manifest, out_dir = pipeline.run_station_flows(settings, config, on_chunk=progress)
+    except PipelineError as exc:
+        _fail(str(exc))
+    s = manifest.stats
+    typer.echo(f"{manifest.mode} station flows (Simulated) -> {out_dir}")
+    typer.echo(
+        f"  {s.trips:,.0f} trips: {s.trips_using_metro:,.0f} use the {manifest.mode} "
+        f"({s.trips_using_metro / s.trips:.1%}), {s.entries:,.0f} station entries, "
+        f"{s.trips_walked:,.0f} walk all the way, {s.trips_unreached:,.0f} not reached"
+    )
+
+
 @app.command("accessibility")
 def accessibility_report(
     city: Annotated[

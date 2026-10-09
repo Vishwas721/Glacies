@@ -36,6 +36,7 @@ from glacies.analytics.travel_times import (
     build_matrix,
     zone_access,
     zone_points,
+    zone_walks,
 )
 from glacies.cities import CityConfig, CityConfigError, load_demand
 from glacies.config import Settings
@@ -48,6 +49,15 @@ from glacies.demand.attraction import (
     employment_score,
     read_hubs,
     write_attraction,
+)
+from glacies.demand.metro import (
+    MetroInput,
+    MetroManifest,
+    metro_network,
+    metro_paths,
+    path_shares,
+    station_flows,
+    write_metro,
 )
 from glacies.demand.od import DemandBuild, DemandInput, DemandManifest, build_demand, write_demand
 from glacies.demand.production import DemandError
@@ -509,6 +519,61 @@ def run_demand(
         ],
     )
     return manifest, result, out_dir
+
+
+def run_station_flows(
+    settings: Settings,
+    config: CityConfig,
+    *,
+    scenario: str = "baseline",
+    on_chunk: Callable[[int, int], None] | None = None,
+) -> tuple[MetroManifest, Path]:
+    """Simulated metro entries, exits and station-pair flows of the OD matrix (Phase 5 M3)."""
+    try:
+        demand = load_demand(settings.demand_config_path)
+        mode = config.source(demand.calibration.dataset).mode
+    except CityConfigError as exc:
+        raise PipelineError(str(exc)) from exc
+    if mode is None:
+        raise PipelineError(f"source {demand.calibration.dataset!r} has no mode")
+    base = city_dir(settings, config)
+    stages = {
+        "transit": base / "transit",
+        "walk": base / "walk",
+        "zones": base / "zones",
+        "demand": base / "demand" / scenario,
+    }
+    for stage, directory in stages.items():
+        if not (directory / "manifest.json").is_file():
+            raise PipelineError(f"missing {directory}; run `glacies build {stage}` first")
+    zones = pl.read_parquet(stages["zones"] / "zones.parquet").sort("zone_idx")
+    od = pl.read_parquet(stages["demand"] / "od.parquet")
+    try:
+        router = load_router(base, config.routing, config.city.crs_projected)
+        metro = metro_network(router, stages["transit"], mode)
+        walks = zone_walks(router, base / "walk", zone_points(zones), config.accessibility)
+        reach, segments = metro_paths(
+            router, walks, od, metro, config.accessibility, on_chunk=on_chunk
+        )
+        flows = station_flows(od, reach, path_shares(reach, segments), metro)
+    except (DemandError, RouterError) as exc:
+        raise PipelineError(str(exc)) from exc
+    out_dir = base / "metro" / scenario
+    manifest = write_metro(
+        reach,
+        path_shares(reach, segments),
+        flows,
+        out_dir,
+        city=config.city.id,
+        scenario=scenario,
+        mode=mode,
+        departures=len(config.accessibility.departures()),
+        inputs=[
+            MetroInput(stage=stage, manifest_sha256=sha256_file(directory / "manifest.json"))
+            for stage, directory in stages.items()
+        ],
+    )
+    return manifest, out_dir
 
 
 def run_report(
