@@ -51,9 +51,11 @@ verified = false
 column = "p50_s"
 
 [demand.gravity]
-# Exponential friction exp(-beta x minutes of p50 time). Provisional (Assumed) until the M4
-# calibration replaces it (docs/validation/demand.md).
-beta_per_min = 0.05
+# Exponential friction exp(-beta x minutes of p50 time). Calibrated 2026-10-09 by
+# `glacies demand calibrate` on station entry shares (ADR 0014): best RMSE 0.0168 at 0.0321
+# (1/beta = 31 min). The objective is nearly flat over 0.027-0.037, so beta is only weakly
+# identified (docs/validation/demand.md).
+beta_per_min = 0.0321
 tolerance = 1e-6       # largest relative error of any row or column sum
 max_iterations = 5000
 
@@ -79,6 +81,13 @@ dates = [
 # RV Road (Green + Yellow interchange) stays in.
 exclude_lines = ["Yellow"]
 objective = "rmse_entry_share"   # fit the shape; GEH and the level ratio are reported
+# β search (Assumed): 12 log-spaced values from 0.005 to 0.2 per minute (1/β from 200 to
+# 5 minutes), then 8 golden-section steps around the best; Furness at 1e-4 during the search.
+beta_min = 0.005
+beta_max = 0.2
+grid_points = 12
+refine_steps = 8
+sweep_tolerance = 1e-4
 
 # Held-out validation set, chosen by the user before calibration (15 of the 68 stations left
 # after excluding the Yellow Line, 22 %; about 27 % of their AM entries). Never used to choose beta. Names match the ridership data.

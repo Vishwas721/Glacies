@@ -15,6 +15,8 @@ import typer
 from glacies import pipeline
 from glacies.cities import CityConfig, CityConfigError, load_city
 from glacies.config import Settings, get_settings
+from glacies.demand.calibrate import SweepPoint
+from glacies.demand.sensitivity import VariantResult
 from glacies.ingest import archive, download
 from glacies.model.transit.schema import TABLES
 from glacies.model.zones.build import population_check
@@ -42,6 +44,8 @@ load_app = typer.Typer(help="Copy canonical layers into databases.", no_args_is_
 app.add_typer(load_app, name="load")
 bench_app = typer.Typer(help="Measure performance on the real network.", no_args_is_help=True)
 app.add_typer(bench_app, name="bench")
+demand_app = typer.Typer(help="Calibrate and test synthetic demand.", no_args_is_help=True)
+app.add_typer(demand_app, name="demand")
 scenario_app = typer.Typer(help="Define and check network scenarios.", no_args_is_help=True)
 app.add_typer(scenario_app, name="scenario")
 
@@ -372,6 +376,68 @@ def build_station_flows(city: CityOption = None) -> None:
         f"({s.trips_using_metro / s.trips:.1%}), {s.entries:,.0f} station entries, "
         f"{s.trips_walked:,.0f} walk all the way, {s.trips_unreached:,.0f} not reached"
     )
+
+
+@build_app.command("ridership")
+def build_ridership(city: CityOption = None) -> None:
+    """Validate the calibration ridership snapshot into canonical tables (Observed)."""
+    settings, config = _load(city)
+    try:
+        manifest, out_dir = pipeline.run_ridership(settings, config)
+    except PipelineError as exc:
+        _fail(str(exc))
+    typer.echo(f"ridership (Observed) -> {out_dir}")
+    typer.echo(
+        f"  {manifest.dates} dates {manifest.first_date}..{manifest.last_date}, "
+        f"{manifest.stations} stations, {manifest.station_rows:,} station-hours, "
+        f"{manifest.pair_rows:,} station-pair-hours"
+    )
+
+
+@demand_app.command("calibrate")
+def calibrate_demand(city: CityOption = None) -> None:
+    """Choose the gravity model's β against observed metro station entries."""
+    settings, config = _load(city)
+
+    def point(p: SweepPoint) -> None:
+        typer.echo(
+            f"  beta {p.beta_per_min:.4f} ({p.stage}): RMSE {p.rmse_share_training:.5f}, "
+            f"R2 {p.r2_share_training:.3f}, {p.mean_km:.1f} km, {p.iterations} iterations",
+            err=True,
+        )
+
+    try:
+        manifest, out_dir = pipeline.run_calibration(settings, config, on_point=point)
+    except PipelineError as exc:
+        _fail(str(exc))
+    typer.echo(f"calibration -> {out_dir}")
+    edge = " (at the edge of the range)" if manifest.at_boundary else ""
+    typer.echo(f"  beta = {manifest.beta_per_min:.4f} per minute{edge}")
+    for name, f in manifest.fits.items():
+        typer.echo(
+            f"  {name}: R2 (share) {f.r2_share:.2f}, RMSE {f.rmse_share:.4f}, "
+            f"mean GEH {f.mean_geh:.1f}, level {f.level_ratio:.2f} ({f.items} items)"
+        )
+    typer.echo("  set [demand.gravity] beta_per_min in demand.toml to use it")
+
+
+@demand_app.command("sensitivity")
+def demand_sensitivity(city: CityOption = None) -> None:
+    """Re-run demand under alternative β, employment proxies and priors."""
+    settings, config = _load(city)
+
+    def variant(r: VariantResult) -> None:
+        typer.echo(
+            f"  {r.name}: {r.trips:,.0f} trips, {r.mean_km:.1f} km, metro "
+            f"{r.metro_trip_share:.1%}, R2 held-out {r.r2_held_out:.2f}",
+            err=True,
+        )
+
+    try:
+        _, out_dir = pipeline.run_sensitivity(settings, config, on_variant=variant)
+    except PipelineError as exc:
+        _fail(str(exc))
+    typer.echo(f"demand sensitivity (Estimated) -> {out_dir}")
 
 
 @app.command("accessibility")

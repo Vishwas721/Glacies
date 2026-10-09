@@ -98,6 +98,9 @@ class Source(_Strict):
         "non-revenue (e.g. test runs) and are left out of the canonical network.",
     )
     coverage_reference: CoverageReference | None = None
+    format: str | None = Field(
+        default=None, description="Layout of the files, for sources read by name (ridership)."
+    )
 
     @model_validator(mode="after")
     def _check_patterns(self) -> Source:
@@ -397,6 +400,13 @@ class DemandCalibration(_Strict):
     exclude_lines: list[str] = Field(default_factory=list)
     objective: Literal["rmse_entry_share"]
     held_out_stations: list[str] = Field(min_length=1)
+    beta_min: float = Field(default=0.005, gt=0, description="Search range, per minute.")
+    beta_max: float = Field(default=0.2, gt=0)
+    grid_points: int = Field(default=12, ge=3, description="Log-spaced first pass.")
+    refine_steps: int = Field(default=8, ge=2, description="Golden-section evaluations.")
+    sweep_tolerance: float = Field(
+        default=1e-4, gt=0, lt=1, description="Furness tolerance during the search."
+    )
 
     @model_validator(mode="after")
     def _check(self) -> DemandCalibration:
@@ -406,6 +416,8 @@ class DemandCalibration(_Strict):
             raise ValueError("dates must be ascending and unique")
         if len(set(self.held_out_stations)) != len(self.held_out_stations):
             raise ValueError("held_out_stations must be unique")
+        if self.beta_min >= self.beta_max:
+            raise ValueError("beta_min must be below beta_max")
         return self
 
 

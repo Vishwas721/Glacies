@@ -39,6 +39,7 @@ class Balanced:
     max_row_error: float  # largest |row sum - O| / O over producing zones
     max_column_error: float
     row_error_history: list[float] = field(default_factory=list)
+    b: F64 = field(default_factory=lambda: np.zeros(0))  # final column factors
 
 
 def _relative_error(actual: F64, target: F64) -> float:
@@ -57,8 +58,13 @@ def furness(
     *,
     tolerance: float,
     max_iterations: int,
+    initial_b: F64 | None = None,
 ) -> Balanced:
-    """Balance ``friction`` on the pairs (origin, dest) to the given trip ends."""
+    """Balance ``friction`` on the pairs (origin, dest) to the given trip ends.
+
+    ``initial_b`` (column factors of a nearby problem, e.g. the previous β of a sweep) only
+    changes how fast it converges, not the result.
+    """
     n = productions.size
     if attractions.size != n:
         raise DemandError("productions and attractions must cover the same zones")
@@ -76,6 +82,8 @@ def furness(
 
     a = np.zeros(n)
     b = np.where(attractions > 0, 1.0, 0.0)
+    if initial_b is not None:
+        b = np.where((attractions > 0) & (initial_b > 0), initial_b, b)
     history: list[float] = []
     row_error = np.inf
     iteration = 0
@@ -101,4 +109,5 @@ def furness(
         max_row_error=row_error,
         max_column_error=_relative_error(columns, attractions),
         row_error_history=history,
+        b=b,
     )

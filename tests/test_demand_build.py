@@ -1,5 +1,6 @@
 """Attainable attractions on toys, and `glacies build demand` on the toy city (Phase 5 M1-M2)."""
 
+import json
 import shutil
 from pathlib import Path
 
@@ -124,9 +125,13 @@ def test_build_demand_balances_and_is_reproducible(city: Path) -> None:
     assert "Estimated" in report
     assert "Glacies test fixture (not verified)" in report
 
+    version = json.loads((out / "manifest.json").read_text(encoding="utf-8"))["version"]
+    assert len(version) == 16
+
     again = runner.invoke(app, ["build", "demand"])
     assert again.exit_code == 0, again.output
     assert {p.name: p.read_bytes() for p in sorted(out.glob("*.parquet"))} == first
+    assert json.loads((out / "manifest.json").read_text(encoding="utf-8"))["version"] == version
 
 
 def test_misspelt_held_out_station_fails(

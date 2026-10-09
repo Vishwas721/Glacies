@@ -79,6 +79,9 @@ uv run glacies scenario schema            # regenerate schemas/scenario.schema.j
 uv run glacies build paths                # fastest-journey path table per zone pair (Simulated)
 uv run glacies build demand               # AM-peak trip ends + gravity OD matrix (Estimated)
 uv run glacies build station-flows        # metro entries/exits/station pairs of the OD (Simulated)
+uv run glacies build ridership            # BMRCL hourly entries/exits/pairs, canonical (Observed)
+uv run glacies demand calibrate           # choose β on station entry shares; report in .../calibration/
+uv run glacies demand sensitivity         # demand under alternative β, proxies and priors (Estimated)
 
 # Infra
 docker compose up -d          # PostGIS :5433 (host), Redis :6379

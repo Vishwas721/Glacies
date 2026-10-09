@@ -186,6 +186,7 @@ license = "ODbL-1.0"
 verified = true
 nature = "observed"
 notes = "Hourly station entries/exits and station-pair (OD) flows. Primary demand calibration target."
+format = "vonter-hourly"
 
 [sources.osm]
 kind = "osm_pbf"
