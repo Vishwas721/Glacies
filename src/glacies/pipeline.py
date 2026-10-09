@@ -744,7 +744,7 @@ def _prepare(
             column = zones[purpose.attractor].cast(pl.Float64).fill_null(0.0).to_numpy()
             purposes.append(prepare(for_purpose(demand, purpose), column))
         gateways = None
-        if demand.gateways is not None:
+        if demand.gateways is not None and demand.gateways.enabled:
             found = gateway_zones(zones, demand.gateways)
             pairs = candidate_pairs(
                 matrix, demand.cost.column, exclude_intrazonal=demand.exclude_intrazonal

@@ -275,7 +275,7 @@ def _fitted_build(
 ) -> ModelBuild:
     """The build at ``beta`` with the gateway factor that best fits the training stations."""
     gateways = demand.gateways
-    if model.gateways is None or gateways is None:
+    if model.gateways is None or gateways is None or not gateways.enabled:
         return build_model(model, beta, tolerance=tolerance, warm=warm)
     unit = build_model(model, beta, gateway_factor=1.0, tolerance=tolerance, warm=warm)
     parts = unit.parts()

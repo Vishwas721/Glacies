@@ -460,6 +460,9 @@ class Gateways(_Strict):
     stations by ``glacies demand calibrate`` (Assumed until then).
     """
 
+    enabled: bool = Field(
+        default=True, description="False keeps the stations on record but builds no trips."
+    )
     factor: float = Field(ge=0)
     factor_max: float = Field(default=1.0, gt=0, description="Upper end of the factor search.")
     stations: list[Gateway] = Field(min_length=1)

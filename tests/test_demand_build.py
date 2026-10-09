@@ -283,3 +283,15 @@ def test_purposes_and_gateways_add_up(
     assert {p.name: p.read_bytes() for p in sorted(out.glob("*.parquet"))} == first
     flows = runner.invoke(app, ["build", "station-flows"])
     assert flows.exit_code == 0, flows.output
+
+    demand.write_text(
+        demand.read_text(encoding="utf-8").replace(
+            "[demand.gateways]\n", "[demand.gateways]\nenabled = false\n"
+        ),
+        encoding="utf-8",
+    )
+    disabled = runner.invoke(app, ["build", "demand"])
+    assert disabled.exit_code == 0, disabled.output
+    purposes = set(pl.read_parquet(out / "od.parquet")["purpose"].unique().to_list())
+    assert purposes == {"HBW_AM_peak", "education"}
+    assert not (out / "gateways.parquet").exists()
