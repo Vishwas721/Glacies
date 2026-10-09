@@ -129,3 +129,98 @@ held_out_stations = [
     "Kengeri",
     "Yeshwantpur",
 ]
+
+# --- Further purposes and gateways (Phase 5 M8, ADR 0016) ---------------------------------------
+
+[[demand.purposes]]
+# Students and staff travelling to schools and colleges, 08:00-10:00. Same friction (beta) and
+# cost as work trips (Assumed). Check, not input: WRI India (2023, "Improving metro access in
+# India", Fig 6) found 22 % of Bengaluru metro riders travel for education, 68 % for work.
+name = "education"
+attractor = "poi_education"   # OSM schools, colleges and universities per zone (Estimated)
+
+[demand.purposes.trip_rate]
+# 1.24 trips/person/day (CMP p.2-50) x 15 % education (CMP p.2-51, outbound; returns are
+# counted separately) = 0.186 outbound education trips/person/day, x 0.5 starting 08:00-10:00
+# (Assumed; many schools start before 08:00).
+value = 0.09
+range = [0.06, 0.12]
+source = "Bengaluru CMP 2020 (DULT) final report, p.2-50 and p.2-51 (purposes)"
+verified = true
+
+[demand.purposes.transit_share]
+# Assumed. School buses count as public transport in the CMP but are not in the GTFS; the CMP
+# bus-stop survey has education as 11.8 % of bus passengers (Table 2-23, p.2-44).
+value = 0.30
+range = [0.20, 0.45]
+source = "Assumed; CMP 2020 Table 2-23 (education 11.8 % of bus passengers) as context"
+verified = false
+
+[demand.gateways]
+# Passengers arriving at rail and long-distance bus terminals start trips in the city. Size
+# = factor x daily passengers. The factor folds together the share of arrivals in
+# 08:00-10:00, arrivals per counted (outward) passenger and the share continuing by transit;
+# none is published (no rail-to-metro transfer share found), so `glacies demand calibrate`
+# fits it on the training stations. Coordinates are from the OSM extract (2026-10-02).
+# Daily passengers: 2023-24 outward (originating) passengers / 365, from the Railway Board
+# station categorisation as reported by Deccan Herald (11 Sep 2024); SWR's 2023-24 list
+# confirms the categories but gives no counts. Terminating passengers are assumed equal
+# (SWR 2024-25: Bengaluru's total footfall is about twice its originating passengers).
+factor = 0.0      # set from the calibration
+factor_max = 0.5  # at most half a day's passengers in two hours, all by transit
+
+[[demand.gateways.stations]]
+name = "KSR Bengaluru City (SBC)"
+lat = 12.97817
+lon = 77.56956
+daily_passengers = 67945   # 2.48 crore outward passengers in 2023-24
+source = "Deccan Herald 2024-09-11 quoting the Railway Board 2023-24 categorisation"
+verified = false
+
+[[demand.gateways.stations]]
+name = "Yesvantpur Junction (YPR)"
+lat = 13.02377
+lon = 77.55077
+daily_passengers = 26381   # 96.29 lakh
+source = "Deccan Herald 2024-09-11 quoting the Railway Board 2023-24 categorisation"
+verified = false
+
+[[demand.gateways.stations]]
+name = "SMVT Bengaluru (SMVB)"
+lat = 12.99966
+lon = 77.64115
+daily_passengers = 12189   # 44.49 lakh
+source = "Deccan Herald 2024-09-11 quoting the Railway Board 2023-24 categorisation"
+verified = false
+
+[[demand.gateways.stations]]
+name = "Krishnarajapuram (KJM)"
+lat = 13.00055
+lon = 77.67546
+daily_passengers = 11959   # 43.65 lakh
+source = "Deccan Herald 2024-09-11 quoting the Railway Board 2023-24 categorisation"
+verified = false
+
+[[demand.gateways.stations]]
+name = "Kengeri (KGI)"
+lat = 12.91766
+lon = 77.48376
+daily_passengers = 11844   # 43.23 lakh; the article's reserved/unreserved split does not add up
+source = "Deccan Herald 2024-09-11 quoting the Railway Board 2023-24 categorisation"
+verified = false
+
+[[demand.gateways.stations]]
+name = "Bangalore Cantonment (BNC)"
+lat = 12.99369
+lon = 77.59800
+daily_passengers = 6578    # 24.01 lakh
+source = "Deccan Herald 2024-09-11 quoting the Railway Board 2023-24 categorisation"
+verified = false
+
+[[demand.gateways.stations]]
+name = "Kempegowda Bus Station (KSRTC)"
+lat = 12.97791
+lon = 77.57239
+daily_passengers = 80000   # long-distance (KSRTC) station only; BMTC city buses are in the GTFS
+source = "News Karnataka 2025-11-24 (no source named): nearly 80,000 KSRTC passengers a day"
+verified = false
