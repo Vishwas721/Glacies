@@ -79,6 +79,13 @@ dates = [
 # RV Road (Green + Yellow interchange) stays in.
 exclude_lines = ["Yellow"]
 objective = "rmse_entry_share"   # fit the shape; GEH and the level ratio are reported
+# β search (Assumed): 12 log-spaced values from 0.005 to 0.2 per minute (1/β from 200 to
+# 5 minutes), then 8 golden-section steps around the best; Furness at 1e-4 during the search.
+beta_min = 0.005
+beta_max = 0.2
+grid_points = 12
+refine_steps = 8
+sweep_tolerance = 1e-4
 
 # Held-out validation set, chosen by the user before calibration (15 of the 68 stations left
 # after excluding the Yellow Line, 22 %; about 27 % of their AM entries). Never used to choose beta. Names match the ridership data.
