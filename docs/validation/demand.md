@@ -4,7 +4,8 @@ Everything here is **Estimated** (demand) or **Simulated** (travel times, journe
 flows) unless labelled otherwise. Priors are Assumed and live in `cities/bengaluru/demand.toml`
 with their citations. Numbers come from runs on 2026-10-09 on mains power:
 `glacies build paths`, `glacies build demand`, `glacies build station-flows`,
-`glacies demand calibrate`, `glacies demand sensitivity`.
+`glacies demand calibrate`, `glacies demand sensitivity`; with rides to stations (M7) also
+`glacies build demand-matrix`. Sections M4–M5 are walk-only; M7 is the current model.
 
 ## M1–M2: trip ends and the gravity model (β provisional)
 
@@ -153,3 +154,94 @@ the best training R² (−0.32) but a worse held-out one; β × 2 gives the best
 but a worse training one. No variant gets a positive R², which supports the M4 conclusion that
 station access, not distribution, limits the fit. The level ratio stays at 0.26–0.65 even with
 both priors at the top of their ranges.
+
+## M7: rides to metro stations (ADR 0015)
+
+M4–M5 showed the misfit was structural. A quick test (not engine code) added the population
+0.8–4 km from each station to the simulated entries, with one weight fitted on training
+stations: held-out R² went from −1.34 to 0.03 (3 and 5 km did about equally well). The engine
+now gives every zone a **board-only ride** to each metro platform within 4 km straight line:
+5 min + distance × 1.3 / 15 km/h (all Assumed, `[demand.ride_access]`). A board-only ride must
+be followed by a train, so "ride to a station and walk out" is never a transit trip. Rides are
+at the home end only and go into a separate demand matrix; accessibility and scenarios keep the
+walk-only matrix.
+
+Runs on 2026-10-09 (mains power): `build demand-matrix` 348 s (10,661 zones, 2,396,940 rows),
+`build paths` ~9 min, `demand calibrate` 11 min (was 47: sweep runs took 57–413 Furness
+iterations instead of 112–1,373), `demand sensitivity` 17 min (was ~2 h).
+
+| Quantity | Walk only (M4) | With rides |
+|---|---:|---:|
+| Zones that can start a trip | 3,465 | 3,618 |
+| Origin zones in the OD | 2,704 | 2,894 |
+| Trips | 354,386 | 383,470 |
+| Calibrated β (per minute) | 0.0321 | **0.0259** (1/β = 39 min; flat over 0.019–0.037) |
+| Mean trip | 11.8 km, 74.4 min | 12.9 km, 74.4 min |
+| Trips using the metro | 17.7 % | 41.9 % |
+| Metro trips that start with a ride | — | 84.2 % (135,401 of 160,719) |
+| Station entries, 08:00–10:00 | 62,574 | 160,846 |
+
+| Set | Items | R² (share) walk only | R² (share) with rides | r | Mean GEH | Simulated / observed |
+|---|---:|---:|---:|---:|---:|---:|
+| Training stations | 53 | −0.54 | 0.12 | 0.52 | 22.8 | 0.92 |
+| **Held-out stations** | 15 | −1.34 | **0.40** | 0.67 | 13.6 | 0.78 |
+| Excluded (Yellow line) | 15 | −7.06 | −1.11 | 0.19 | 13.5 | 3.43 |
+| Training station pairs | 2,774 | −0.70 | −0.59 | 0.33 | 4.0 | 1.00 |
+| Held-out station pairs | 222 | −0.98 | −0.06 | 0.66 | 4.3 | 0.90 |
+
+Held-out stations, share of held-out entries (observed / walk only / with rides):
+Baiyappanahalli 13.4 / 3.5 / 10.7 %, Dasarahalli 9.6 / 18.3 / 8.4 %, Halasuru 7.2 / 3.4 / 6.9 %,
+Kengeri 5.0 / 0.4 / 3.5 %, Banashankari 6.0 / 11.3 / 5.2 %. Still wrong: Peenya Industry
+1.7 / 2.5 / 7.8 % (over), Mysore Road 7.8 / 6.1 / 4.3 % (under).
+
+Largest remaining training misses: Nadaprabhu Kempegowda (Majestic) 4,578 observed vs 1,811
+simulated, Krantivira Sangolli Rayanna (KSR City railway station) 3,054 vs 755, Kadugodi Tree
+Park 4,365 vs 949. The first two are rail and long-distance-bus gateways that a home-based model
+cannot produce.
+
+**Sensitivity with rides** (`glacies demand sensitivity`, β 0.0259):
+
+| Variant | Trips | Mean km | Metro share | Entries | R² train | R² held-out | Level (train) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| baseline | 383,470 | 12.9 | 41.9 % | 160,846 | 0.12 | 0.40 | 0.92 |
+| β × 0.5 | 383,470 | 14.4 | 44.2 % | 169,846 | 0.12 | 0.38 | 0.98 |
+| β × 2 | 383,470 | 10.2 | 37.2 % | 142,519 | 0.11 | 0.41 | 0.80 |
+| proxy previous-baseline | 383,470 | 12.6 | 40.5 % | 155,495 | 0.12 | 0.43 | 0.88 |
+| proxy poi-led | 383,470 | 13.3 | 43.2 % | 165,733 | 0.11 | 0.36 | 0.96 |
+| proxy pois-only | 381,330 | 13.9 | 45.1 % | 172,128 | 0.07 | 0.30 | 1.01 |
+| proxy area-only | 383,470 | 12.4 | 38.3 % | 146,842 | 0.07 | 0.45 | 0.81 |
+| proxy baseline-c75 | 383,470 | 12.9 | 41.9 % | 160,641 | 0.12 | 0.40 | 0.92 |
+| trip rate × share low | 238,604 | 12.9 | 41.9 % | 100,082 | 0.12 | 0.40 | 0.57 |
+| trip rate × share high | 596,509 | 12.9 | 41.9 % | 250,205 | 0.12 | 0.40 | 1.43 |
+
+Held-out R² stays between 0.30 and 0.45 in every variant: the improvement does not hinge on β,
+the employment proxy or the level priors.
+
+**Ride penalty check** (one run with `penalty_min = 10`, β 0.0259, not recalibrated):
+
+| Penalty | Trips using the metro | Metro trips starting with a ride | R² train | R² held-out | Level train / held-out |
+|---|---:|---:|---:|---:|---:|
+| 5 min (kept) | 41.9 % | 84.2 % | 0.12 | 0.40 | 0.92 / 0.78 |
+| 10 min | 36.3 % | 76.4 % (106,210 of 139,089) | 0.05 | 0.49 | 0.80 / 0.64 |
+
+The 10-minute ride fits the held-out stations better but the training stations worse; choosing
+it for the held-out score would use the held-out set for tuning, so 5 minutes stays until a
+survey gives a value. Rebuilding the 5-minute baseline afterwards reproduced every number.
+
+**Checks against outside figures (not fitted).**
+
+- *Ride share.* 76–84 % of simulated metro trips start with a ride. The Ease of Moving Index
+  2022 Bengaluru profile is quoted as 58.9 % of public-transport users taking autos, shared
+  autos or cabs for the first/last mile (not verified against the report; bus and metro, both
+  ends), so the model probably over-uses rides, or under-uses feeder buses and walking.
+- *Level.* Simulated home-to-work entries are 0.92 of observed entries at training stations,
+  although real 08:00–10:00 riders also include students and other purposes. Together with the
+  ride share and a 42 % metro share of transit trips, this says the metro is chosen too often:
+  in an all-or-nothing assignment the fastest journey always wins, and a ride + metro is often
+  faster than a bus. Mode choice and crowding (Phases 6 and 9) would temper this.
+
+**What is left.** Rail and long-distance-bus gateways (Majestic, KSR City, Yeshwantpur, K.R.
+Puram) need demand that starts at the station, sized from train arrivals; other purposes
+(education) need their own attractors; and the access parameters need a station access-mode
+survey. Footfall percentages are not used for gateway demand: footfall counts arrivals and
+departures, most arrivals do not take the metro, and Yeshwantpur is a held-out station.

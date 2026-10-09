@@ -4,7 +4,8 @@ mod common;
 
 use common::{builder, t, trip};
 use glacies_raptor::{
-    zone_paths, Access, MetroNetwork, Params, StopIdx, Timetable, ZoneEgress, NO_STATION,
+    zone_paths, zone_travel_times, Access, MetroNetwork, Params, StopIdx, Timetable, ZoneEgress,
+    NO_STATION,
 };
 
 const PARAMS: Params = Params { max_rounds: 4, min_transfer_time: 60 };
@@ -61,7 +62,7 @@ fn segments_match_hand_reading() {
     let result = zone_paths(
         &toy(),
         &PARAMS,
-        &[Access { stop: A, duration: 60 }],
+        &[Access { stop: A, duration: 60, board_only: false }],
         &["07:59", "08:01"].map(t),
         &zones(),
         &[(4, 600)],
@@ -88,7 +89,7 @@ fn the_time_limit_drops_long_journeys() {
     let result = zone_paths(
         &toy(),
         &PARAMS,
-        &[Access { stop: A, duration: 60 }],
+        &[Access { stop: A, duration: 60, board_only: false }],
         &[t("07:59")],
         &zones(),
         &[(4, 600)],
@@ -107,4 +108,83 @@ fn unknown_target_is_an_error() {
     let result =
         zone_paths(&toy(), &PARAMS, &[], &[t("07:59")], &zones(), &[], &[9], &metro(), 3600);
     assert!(result.is_err());
+}
+
+#[test]
+fn a_board_only_ride_must_be_followed_by_a_vehicle() {
+    // Leaving 08:05: the walk to A (1 min) misses bus 1, but a 5-minute ride to station X
+    // (B, 08:10) catches metro 2 to Y (C, 08:20): zone 0 by metro, 16 min door to door.
+    // Zone 4 is a minute's walk from B, but riding to B and walking out uses no vehicle, so
+    // it is not reached; as an ordinary walk the same access would reach it.
+    let access = |board_only| {
+        [
+            Access { stop: A, duration: 60, board_only: false },
+            Access { stop: B, duration: 300, board_only },
+        ]
+    };
+    let paths = |board_only| {
+        zone_paths(
+            &toy(),
+            &PARAMS,
+            &access(board_only),
+            &[t("08:05")],
+            &zones(),
+            &[],
+            &[0, 4],
+            &metro(),
+            120 * 60,
+        )
+        .unwrap()
+    };
+
+    let ride = paths(true);
+    assert_eq!(ride.reached, [1, 0]);
+    assert_eq!(ride.metro, [1, 0]);
+    assert_eq!(ride.ridden, [1, 0]);
+    assert_eq!(ride.segments, [(0, 10, 11, 1)]);
+    let walk = paths(false);
+    assert_eq!(walk.reached, [1, 1]);
+    assert_eq!(walk.ridden, [0, 0]);
+
+    let times = |board_only| {
+        zone_travel_times(
+            &toy(),
+            &PARAMS,
+            &access(board_only),
+            &[t("08:05")],
+            &zones(),
+            &[],
+            &[50],
+            120 * 60,
+        )
+        .unwrap()
+    };
+    // The matrix covers every zone: the metro goes on to zones 1-3 (26, 36, 41 min).
+    let ride = times(true);
+    assert_eq!(ride.zones, [0, 1, 2, 3]);
+    assert_eq!(ride.times, [16, 26, 36, 41].map(|m| m * 60));
+    assert_eq!(times(false).zones, [0, 1, 2, 3, 4]);
+}
+
+#[test]
+fn a_walk_to_the_same_stop_wins_over_a_board_only_ride() {
+    // B can be walked to (10 min) and ridden to (5 min): it counts as walked to, so zone 4 is
+    // reached on foot through B, and the faster ride is not used to board there.
+    let result = zone_paths(
+        &toy(),
+        &PARAMS,
+        &[
+            Access { stop: B, duration: 600, board_only: false },
+            Access { stop: B, duration: 300, board_only: true },
+        ],
+        &[t("08:05")],
+        &zones(),
+        &[],
+        &[0, 4],
+        &metro(),
+        120 * 60,
+    )
+    .unwrap();
+
+    assert_eq!(result.reached, [0, 1]); // 08:15 at B misses metro 2 (08:12)
 }

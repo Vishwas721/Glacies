@@ -102,3 +102,20 @@ def test_rejects_non_contiguous_zones(demand: DemandConfig) -> None:
 
     with pytest.raises(DemandError, match=r"0\.\.n-1"):
         trip_ends(shuffled, SCORE, ACCESS, pairs, demand)
+
+
+def test_a_zone_that_only_rides_produces_but_does_not_attract(demand: DemandConfig) -> None:
+    """Zone 2 rides to a station (no walk to a stop): it sends 300 x 0.05 = 15 trips to zone 0,
+    but trips end with a walk, so its score (0.2) attracts nothing. O = 5 + 10 + 15 = 30, split
+    4 : 3 over zones 0 and 1."""
+    pairs = candidate_pairs(matrix(), "p50_s", exclude_intrazonal=True)
+    rides = ACCESS | np.array([False, False, True, False, False])
+
+    ends = trip_ends(zones(), SCORE, rides, pairs, demand, walk_access=ACCESS)
+
+    np.testing.assert_allclose(ends.table["origin"].to_numpy(), [5, 10, 15, 0, 0])
+    np.testing.assert_allclose(
+        ends.table["destination"].to_numpy(), [30 * 4 / 7, 30 * 3 / 7, 0, 0, 0]
+    )
+    assert ends.table["has_walk_access"].to_list() == ACCESS.tolist()
+    assert (ends.stats.zones_ride_only, ends.stats.population_ride_only) == (1, 300)

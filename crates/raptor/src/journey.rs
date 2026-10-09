@@ -149,7 +149,7 @@ pub(crate) fn rebuild(
     loop {
         let (r, label) = label(rounds, round, stop, via);
         match label {
-            Label::Access { duration } => {
+            Label::Access { duration, .. } => {
                 if duration > 0 {
                     legs.push(Leg::Access { to: stop, duration });
                 }

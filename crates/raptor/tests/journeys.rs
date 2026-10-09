@@ -8,7 +8,7 @@ use glacies_raptor::{plan, Access, Journey, Leg, Params, RouteIdx, StopIdx, Time
 const PARAMS: Params = Params { max_rounds: 4, min_transfer_time: 60 };
 
 fn at(stop: StopIdx) -> Vec<Access> {
-    vec![Access { stop, duration: 0 }]
+    vec![Access { stop, duration: 0, board_only: false }]
 }
 
 fn only(journeys: Vec<Journey>) -> Journey {
@@ -147,7 +147,7 @@ fn transfer_walks_appear_as_legs_and_count_as_walking() {
 fn the_best_access_stop_is_chosen_and_both_walks_are_legs() {
     // T1 leaves A at 08:00 and B at 08:10.
     let (tt, _) = toy1().build();
-    let walk = |stop, duration| Access { stop, duration };
+    let walk = |stop, duration| Access { stop, duration, board_only: false };
     let destinations = [walk(C, 180)];
 
     // Leaving at 07:50: A (10 min walk) catches T1; B (25 min walk) would miss it.
@@ -169,7 +169,10 @@ fn the_best_access_stop_is_chosen_and_both_walks_are_legs() {
 fn the_best_egress_stop_is_chosen() {
     // T1 passes B at 08:10 and C at 08:20; walking from B takes 15 min, from C 2 min.
     let (tt, _) = toy1().build();
-    let destinations = [Access { stop: B, duration: 900 }, Access { stop: C, duration: 120 }];
+    let destinations = [
+        Access { stop: B, duration: 900, board_only: false },
+        Access { stop: C, duration: 120, board_only: false },
+    ];
 
     let journey = only(plan(&tt, &PARAMS, &at(A), t("08:00"), &destinations));
 
@@ -180,8 +183,8 @@ fn the_best_egress_stop_is_chosen() {
 #[test]
 fn walking_only_journeys_are_reported_without_rides() {
     let (tt, _) = toy1().build();
-    let origins = [Access { stop: A, duration: 120 }];
-    let destinations = [Access { stop: A, duration: 60 }];
+    let origins = [Access { stop: A, duration: 120, board_only: false }];
+    let destinations = [Access { stop: A, duration: 60, board_only: false }];
 
     let journey = only(plan(&tt, &PARAMS, &origins, t("08:00"), &destinations));
 

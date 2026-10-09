@@ -50,6 +50,7 @@ COLUMN_NATURE: dict[str, dict[str, DataNature]] = {
         "reached": DataNature.SIMULATED,
         "walked": DataNature.SIMULATED,
         "metro": DataNature.SIMULATED,
+        "ridden": DataNature.SIMULATED,  # journey starts with a ride to a station
     },
     FLOWS_NAME: {"trips": DataNature.SIMULATED},
     STATIONS_NAME: {"entries": DataNature.SIMULATED, "exits": DataNature.SIMULATED},
@@ -61,6 +62,7 @@ class MetroNetwork:
     metro_trip: npt.NDArray[np.uint8]  # by trip_idx: 1 = runs on a metro route
     station: U32  # by stop_idx: parent station (or the stop itself)
     stations: pl.DataFrame  # station_idx, name, lines: the stations metro trips serve
+    platforms: pl.DataFrame  # stop_idx, lat, lon: the stops metro trips call at
 
 
 def metro_network(router: Router, transit_dir: Path, mode: str) -> MetroNetwork:
@@ -76,10 +78,16 @@ def metro_network(router: Router, transit_dir: Path, mode: str) -> MetroNetwork:
     ).sort("stop_idx")
     if not np.array_equal(stops["stop_idx"].to_numpy(), np.arange(stops.height)):
         raise DemandError("stop_idx must be 0..n-1")
+    calls = pl.read_parquet(
+        transit_dir / "stop_times.parquet", columns=["trip_idx", "stop_idx"]
+    ).join(trips.select("trip_idx", "short_name"), on="trip_idx")
+    platforms = (
+        router.stops.select("stop_idx", "lat", "lon")
+        .join(calls.select("stop_idx").unique(), on="stop_idx", how="semi")
+        .sort("stop_idx")
+    )
     served = (
-        pl.read_parquet(transit_dir / "stop_times.parquet", columns=["trip_idx", "stop_idx"])
-        .join(trips.select("trip_idx", "short_name"), on="trip_idx")
-        .join(stops, on="stop_idx")
+        calls.join(stops, on="stop_idx")
         .group_by("station_idx")
         .agg(pl.col("short_name").unique().sort().str.join("+").alias("lines"))
         .join(
@@ -92,6 +100,7 @@ def metro_network(router: Router, transit_dir: Path, mode: str) -> MetroNetwork:
         metro_trip=metro_trip,
         station=stops["station_idx"].to_numpy().astype(np.uint32),
         stations=served,
+        platforms=platforms,
     )
 
 
@@ -119,7 +128,7 @@ def metro_paths(
     for start in range(0, len(origins), CHUNK_ORIGINS):
         chunk = range(start, min(start + CHUNK_ORIGINS, len(origins)))
         batch = [(*walks.access[origins[k]], *walks.walk_only[origins[k]], dests[k]) for k in chunk]
-        (o, z, reached, walked, used), (so, sz, entry, exit_, count) = (
+        (o, z, reached, walked, used, ridden), (so, sz, entry, exit_, count) = (
             router.timetable.zone_paths_many(
                 batch,
                 departures,
@@ -130,6 +139,7 @@ def metro_paths(
                 settings.max_travel_time_min * 60,
                 routing.max_rounds,
                 routing.min_transfer_time_s,
+                walks.rides([origins[k] for k in chunk]),
             )
         )
         ids = np.asarray([origins[k] for k in chunk], dtype=np.uint32)
@@ -141,6 +151,7 @@ def metro_paths(
                     "reached": reached,
                     "walked": walked,
                     "metro": used,
+                    "ridden": ridden,
                 }
             )
         )
@@ -191,6 +202,7 @@ class FlowStats(BaseModel):
     trips_walked: float  # walking all the way is fastest
     trips_using_metro: float  # journeys with at least one metro segment
     entries: float  # Σ segments; above trips_using_metro when a journey re-enters
+    trips_ridden: float = 0.0  # journeys that start with a ride to a station (ride access)
 
 
 @dataclass
@@ -245,6 +257,7 @@ def station_flows(
             trips_walked=weighted("walked"),
             trips_using_metro=weighted("metro"),
             entries=float(pairs["trips"].sum()),
+            trips_ridden=weighted("ridden") if "ridden" in reach.columns else 0.0,
         ),
     )
 
@@ -421,7 +434,9 @@ def report(m: MetroManifest, flows: StationFlows) -> str:
             f"- Trips: {s.trips:,.0f}; walked all the way: {s.trips_walked:,.0f} "
             f"({s.trips_walked / s.trips:.1%}); not reached: {s.trips_unreached:,.0f}.",
             f"- Trips using the {m.mode}: {s.trips_using_metro:,.0f} "
-            f"({s.trips_using_metro / s.trips:.1%}); station entries: {s.entries:,.0f}.",
+            f"({s.trips_using_metro / s.trips:.1%}); station entries: {s.entries:,.0f}; "
+            f"starting with a ride to the station: {s.trips_ridden:,.0f} "
+            f"({s.trips_ridden / max(s.trips_using_metro, 1e-9):.1%} of {m.mode} trips).",
             "",
             "## Busiest entry stations",
             "",

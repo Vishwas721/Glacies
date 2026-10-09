@@ -8,7 +8,7 @@ use glacies_raptor::{search, Access, Params, StopIdx, Time, Timetable, TripInput
 const PARAMS: Params = Params { max_rounds: 4, min_transfer_time: 60 };
 
 fn from(stop: StopIdx) -> Vec<Access> {
-    vec![Access { stop, duration: 0 }]
+    vec![Access { stop, duration: 0, board_only: false }]
 }
 
 fn earliest(tt: &Timetable, origin: StopIdx, departure: &str, to: StopIdx) -> Option<Time> {

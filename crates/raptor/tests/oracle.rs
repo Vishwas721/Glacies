@@ -196,7 +196,11 @@ fn raptor_matches_connection_scan_on_random_networks() {
         let mtt = [0, 60, 120, 300][rng.below(4) as usize];
         let params = Params { max_rounds: 40, min_transfer_time: mtt };
         let origins: Vec<Access> = (0..rng.between(1, 2))
-            .map(|_| Access { stop: StopIdx(rng.below(network.stops)), duration: rng.below(300) })
+            .map(|_| Access {
+                stop: StopIdx(rng.below(network.stops)),
+                duration: rng.below(300),
+                board_only: false,
+            })
             .collect();
         let departure = Time(rng.between(7 * 3600, 8 * 3600));
 
@@ -212,8 +216,13 @@ fn raptor_matches_connection_scan_on_random_networks() {
         // One-to-one plans: the last journey is the earliest; all are feasible and Pareto.
         let target = StopIdx(rng.below(network.stops));
         let egress = rng.below(200);
-        let journeys =
-            plan(&tt, &params, &origins, departure, &[Access { stop: target, duration: egress }]);
+        let journeys = plan(
+            &tt,
+            &params,
+            &origins,
+            departure,
+            &[Access { stop: target, duration: egress, board_only: false }],
+        );
         let want = expected[target.0 as usize];
         match journeys.last() {
             None => assert_eq!(want, Time::UNREACHED, "case {case}: missed a journey"),
@@ -235,7 +244,7 @@ fn more_rounds_never_make_arrivals_later() {
     for _ in 0..200 {
         let network = random_network(&mut rng);
         let tt = timetable(&network);
-        let origins = [Access { stop: StopIdx(0), duration: 0 }];
+        let origins = [Access { stop: StopIdx(0), duration: 0, board_only: false }];
         let departure = Time(7 * 3600);
         let mut previous: Option<Vec<Option<Time>>> = None;
         for rounds in 1..=5 {

@@ -7,15 +7,31 @@
 [demand]
 trip_purpose = "HBW_AM_peak"   # home-based work, outbound, 08:00-10:00
 
-# Origins are limited to zones with a stop within the access walk (3,465 of 10,661 zones,
-# 68.8 % of the population, tt-matrix BUILD_REPORT). Other zones reach only walkable zones in
-# the travel-time matrix, so a transit gravity model cannot place their trips. The dropped
-# population and trips are reported, not hidden.
+# Origins are zones with a stop within the access walk (3,465 of 10,661 zones, 68.8 % of the
+# population, tt-matrix BUILD_REPORT) or a ride to a metro station ([demand.ride_access]).
+# Destinations need the walk. The dropped population and trips are reported, not hidden.
 origins = "transit_served_zones"
 exclude_intrazonal = true        # a zone reaches itself in 0 s; transit does not serve these
 # Zone pairs whose fastest journey is on foot at half or more of the departures are not
 # transit trips (2026-10-09: they took 20 % of the trips before this rule).
 exclude_walk_pairs = true
+
+[demand.ride_access]
+# Auto, shared auto, two-wheeler or feeder ride to a metro station at the home end (ADR 0015).
+# All values Assumed. Without it the 800 m walk starves terminal stations (2026-10-09:
+# Baiyappanahalli 345 simulated vs 5,393 observed entries, Kengeri 37 vs 2,023). A test that
+# added the population 0.8-4 km from each station to simulated entries raised held-out R²
+# of entry shares from -1.34 to 0.03; 3, 4 and 5 km did about equally well.
+# Check, not input: the Ease of Moving Index 2022 Bengaluru profile (Ola Mobility Institute)
+# is quoted as 38.2 % of PT users walking to PT and 58.9 % using autos/shared autos/cabs for
+# the first/last mile (not verified against the report; covers bus and metro, both ends). The
+# station-flows report gives the model's share of metro trips that start with a ride.
+max_km = 4.0           # straight line, zone point to platform
+speed_kmh = 15.0       # auto / two-wheeler in AM traffic, door to station
+detour_factor = 1.3    # road distance / straight line
+penalty_min = 5.0      # finding an auto or parking a two-wheeler
+source = "Assumed; to be replaced by a BMRCL or DULT station access-mode survey"
+verified = false
 
 [demand.priors.trip_rate]
 # HBW trips per person starting 08:00-10:00.
@@ -52,10 +68,11 @@ column = "p50_s"
 
 [demand.gravity]
 # Exponential friction exp(-beta x minutes of p50 time). Calibrated 2026-10-09 by
-# `glacies demand calibrate` on station entry shares (ADR 0014): best RMSE 0.0168 at 0.0321
-# (1/beta = 31 min). The objective is nearly flat over 0.027-0.037, so beta is only weakly
-# identified (docs/validation/demand.md).
-beta_per_min = 0.0321
+# `glacies demand calibrate` on station entry shares (ADR 0014), with rides to stations
+# (ADR 0015): best RMSE 0.0127 at 0.0259 (1/beta = 39 min). The objective is nearly flat over
+# 0.019-0.037, so beta is only weakly identified (docs/validation/demand.md). Walk access only,
+# it was 0.0321.
+beta_per_min = 0.0259
 tolerance = 1e-6       # largest relative error of any row or column sum
 max_iterations = 5000
 

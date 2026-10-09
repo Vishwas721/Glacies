@@ -421,19 +421,39 @@ class DemandCalibration(_Strict):
         return self
 
 
+class RideAccess(_Strict):
+    """Riding to a station of the calibration mode at the home end (auto, two-wheeler, feeder).
+
+    Every value is Assumed. A ride may only be followed by a vehicle: riding to a station and
+    walking out is not a transit trip. The work end stays a walk.
+    """
+
+    max_km: float = Field(gt=0, description="Straight-line distance from zone to station.")
+    speed_kmh: float = Field(gt=0, description="Door-to-station speed of the ride.")
+    detour_factor: float = Field(ge=1, description="Road distance / straight-line distance.")
+    penalty_min: float = Field(ge=0, description="Finding a ride or parking, per trip.")
+    source: str = Field(min_length=1)
+    verified: bool
+
+
 class DemandConfig(_Strict):
     """Synthetic OD demand: priors (Assumed) and calibration against ridership (Observed)."""
 
     trip_purpose: str = Field(min_length=1)
     origins: Literal["transit_served_zones"] = Field(
-        description="Zones that produce and attract trips: those with a stop within the access "
-        "walk. Other zones reach only walkable zones in the travel-time matrix."
+        description="Zones that produce trips: those with a stop within the access walk (or a "
+        "ride to a station, see ride_access). Only zones with a walk attract trips."
     )
     exclude_intrazonal: bool = True
     exclude_walk_pairs: bool = Field(
         default=True,
         description="Leave out zone pairs where walking all the way is fastest for at least "
         "half the departures: they are not transit trips.",
+    )
+    ride_access: RideAccess | None = Field(
+        default=None,
+        description="Also let zones ride to the calibration mode's stations; their trips then "
+        "use a demand travel-time matrix with these rides (``glacies build demand-matrix``).",
     )
     priors: DemandPriors
     cost: DemandCost

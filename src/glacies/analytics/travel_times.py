@@ -59,6 +59,11 @@ class ZoneWalks:
     access: list[tuple[U32, U32]]  # per zone: stops, seconds (also the egress walks)
     walk_only: list[tuple[U32, U32]]  # per zone: zones, seconds (including itself at 0 s)
     egress: tuple[U32, U32, U32] = field(init=False)  # (zone, stop, seconds), zone-major
+    # Per zone: board-only rides to stations at the origin (glacies.demand.access); not egress.
+    ride: list[tuple[U32, U32]] | None = None
+
+    def rides(self, origins: Sequence[int]) -> list[tuple[U32, U32]] | None:
+        return None if self.ride is None else [self.ride[o] for o in origins]
 
     def __post_init__(self) -> None:
         sizes = [stops.size for stops, _ in self.access]
@@ -183,6 +188,7 @@ def matrix_chunk(
         settings.max_travel_time_min * 60,
         routing.max_rounds,
         routing.min_transfer_time_s,
+        walks.rides(origins),
     )
     columns: dict[str, pl.Series] = {
         "origin_zone": pl.Series(np.asarray(origins, dtype=np.uint32)[origin_pos]),

@@ -78,6 +78,8 @@ pub struct ZonePaths {
     pub walked: Vec<u32>,
     /// Of those, departures whose journey has at least one metro segment.
     pub metro: Vec<u32>,
+    /// Of those, departures whose journey starts with a board-only access (a ride).
+    pub ridden: Vec<u32>,
     /// `(target position, entry station, exit station, departures)`, sorted.
     pub segments: Vec<(u32, u32, u32, u32)>,
 }
@@ -113,6 +115,9 @@ pub fn zone_paths(
     let mut reached = vec![0_u32; targets.len()];
     let mut walked = vec![0_u32; targets.len()];
     let mut metro_used = vec![0_u32; targets.len()];
+    let mut ridden = vec![0_u32; targets.len()];
+    let rides: Vec<(StopIdx, u32)> =
+        origin.iter().filter(|a| a.board_only).map(|a| (a.stop, a.duration)).collect();
     let mut counts: BTreeMap<(u32, u32, u32), u32> = BTreeMap::new();
     range_search_each(tt, params, origin, departures, |i, rounds, best| {
         let departure = departures[i];
@@ -148,7 +153,7 @@ pub fn zone_paths(
             let arrival = best[s];
             let round = rounds
                 .iter()
-                .position(|r| r.ride[s].min(r.walk[s]) == arrival)
+                .position(|r| r.ride[s].min(r.arrived_on_foot(s)) == arrival)
                 .expect("the best arrival comes from some round");
             let journey = rebuild(
                 tt,
@@ -159,6 +164,11 @@ pub fn zone_paths(
                 seconds,
                 arrival.saturating_add(seconds),
             );
+            if let Some(&Leg::Access { to, duration }) = journey.legs.first() {
+                if rides.contains(&(to, duration)) {
+                    ridden[pos] += 1;
+                }
+            }
             let segments = metro.segments(&journey.legs);
             if !segments.is_empty() {
                 metro_used[pos] += 1;
@@ -174,6 +184,7 @@ pub fn zone_paths(
         reached,
         walked,
         metro: metro_used,
+        ridden,
         segments: counts.into_iter().map(|((pos, entry, exit), n)| (pos, entry, exit, n)).collect(),
     })
 }

@@ -133,10 +133,12 @@ def prepare_demand(
     *,
     detour_factor: float,
     walk_pairs: pl.DataFrame | None = None,
+    walk_access: BOOL | None = None,
 ) -> Prepared:
     """Trip ends, attainable attractions and the pairs to balance; ``zones`` by ``zone_idx``.
 
     ``walk_pairs`` (origin_zone, dest_zone) are left out: walking is their fastest journey.
+    ``walk_access`` marks the zones that may attract trips (default: ``has_access``).
     """
     zones = zones.sort("zone_idx")
     pairs = candidate_pairs(
@@ -146,7 +148,7 @@ def prepare_demand(
     if walk_pairs is not None:
         pairs = pairs.join(walk_pairs, on=["origin_zone", "dest_zone"], how="anti")
     walk_excluded = before - pairs.height
-    ends = trip_ends(zones, employment_score, has_access, pairs, demand)
+    ends = trip_ends(zones, employment_score, has_access, pairs, demand, walk_access=walk_access)
     o = ends.table["origin"].to_numpy()
     d = ends.table["destination"].to_numpy()
     live = pairs.filter(
@@ -424,17 +426,19 @@ def report(m: DemandManifest, build: DemandBuild) -> str:
             p.trip_length.verified,
         ),
         f"- Friction: exp(-{m.beta_per_min:g} x minutes of "
-        f"`{m.demand.cost.column}` door-to-door time (Simulated); β is provisional until "
-        "calibrated.",
+        f"`{m.demand.cost.column}` door-to-door time (Simulated); β from demand.toml "
+        "(`glacies demand calibrate` reports the fit).",
         "",
         "## Trip ends",
         "",
-        f"- Zones with a stop within the access walk: {s.zones_with_access:,} of {s.zones:,}, "
-        f"holding {s.population_with_access / s.population:.1%} of the population (Estimated).",
+        f"- Zones with a stop within the access walk or a ride to a station: "
+        f"{s.zones_with_access:,} of {s.zones:,}, holding "
+        f"{s.population_with_access / s.population:.1%} of the population (Estimated); "
+        f"{s.zones_ride_only:,} of them ({s.population_ride_only:,.0f} people) only by the ride.",
         f"- Origins: {s.origin_zones:,} zones; destinations: {s.destination_zones:,} zones "
         f"holding {s.employment_share_kept:.1%} of the city's estimated employment.",
         f"- Left out: {s.population - s.population_with_access:,.0f} people without a stop "
-        f"within the walk and {s.population_unreachable:,.0f} with one that reaches no "
+        f"within the walk or a ride, and {s.population_unreachable:,.0f} with one that reaches no "
         "destination zone. Their trips are not modelled.",
         f"- **Trips: {s.trips:,.0f}** (ΣO = ΣD; Estimated). With the trip rate and transit "
         f"share both at the ends of their ranges: {s.trips_low:,.0f} to {s.trips_high:,.0f}.",

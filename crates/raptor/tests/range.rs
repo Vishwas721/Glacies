@@ -10,7 +10,7 @@ use glacies_raptor::{
 const PARAMS: Params = Params { max_rounds: 4, min_transfer_time: 60 };
 
 fn at(stop: StopIdx) -> Vec<Access> {
-    vec![Access { stop, duration: 0 }]
+    vec![Access { stop, duration: 0, board_only: false }]
 }
 
 fn every_five_minutes(from: &str, to: &str) -> Vec<Time> {
@@ -102,6 +102,7 @@ fn range_equals_one_search_per_departure_on_random_networks() {
             .map(|_| Access {
                 stop: StopIdx(rng.between(0, stops - 1)),
                 duration: rng.between(0, 300),
+                board_only: false,
             })
             .collect();
         let departures: Vec<Time> =
