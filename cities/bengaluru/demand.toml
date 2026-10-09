@@ -1,0 +1,98 @@
+# Demand priors and calibration settings for Bengaluru (Phase 5).
+#
+# Every number here is Assumed unless it says Observed. Citations marked verified = false were
+# checked only against secondary sources that quote the CMP; replace them with the CMP page
+# number when the PDF is checked. Reviewed against the data on 2026-10-09.
+
+[demand]
+trip_purpose = "HBW_AM_peak"   # home-based work, outbound, 08:00-10:00
+
+# Origins are limited to zones with a stop within the access walk (3,465 of 10,661 zones,
+# 68.8 % of the population, tt-matrix BUILD_REPORT). Other zones reach only walkable zones in
+# the travel-time matrix, so a transit gravity model cannot place their trips. The dropped
+# population and trips are reported, not hidden.
+origins = "transit_served_zones"
+exclude_intrazonal = true        # a zone reaches itself in 0 s; transit does not serve these
+
+[demand.priors.trip_rate]
+# HBW trips per person starting 08:00-10:00.
+# Derivation (Assumed): 0.4 work trips/person/day (user's reading of the CMP; page needed)
+# / 2 for the return leg x 0.5 of morning work departures inside 08:00-10:00.
+# Sanity check (Observed): metro entries in hours 8-9 are 47 % of 05:00-12:59 entries.
+value = 0.10
+range = [0.08, 0.14]
+source = "Bengaluru CMP 2020 (DULT): 1.24 trips/person/day incl. walk, 0.91 motorised"
+verified = false
+
+[demand.priors.transit_share]
+# Share of those trips made by public transport. The CMP's existing PT share is 42-48 % of all
+# trips depending on the source; the 70 % figure is a 2030+ target and must not be used.
+value = 0.45
+range = [0.35, 0.50]
+source = "Bengaluru CMP 2020 (DULT), existing modal split as quoted by secondary sources"
+verified = false
+
+[demand.priors.trip_length]
+# Mean trip length used for the "within a stated range" check in the definition of done.
+# CMP bus trip length 10.7-12 km (secondary sources). Observed: metro AM trips travel 11.2
+# stations on average (stationpair-hourly-enhanced, hours 8-9, 2025-08-11 onwards).
+mean_km = 11.0
+accept_km = [8.0, 14.0]
+source = "Bengaluru CMP 2020 (DULT), bus average trip length as quoted by secondary sources"
+verified = false
+
+[demand.cost]
+# The Phase 2 matrix stores door-to-door time percentiles, not generalised cost. p50 over the
+# 07:30-09:30 departures already includes the initial wait. Simulated. Pairs not stored
+# (p25 > 120 min) are unreachable and get zero weight.
+column = "p50_s"
+
+[demand.gravity]
+# Exponential friction exp(-beta x minutes of p50 time). Provisional (Assumed) until the M4
+# calibration replaces it (docs/validation/demand.md).
+beta_per_min = 0.05
+tolerance = 1e-6       # largest relative error of any row or column sum
+max_iterations = 5000
+
+[demand.calibration]
+friction_function = "exponential"
+dataset = "bmrcl_ridership"
+snapshot = "2026-10-04"
+hours = [8, 9]               # entries counted by hour of tap-in: 08:00-09:59
+# Observed data covers 2025-08-01..2025-09-30 with 08-19..08-31 missing. The Yellow Line
+# stations appear from 2025-08-11, so earlier dates are a different network. Tue-Thu, minus
+# 2025-08-14 and 2025-09-04 (the days before the Independence Day and Eid-e-Milad long
+# weekends; AM entries 142k and 148k against ~155k) and minus 09-29/09-30 (Dasara period).
+dates = [
+    "2025-08-12", "2025-08-13",
+    "2025-09-02", "2025-09-03",
+    "2025-09-09", "2025-09-10", "2025-09-11",
+    "2025-09-16", "2025-09-17", "2025-09-18",
+    "2025-09-23", "2025-09-24", "2025-09-25",
+]
+# The Yellow Line opened in August 2025 with only a few trains; the GTFS used for routing
+# (service date 2026-10-13) runs 16-18 trips per direction 08:00-10:00. Its ridership is not
+# comparable, so its stations are left out of calibration and scored separately.
+# RV Road (Green + Yellow interchange) stays in.
+exclude_lines = ["Yellow"]
+objective = "rmse_entry_share"   # fit the shape; GEH and the level ratio are reported
+
+# Held-out validation set, chosen by the user before calibration (15 of the 68 stations left
+# after excluding the Yellow Line, 22 %; about 27 % of their AM entries). Never used to choose beta. Names match the ridership data.
+held_out_stations = [
+    "Indiranagar",
+    "Jayanagar",
+    "Peenya Industry",
+    "Swami Vivekananda Road",
+    "National College",
+    "Rajajinagar",
+    "Halasuru",
+    "Dasarahalli",
+    "Sandal Soap Factory",
+    "Banashankari",
+    "Yelachenahalli",
+    "Baiyappanahalli",
+    "Mysore Road",
+    "Kengeri",
+    "Yeshwantpur",
+]

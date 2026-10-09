@@ -323,6 +323,126 @@ class CityConfig(_Strict):
             ) from None
 
 
+# --- demand (cities/<city>/demand.toml, Phase 5) -----------------------------------------------
+
+
+class Prior(_Strict):
+    """An Assumed prior with the range used for sensitivity and its citation."""
+
+    value: float = Field(gt=0)
+    range: tuple[float, float]
+    source: str = Field(min_length=1)
+    verified: bool = Field(description="False if only secondary sources quoting it were checked.")
+
+    @model_validator(mode="after")
+    def _check_range(self) -> Prior:
+        low, high = self.range
+        if not 0 < low <= self.value <= high:
+            raise ValueError(f"range {self.range} must contain value {self.value} and be > 0")
+        return self
+
+
+class TripLengthPrior(_Strict):
+    """Mean trip length the demand model is checked against (definition of done)."""
+
+    mean_km: float = Field(gt=0)
+    accept_km: tuple[float, float]
+    source: str = Field(min_length=1)
+    verified: bool
+
+    @model_validator(mode="after")
+    def _check_range(self) -> TripLengthPrior:
+        low, high = self.accept_km
+        if not 0 < low <= self.mean_km <= high:
+            raise ValueError(f"accept_km {self.accept_km} must contain mean_km {self.mean_km}")
+        return self
+
+
+class DemandPriors(_Strict):
+    trip_rate: Prior = Field(description="Trips per person in the modelled period.")
+    transit_share: Prior
+    trip_length: TripLengthPrior
+
+    @model_validator(mode="after")
+    def _check_share(self) -> DemandPriors:
+        if self.transit_share.range[1] > 1:
+            raise ValueError("transit_share cannot exceed 1")
+        return self
+
+
+class DemandCost(_Strict):
+    column: str = Field(
+        pattern=r"^p\d{1,3}_s$", description="Travel-time matrix percentile used as the cost."
+    )
+
+
+class Gravity(_Strict):
+    """Doubly constrained gravity model settings (Phase 5 M2)."""
+
+    beta_per_min: float = Field(
+        gt=0, description="Exponential friction exp(-beta x minutes). Assumed until calibrated."
+    )
+    tolerance: float = Field(
+        default=1e-6, gt=0, lt=1, description="Largest relative row/column sum error allowed."
+    )
+    max_iterations: int = Field(default=1000, ge=1)
+
+
+class DemandCalibration(_Strict):
+    friction_function: Literal["exponential"]
+    dataset: str = Field(description="Ridership source in city.toml (Observed).")
+    snapshot: str
+    hours: list[int] = Field(min_length=1, description="Tap-in hours counted, 0-23.")
+    dates: list[date] = Field(min_length=1)
+    exclude_lines: list[str] = Field(default_factory=list)
+    objective: Literal["rmse_entry_share"]
+    held_out_stations: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check(self) -> DemandCalibration:
+        if sorted(set(self.hours)) != self.hours or not all(0 <= h <= 23 for h in self.hours):
+            raise ValueError("hours must be ascending, unique, in 0..23")
+        if sorted(set(self.dates)) != self.dates:
+            raise ValueError("dates must be ascending and unique")
+        if len(set(self.held_out_stations)) != len(self.held_out_stations):
+            raise ValueError("held_out_stations must be unique")
+        return self
+
+
+class DemandConfig(_Strict):
+    """Synthetic OD demand: priors (Assumed) and calibration against ridership (Observed)."""
+
+    trip_purpose: str = Field(min_length=1)
+    origins: Literal["transit_served_zones"] = Field(
+        description="Zones that produce and attract trips: those with a stop within the access "
+        "walk. Other zones reach only walkable zones in the travel-time matrix."
+    )
+    exclude_intrazonal: bool = True
+    priors: DemandPriors
+    cost: DemandCost
+    gravity: Gravity
+    calibration: DemandCalibration
+
+
+class _DemandFile(_Strict):
+    demand: DemandConfig
+
+
+def load_demand(path: Path) -> DemandConfig:
+    """Parse and validate a ``demand.toml`` file."""
+    try:
+        with path.open("rb") as handle:
+            raw = tomllib.load(handle)
+    except FileNotFoundError:
+        raise CityConfigError(f"demand config not found: {path}") from None
+    except tomllib.TOMLDecodeError as exc:
+        raise CityConfigError(f"invalid TOML in {path}: {exc}") from exc
+    try:
+        return _DemandFile.model_validate(raw).demand
+    except ValidationError as exc:
+        raise CityConfigError(f"invalid demand config {path}:\n{exc}") from exc
+
+
 def load_city(path: Path) -> CityConfig:
     """Parse and validate a ``city.toml`` file."""
     try:

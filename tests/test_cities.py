@@ -20,6 +20,7 @@ def test_loads_toy_city() -> None:
         "toy_landcover",
         "toy_osm",
         "toy_population",
+        "toy_ridership",
     ]
     assert city.sources["toy_population"].nature is DataNature.ESTIMATED
     assert city.sources["toy_gtfs"].download_url is None
@@ -30,7 +31,8 @@ def test_source_lookup_names_known_sources() -> None:
 
     assert city.source("toy_gtfs").kind == "gtfs"
     with pytest.raises(
-        CityConfigError, match="toy_buildings, toy_gtfs, toy_landcover, toy_osm, toy_population"
+        CityConfigError,
+        match="toy_buildings, toy_gtfs, toy_landcover, toy_osm, toy_population, toy_ridership",
     ):
         city.source("nope")
 

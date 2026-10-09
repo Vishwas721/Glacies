@@ -120,6 +120,7 @@ def zone_walks(
     """
     routing = router.routing
     edge, fraction, snap = router.attach(points["lat"].to_numpy(), points["lon"].to_numpy())
+    access = _access_walks(router, edge, fraction, snap)
     nodes = pl.read_parquet(walk_dir / "nodes.parquet", columns=["node_idx"])
     edges = pl.read_parquet(walk_dir / "edges.parquet")
     zone_graph = gr.WalkGraph(
@@ -130,11 +131,9 @@ def zone_walks(
     )
     zone_ids = points["zone_idx"].to_numpy().astype(np.uint32)
     zone_graph.attach_stops(zone_ids, edge, fraction, snap)
-    access, walk_only = [], []
+    walk_only = []
     for i, own in enumerate(zone_ids):
         e, f, s = int(edge[i]), float(fraction[i]), float(snap[i])
-        stops, metres = router.walk.stops_within(e, f, s, routing.max_access_walk_m)
-        access.append((stops, walk_seconds(metres, routing.walking_speed_m_s)))
         zones, zone_m = zone_graph.stops_within(e, f, s, settings.max_walk_only_m)
         seconds = walk_seconds(zone_m, routing.walking_speed_m_s)
         seconds[zones == own] = 0  # a zone's own opportunities are reached at once
@@ -143,6 +142,26 @@ def zone_walks(
         order = np.argsort(zones, kind="stable")
         walk_only.append((zones[order].astype(np.uint32), seconds[order].astype(np.uint32)))
     return ZoneWalks(access=access, walk_only=walk_only)
+
+
+def _access_walks(
+    router: Router, edge: U32, fraction: npt.NDArray[np.float64], snap: npt.NDArray[np.float64]
+) -> list[tuple[U32, U32]]:
+    routing = router.routing
+    access = []
+    for e, f, s in zip(edge.tolist(), fraction.tolist(), snap.tolist(), strict=True):
+        stops, metres = router.walk.stops_within(e, f, s, routing.max_access_walk_m)
+        access.append((stops, walk_seconds(metres, routing.walking_speed_m_s)))
+    return access
+
+
+def zone_access(router: Router, points: pl.DataFrame) -> list[tuple[U32, U32]]:
+    """Per zone point: the stops within the access walk and the walk seconds to each.
+
+    The same walks the matrix uses, so "has a stop" means exactly what it means there.
+    """
+    edge, fraction, snap = router.attach(points["lat"].to_numpy(), points["lon"].to_numpy())
+    return _access_walks(router, edge, fraction, snap)
 
 
 def matrix_chunk(

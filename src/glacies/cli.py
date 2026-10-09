@@ -313,6 +313,30 @@ def build_zone_accessibility(city: CityOption = None) -> None:
     )
 
 
+@build_app.command("demand")
+def build_synthetic_demand(city: CityOption = None) -> None:
+    """AM-peak trip ends and a doubly constrained gravity OD matrix (Estimated)."""
+    settings, config = _load(city)
+    try:
+        manifest, _, out_dir = pipeline.run_demand(settings, config)
+    except PipelineError as exc:
+        _fail(str(exc))
+    s, c, t = manifest.trip_ends, manifest.convergence, manifest.trip_length
+    typer.echo(f"demand (Estimated) -> {out_dir}")
+    typer.echo(
+        f"  {s.trips:,.0f} trips (range {s.trips_low:,.0f}-{s.trips_high:,.0f}) from "
+        f"{s.origin_zones:,} to {s.destination_zones:,} zones; {manifest.od_pairs:,} pairs"
+    )
+    typer.echo(
+        f"  Furness converged in {c.iterations} iterations (row error {c.max_row_error:.1e})"
+    )
+    typer.echo(
+        f"  mean trip {t.mean_cost_min:.1f} min, {t.mean_km:.1f} km "
+        f"({'within' if t.within_accepted_range else 'OUTSIDE'} {t.accept_km[0]:g}-"
+        f"{t.accept_km[1]:g} km)"
+    )
+
+
 @app.command("accessibility")
 def accessibility_report(
     city: Annotated[

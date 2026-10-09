@@ -78,3 +78,12 @@ name = "equal"
 building_area = 0.5
 job_pois = 0.5
 building_confidence = 0.75
+
+[sources.toy_ridership]
+kind = "ridership"
+mode = "metro"
+source = "Glacies test fixture"
+url = "https://example.invalid/toy-ridership"
+license = "CC0-1.0"
+verified = true
+nature = "observed"

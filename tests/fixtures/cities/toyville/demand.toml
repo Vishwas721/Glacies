@@ -1,0 +1,38 @@
+[demand]
+trip_purpose = "HBW_AM_peak"
+origins = "transit_served_zones"
+exclude_intrazonal = true
+
+[demand.priors.trip_rate]
+value = 0.10
+range = [0.08, 0.14]
+source = "Glacies test fixture"
+verified = false
+
+[demand.priors.transit_share]
+value = 0.5
+range = [0.4, 0.6]
+source = "Glacies test fixture"
+verified = false
+
+[demand.priors.trip_length]
+mean_km = 2.0
+accept_km = [1.0, 4.0]
+source = "Glacies test fixture"
+verified = false
+
+[demand.cost]
+column = "p50_s"
+
+[demand.gravity]
+beta_per_min = 0.1
+
+[demand.calibration]
+friction_function = "exponential"
+dataset = "toy_ridership"
+snapshot = "v1"
+hours = [8, 9]
+dates = ["2026-10-13"]
+exclude_lines = []
+objective = "rmse_entry_share"
+held_out_stations = ["Central Station"]

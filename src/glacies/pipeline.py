@@ -13,6 +13,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import polars as pl
 import psycopg
 from pydantic import BaseModel
@@ -33,8 +34,10 @@ from glacies.analytics.travel_times import (
     Reuse,
     ZoneWalks,
     build_matrix,
+    zone_access,
+    zone_points,
 )
-from glacies.cities import CityConfig, CityConfigError
+from glacies.cities import CityConfig, CityConfigError, load_demand
 from glacies.config import Settings
 from glacies.db import postgis
 from glacies.demand.attraction import (
@@ -46,6 +49,9 @@ from glacies.demand.attraction import (
     read_hubs,
     write_attraction,
 )
+from glacies.demand.od import DemandBuild, DemandInput, DemandManifest, build_demand, write_demand
+from glacies.demand.production import DemandError
+from glacies.demand.stations import check_calibration_names
 from glacies.ingest import archive
 from glacies.model.transit.build import FeedInput, TransitBuildError, build_transit
 from glacies.model.transit.writer import MANIFEST_NAME as TRANSIT_MANIFEST
@@ -446,6 +452,63 @@ def run_accessibility(
         ],
     )
     return manifest, out_dir
+
+
+def run_demand(
+    settings: Settings, config: CityConfig, *, scenario: str = "baseline"
+) -> tuple[DemandManifest, DemandBuild, Path]:
+    """AM-peak trip ends and the balanced gravity OD matrix (Phase 5 M1-M2)."""
+    try:
+        demand = load_demand(settings.demand_config_path)
+        mode = config.source(demand.calibration.dataset).mode
+    except CityConfigError as exc:
+        raise PipelineError(str(exc)) from exc
+    base = city_dir(settings, config)
+    stages = {
+        "transit": base / "transit",
+        "walk": base / "walk",
+        "zones": base / "zones",
+        "attraction": base / "attraction",
+        "tt_matrix": base / "tt_matrix" / scenario,
+    }
+    commands = {"tt_matrix": "tt-matrix"}
+    for stage, directory in stages.items():
+        if not (directory / "manifest.json").is_file():
+            command = commands.get(stage, stage)
+            raise PipelineError(f"missing {directory}; run `glacies build {command}` first")
+    zones = pl.read_parquet(stages["zones"] / "zones.parquet").sort("zone_idx")
+    attraction = pl.read_parquet(stages["attraction"] / "attraction.parquet").sort("zone_idx")
+    score = attraction["employment_score"].to_numpy()
+    try:
+        if mode is None:
+            raise DemandError(f"source {demand.calibration.dataset!r} has no mode")
+        check_calibration_names(stages["transit"], mode, demand.calibration)
+        router = load_router(base, config.routing, config.city.crs_projected)
+        access = zone_access(router, zone_points(zones))
+        has_access = np.array([stops.size > 0 for stops, _ in access])
+        result = build_demand(
+            zones,
+            score,
+            has_access,
+            pl.scan_parquet(stages["tt_matrix"] / "part-*.parquet"),
+            demand,
+            detour_factor=config.scenario.detour_factor,
+        )
+    except (DemandError, RouterError) as exc:
+        raise PipelineError(str(exc)) from exc
+    out_dir = base / "demand" / scenario
+    manifest = write_demand(
+        result,
+        out_dir,
+        city=config.city.id,
+        scenario=scenario,
+        demand=demand,
+        inputs=[
+            DemandInput(stage=stage, manifest_sha256=sha256_file(directory / "manifest.json"))
+            for stage, directory in stages.items()
+        ],
+    )
+    return manifest, result, out_dir
 
 
 def run_report(
