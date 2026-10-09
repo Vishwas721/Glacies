@@ -76,7 +76,9 @@ uv run glacies scenario calibrate         # measure [scenario] detour_factor for
 uv run glacies scenario run scenarios/bengaluru/<id>.json     # apply + tt-matrix + accessibility, cached; --full skips reuse
 uv run glacies scenario compare baseline scenarios/bengaluru/<id>.json   # metrics, zone deltas, map, report
 uv run glacies scenario schema            # regenerate schemas/scenario.schema.json
+uv run glacies build paths                # fastest-journey path table per zone pair (Simulated)
 uv run glacies build demand               # AM-peak trip ends + gravity OD matrix (Estimated)
+uv run glacies build station-flows        # metro entries/exits/station pairs of the OD (Simulated)
 
 # Infra
 docker compose up -d          # PostGIS :5433 (host), Redis :6379
