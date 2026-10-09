@@ -15,20 +15,29 @@ from glacies.cities import DemandCalibration
 from glacies.demand.production import DemandError
 
 
-def stations_and_lines(transit_dir: Path, mode: str) -> tuple[list[str], list[str]]:
-    """Sorted station names (parent stations where they exist) and line names of ``mode``."""
+def network_stations(transit_dir: Path, mode: str) -> pl.DataFrame:
+    """station_idx, name, lines: stations (parent stops where they exist) served by ``mode``."""
     routes = pl.read_parquet(transit_dir / "routes.parquet").filter(pl.col("mode") == mode)
     stops = pl.read_parquet(transit_dir / "stops.parquet")
-    used = (
+    return (
         pl.read_parquet(transit_dir / "pattern_stops.parquet")
         .join(pl.read_parquet(transit_dir / "patterns.parquet"), on="pattern_idx")
-        .join(routes.select("route_idx"), on="route_idx")
+        .join(routes.select("route_idx", "short_name"), on="route_idx")
         .join(stops.select("stop_idx", "parent_stop_idx"), on="stop_idx")
-        .select(pl.coalesce("parent_stop_idx", "stop_idx").alias("stop_idx"))
-        .unique()
-        .join(stops.select("stop_idx", "name"), on="stop_idx")
+        .select(pl.coalesce("parent_stop_idx", "stop_idx").alias("station_idx"), "short_name")
+        .group_by("station_idx")
+        .agg(pl.col("short_name").unique().sort().str.join("+").alias("lines"))
+        .join(stops.select(pl.col("stop_idx").alias("station_idx"), "name"), on="station_idx")
+        .select("station_idx", "name", "lines")
+        .sort("station_idx")
     )
-    return sorted(set(used["name"].to_list())), sorted(set(routes["short_name"].to_list()))
+
+
+def stations_and_lines(transit_dir: Path, mode: str) -> tuple[list[str], list[str]]:
+    """Sorted station names and line names of ``mode``."""
+    stations = network_stations(transit_dir, mode)
+    lines = {line for joined in stations["lines"].to_list() for line in joined.split("+")}
+    return sorted(set(stations["name"].to_list())), sorted(lines)
 
 
 def check_calibration_names(transit_dir: Path, mode: str, calibration: DemandCalibration) -> None:
