@@ -354,3 +354,12 @@ phase can fix with the data available.
   outbound work and business trips/person/day before the window share) is at the low end:
   70 % of 1.37 motorised trips would be 0.48 per direction if purposes count both legs (the
   DPR does not say). Neither prior was changed: the corridor is one IT-heavy part of the city.
+
+**Not used: Sixth Economic Census (2013).** The MoSPI microdata DVD holds every establishment
+in Karnataka (2,880,548 rows, `EC6A_ST29_KARNATAKA`) with district, town, ward code and total
+workers, so counted workers per BBMP ward could check the employment proxy. It was not used:
+the data are from 2013, before most of the Outer Ring Road, Whitefield and Electronic City
+growth, so fitting the proxy to it would pull jobs towards the old city; and the station fit
+barely depends on the proxy (held-out R² 0.33–0.43 across all proxy weightings). The file is in
+Nesstar format and needs Nesstar Explorer to export; ward codes are bare numbers (Bangalore is
+district 2918) and would need the 2010 BBMP ward map. A candidate for the Phase 9 demand track.
