@@ -338,3 +338,19 @@ The metro is chosen too often: every trip takes its single fastest journey, fare
 (the metro costs more than the bus) and nothing slows a full train. That is route choice and
 crowding, Phase 6's subject; demand's shape (which stations, held-out R² 0.33–0.43) is what this
 phase can fix with the data available.
+
+**Cross-check: BMRCL Phase 3A DPR** (RINA for BMRCL, June 2024, Chapter 3; read 2026-10-12):
+
+- The 55.8 % work / 12.0 % education split quoted for Bengaluru (DPR p.3-18, Fig 3-2) comes
+  from the *outer cordon* survey of vehicles entering the city, so it describes intercity
+  travel, not trips inside the city.
+- Household survey of the corridor's influence area (8.06 million people, 2023): 1.50
+  trips/person/day including walk, 1.37 motorised (p.3-31, Table 3-34; CMP 2015: 1.24 and
+  0.91); motorised trips are 41.0 % work, 29.2 % business, 14.7 % education (Table 3-36);
+  public transport is 36.3 % of all trips, of which metro 4.4 %. Education is 17 % of work,
+  business and education trips; among bus passengers it is 29 % (bus-stop survey, p.3-19/20).
+- Against these, the model's students (27.6 % of simulated metro trips) sit between the
+  household share and the bus and metro rider shares (WRI 24 %), and the work trip rate (0.31
+  outbound work and business trips/person/day before the window share) is at the low end:
+  70 % of 1.37 motorised trips would be 0.48 per direction if purposes count both legs (the
+  DPR does not say). Neither prior was changed: the corridor is one IT-heavy part of the city.
