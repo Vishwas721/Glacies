@@ -103,6 +103,6 @@ def test_variants_change_one_thing_each() -> None:
     )
     assert low.trips == pytest.approx(base.trips * 0.08 * 0.4 / 0.05)
     assert high.station_entries == pytest.approx(base.station_entries * 0.14 * 0.6 / 0.05)
-    assert low.mean_km == base.mean_km
+    assert low.mean_km == pytest.approx(base.mean_km)  # the level factor cancels
     assert base.hub_trip_share == pytest.approx(0.2)  # zone 3's share of the proxy
     assert results["proxy other"].hub_trip_share == pytest.approx(0.1)
