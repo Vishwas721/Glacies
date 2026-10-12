@@ -339,6 +339,13 @@ def build_synthetic_demand(city: CityOption = None) -> None:
         f"({'within' if t.within_accepted_range else 'OUTSIDE'} {t.accept_km[0]:g}-"
         f"{t.accept_km[1]:g} km)"
     )
+    if len(manifest.purposes) > 2:
+        typer.echo(
+            "  by purpose: "
+            + ", ".join(
+                f"{p.purpose} {p.trips:,.0f} ({p.mean_km:.1f} km)" for p in manifest.purposes
+            )
+        )
 
 
 @build_app.command("demand-matrix")
@@ -422,7 +429,8 @@ def calibrate_demand(city: CityOption = None) -> None:
 
     def point(p: SweepPoint) -> None:
         typer.echo(
-            f"  beta {p.beta_per_min:.4f} ({p.stage}): RMSE {p.rmse_share_training:.5f}, "
+            f"  beta {p.beta_per_min:.4f} ({p.stage}, gateway {p.gateway_factor:.3f}): "
+            f"RMSE {p.rmse_share_training:.5f}, "
             f"R2 {p.r2_share_training:.3f}, {p.mean_km:.1f} km, {p.iterations} iterations",
             err=True,
         )
@@ -434,6 +442,8 @@ def calibrate_demand(city: CityOption = None) -> None:
     typer.echo(f"calibration -> {out_dir}")
     edge = " (at the edge of the range)" if manifest.at_boundary else ""
     typer.echo(f"  beta = {manifest.beta_per_min:.4f} per minute{edge}")
+    if manifest.gateway_factor > 0:
+        typer.echo(f"  gateway factor = {manifest.gateway_factor:.4f} x daily passengers")
     for name, f in manifest.fits.items():
         typer.echo(
             f"  {name}: R2 (share) {f.r2_share:.2f}, RMSE {f.rmse_share:.4f}, "

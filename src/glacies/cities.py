@@ -421,6 +421,62 @@ class DemandCalibration(_Strict):
         return self
 
 
+class Purpose(_Strict):
+    """A second trip purpose balanced like the first, with its own attractor (Phase 5 M8).
+
+    Productions are population x trip rate x transit share; attractions are the zone column
+    ``attractor`` scaled to the productions. It shares β and the cost with the main purpose.
+    """
+
+    name: str = Field(min_length=1, pattern=r"^[a-z_]+$")
+    trip_rate: Prior
+    transit_share: Prior
+    attractor: str = Field(min_length=1, description="Column of zones.parquet, e.g. poi_education.")
+
+    @model_validator(mode="after")
+    def _check_share(self) -> Purpose:
+        if self.transit_share.range[1] > 1:
+            raise ValueError("transit_share cannot exceed 1")
+        return self
+
+
+class Gateway(_Strict):
+    """A rail or bus terminal whose arriving passengers start trips in the city."""
+
+    name: str = Field(min_length=1)
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    daily_passengers: float = Field(gt=0)
+    source: str = Field(min_length=1)
+    verified: bool
+
+
+class Gateways(_Strict):
+    """Trips that start at terminals (Phase 5 M8): ``factor x daily_passengers`` per gateway
+    in the modelled window, sent to jobs by the gravity model's friction (singly constrained).
+
+    ``factor`` folds together the window's share of arrivals, arrivals per counted passenger
+    and the share continuing by transit; none is published, so it is fitted on the training
+    stations by ``glacies demand calibrate`` (Assumed until then).
+    """
+
+    enabled: bool = Field(
+        default=True, description="False keeps the stations on record but builds no trips."
+    )
+    factor: float = Field(ge=0)
+    factor_max: float = Field(default=1.0, gt=0, description="Upper end of the factor search.")
+    stations: list[Gateway] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check(self) -> Gateways:
+        names = [g.name for g in self.stations]
+        if len(set(names)) != len(names):
+            raise ValueError("gateway names must be unique")
+        if self.factor > self.factor_max:
+            raise ValueError("factor must not exceed factor_max")
+        return self
+
+
 class RideAccess(_Strict):
     """Riding to a station of the calibration mode at the home end (auto, two-wheeler, feeder).
 
@@ -459,6 +515,17 @@ class DemandConfig(_Strict):
     cost: DemandCost
     gravity: Gravity
     calibration: DemandCalibration
+    purposes: list[Purpose] = Field(
+        default_factory=list, description="Further purposes added to the main one."
+    )
+    gateways: Gateways | None = None
+
+    @model_validator(mode="after")
+    def _check_purposes(self) -> DemandConfig:
+        names = [p.name for p in self.purposes]
+        if len(set(names)) != len(names) or "gateway" in names:
+            raise ValueError("purpose names must be unique and not 'gateway'")
+        return self
 
 
 class _DemandFile(_Strict):

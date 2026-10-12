@@ -5,7 +5,8 @@ flows) unless labelled otherwise. Priors are Assumed and live in `cities/bengalu
 with their citations. Numbers come from runs on 2026-10-09 on mains power:
 `glacies build paths`, `glacies build demand`, `glacies build station-flows`,
 `glacies demand calibrate`, `glacies demand sensitivity`; with rides to stations (M7) also
-`glacies build demand-matrix`. Sections M4–M5 are walk-only; M7 is the current model.
+`glacies build demand-matrix`. Sections M4–M5 are walk-only, M7 has rides to stations, and M8
+(work and education trips, verified priors) is the current model.
 
 ## M1–M2: trip ends and the gravity model (β provisional)
 
@@ -245,3 +246,95 @@ Puram) need demand that starts at the station, sized from train arrivals; other 
 (education) need their own attractors; and the access parameters need a station access-mode
 survey. Footfall percentages are not used for gateway demand: footfall counts arrivals and
 departures, most arrivals do not take the metro, and Yeshwantpur is a held-out station.
+
+## M8: verified priors, education trips, gateways (ADR 0016)
+
+**Research (2026-10-09).** Figures read in the primary documents unless marked:
+
+- CMP 2020 (DULT) final report: 1.24 trips/person/day including walk, 0.91 motorised (p.2-50,
+  p.2-57) — the priors' basis, now `verified = true`; trip purposes work and business ~25 %,
+  education 15 %, other ~10 %, return trips 50 % (p.2-51, Fig 2-23); public transport 47.8 % of
+  motorised peak-hour trips (Table 2-36, p.2-57; bus only, base year 2015); bus trip length
+  10.7 km (Table 2-30) or about 12 km (p.2-57).
+- Because returns are counted separately, outbound work trips are 0.25 × 1.24 = 0.31 per
+  person per day, not the 0.2 the M1 derivation assumed: **the work trip rate went from 0.10 to
+  0.155** (× 0.5 in 08:00–10:00, Assumed). This raises trips, not the fitted shape.
+- WRI India, "Improving metro access in India" (2023), Bengaluru survey of 1,800 riders at six
+  stations: about 66 % reach the metro on foot (last mile), mean access distance ~2.2 km,
+  walking up to ~1 km and autos up to ~3 km; 68 % travel for work, 22 % for education.
+- Ease of Moving Index, Bengaluru profile (OMI Foundation): 37.55 % of regular public-transport
+  users walk to the stop and 58.91 % use IPT for first/last mile (average of both ends; bus and
+  metro users). The 38.2 % quoted earlier is the first-mile figure only.
+- Rail stations, 2023-24 outward (originating) passengers per day (Railway Board categorisation
+  via Deccan Herald, 11 Sep 2024; secondary): KSR City 67,945, Yesvantpur 26,381, SMVT 12,189,
+  K.R. Puram 11,959, Kengeri 11,844 (the article's split does not add up), Cantonment 6,578.
+  Kempegowda Bus Station (KSRTC): about 80,000 a day (press, no source named). No rail-to-metro
+  transfer share was found anywhere. Terminal coordinates come from the OSM extract.
+
+**Ride penalty, fitted on training stations?** (β 0.0259, work trips only, ride 4 km at 15 km/h):
+
+| Penalty (min) | Training RMSE | Training R² | Held-out R² | Metro trips starting with a ride |
+|---:|---:|---:|---:|---:|
+| 0 | 0.01219 | 0.19 | 0.43 | 90.8 % |
+| 2.5 | 0.01245 | 0.15 | 0.31 | 88.3 % |
+| 5 (kept) | 0.01268 | 0.12 | 0.40 | 84.2 % |
+| 7.5 | 0.01308 | 0.07 | 0.36 | 80.5 % |
+| 10 | 0.01323 | 0.05 | 0.49 | 76.4 % |
+
+Training prefers ever cheaper rides, down to an implausible zero penalty, while held-out
+stations do not agree. Cheaper rides add entries at big catchment stations, which also stand in
+for missing purposes and terminal passengers, so the penalty is not identified by these counts;
+5 min stays (WRI: median access time 10 min).
+
+**Ablation** (β 0.0173; "obs/sim" are each station's share of its set's entries):
+
+| Variant | Gateway factor | R² train | R² held-out | Level train | Yeshwantpur (held out) | Majestic (training) | KSR railway station (training) |
+|---|---:|---:|---:|---:|---|---|---|
+| work only | — | 0.121 | 0.386 | 1.48 | 5.8 / 6.8 % | 4.3 / 1.8 % | 2.9 / 0.8 % |
+| work + education | — | 0.117 | 0.387 | 2.05 | 5.8 / 6.7 % | 4.3 / 1.8 % | 2.9 / 0.7 % |
+| work + gateways | 0.102 | 0.196 | 0.308 | 1.55 | 5.8 / 9.2 % | 4.3 / 4.3 % | 2.9 / 0.7 % |
+| all | 0.141 | 0.194 | 0.312 | 2.14 | 5.8 / 9.2 % | 4.3 / 4.3 % | 2.9 / 0.7 % |
+
+- Education barely moves the shape but adds the students: they are 27.6 % of
+  simulated metro trips, against 24 % of work and education riders in the WRI survey.
+- A single gateway factor is fitted mostly by Majestic (fixed exactly) and over-sends rail
+  passengers into Yeshwantpur, so held-out R² falls from 0.39 to 0.31. Gateways stay in the
+  engine and in `demand.toml` with `enabled = false`. This used the held-out set once for a
+  yes/no model choice. KSR railway station stays under-predicted either way: its rail
+  passengers board at Majestic in the model.
+
+**Final model** (work + education, rides on, gateways off; `glacies demand calibrate`, 2026-10-12,
+whole chain demand → station flows → calibration → sensitivity in 12 min on mains power):
+β = 0.0174 per minute (1/β = 57 min; the objective is flat over 0.005–0.037), 822,775 trips
+(work 594,379, education 228,396), mean 13.9 km (prior 11, accepted 8–14) and 78.1 min.
+
+| Set | Items | R² (share) | r | Mean GEH | Simulated / observed |
+|---|---:|---:|---:|---:|---:|
+| Training stations | 53 | 0.12 | 0.52 | 22.8 | 2.05 |
+| **Held-out stations** | 15 | **0.39** | 0.66 | 13.5 | 1.72 |
+| Training station pairs | 2,774 | −0.60 | 0.32 | 4.0 | 2.24 |
+| Held-out station pairs | 222 | 0.07 | 0.65 | 4.3 | 1.88 |
+
+43.4 % of trips use the metro (357,270 entries); 83.2 % of metro trips start with a ride.
+
+**Sensitivity** (`glacies demand sensitivity`; level rows scale each purpose by its own priors):
+
+| Variant | Trips | Mean km | Metro share | Entries | R² train | R² held-out | Level (train) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| baseline | 822,775 | 13.9 | 43.4 % | 357,270 | 0.12 | 0.39 | 2.05 |
+| β × 0.5 | 822,775 | 14.9 | 44.9 % | 369,621 | 0.12 | 0.37 | 2.13 |
+| β × 2 | 822,775 | 12.0 | 40.2 % | 330,971 | 0.11 | 0.41 | 1.88 |
+| proxy previous-baseline | 822,775 | 13.8 | 42.4 % | 349,283 | 0.12 | 0.41 | 1.98 |
+| proxy poi-led | 822,775 | 14.1 | 44.2 % | 364,381 | 0.11 | 0.36 | 2.10 |
+| proxy pois-only | 819,456 | 14.5 | 45.5 % | 373,467 | 0.09 | 0.33 | 2.17 |
+| proxy area-only | 822,775 | 13.6 | 40.8 % | 335,755 | 0.10 | 0.43 | 1.87 |
+| proxy baseline-c75 | 822,775 | 13.9 | 43.3 % | 356,988 | 0.12 | 0.39 | 2.04 |
+| trip rates × shares low | 459,415 | 13.9 | 43.4 % | 199,566 | 0.12 | 0.39 | 1.14 |
+| trip rates × shares high | 1,266,340 | 13.9 | 43.4 % | 549,567 | 0.12 | 0.39 | 3.14 |
+
+**The level.** With verified priors, simulated metro entries are about twice the observed ones
+(1.1–3.1 across the prior ranges), even though the model covers only work and education trips.
+The metro is chosen too often: every trip takes its single fastest journey, fares are ignored
+(the metro costs more than the bus) and nothing slows a full train. That is route choice and
+crowding, Phase 6's subject; demand's shape (which stations, held-out R² 0.33–0.43) is what this
+phase can fix with the data available.

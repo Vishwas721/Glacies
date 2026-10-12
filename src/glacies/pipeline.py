@@ -68,6 +68,7 @@ from glacies.demand.calibrate import (
     station_sets,
     write_calibration,
 )
+from glacies.demand.gateways import gateway_zones, prepare_gateways
 from glacies.demand.metro import (
     ACCESS_NAME,
     PATHS_NAME,
@@ -86,12 +87,15 @@ from glacies.demand.metro import (
     write_station_flows,
 )
 from glacies.demand.od import (
-    DemandBuild,
     DemandInput,
     DemandManifest,
-    Prepared,
-    balance,
+    DemandModel,
+    ModelBuild,
+    PurposeModel,
+    build_model,
+    for_purpose,
     prepare_demand,
+    straight_km,
     write_demand,
 )
 from glacies.demand.production import DemandError, candidate_pairs
@@ -689,8 +693,9 @@ def _prepare(
     mode: str,
     scenario: str,
     score: npt.NDArray[np.float64] | None = None,
-) -> tuple[Prepared, dict[str, Path]]:
-    """Trip ends and the pairs to balance, from the built stages (β-independent).
+) -> tuple[DemandModel, dict[str, Path]]:
+    """Every purpose's trip ends and pairs, and the gateways, from the built stages
+    (β-independent).
 
     ``score`` replaces the baseline employment proxy (sensitivity runs).
     """
@@ -708,36 +713,66 @@ def _prepare(
     attraction = pl.read_parquet(stages["attraction"] / "attraction.parquet").sort("zone_idx")
     access = pl.read_parquet(stages["paths"] / ACCESS_NAME).sort("zone_idx")
     reach = pl.read_parquet(stages["paths"] / REACH_NAME)
-    try:
-        check_calibration_names(stages["transit"], mode, demand.calibration)
+    matrix = pl.scan_parquet(cost_dir / "part-*.parquet")
+    walking = walk_pairs(reach) if demand.exclude_walk_pairs else None
+    has_access = access["has_access"].to_numpy()
+    walk_access = access["has_walk_access"].to_numpy()
+    detour = config.scenario.detour_factor
+
+    def prepare(purpose: DemandConfig, attractor: npt.NDArray[np.float64]) -> PurposeModel:
         prepared = prepare_demand(
             zones,
-            attraction["employment_score"].to_numpy() if score is None else score,
-            access["has_access"].to_numpy(),
-            pl.scan_parquet(cost_dir / "part-*.parquet"),
-            demand,
-            detour_factor=config.scenario.detour_factor,
-            walk_pairs=walk_pairs(reach) if demand.exclude_walk_pairs else None,
-            walk_access=access["has_walk_access"].to_numpy(),
+            attractor,
+            has_access,
+            matrix,
+            purpose,
+            detour_factor=detour,
+            walk_pairs=walking,
+            walk_access=walk_access,
         )
+        return PurposeModel(config=purpose, prepared=prepared)
+
+    try:
+        check_calibration_names(stages["transit"], mode, demand.calibration)
+        main = prepare(
+            demand, attraction["employment_score"].to_numpy() if score is None else score
+        )
+        purposes = []
+        for purpose in demand.purposes:
+            if purpose.attractor not in zones.columns:
+                raise DemandError(f"purpose {purpose.name!r}: zones have no {purpose.attractor!r}")
+            column = zones[purpose.attractor].cast(pl.Float64).fill_null(0.0).to_numpy()
+            purposes.append(prepare(for_purpose(demand, purpose), column))
+        gateways = None
+        if demand.gateways is not None and demand.gateways.enabled:
+            found = gateway_zones(zones, demand.gateways)
+            pairs = candidate_pairs(
+                matrix, demand.cost.column, exclude_intrazonal=demand.exclude_intrazonal
+            ).filter(pl.col("origin_zone").is_in(found["zone_idx"].implode()))
+            if walking is not None:
+                pairs = pairs.join(walking, on=["origin_zone", "dest_zone"], how="anti")
+            gateways = prepare_gateways(
+                found, pairs, main.prepared.attractions, straight_km(pairs, zones) * detour
+            )
     except DemandError as exc:
         raise PipelineError(str(exc)) from exc
-    return prepared, stages
+    return DemandModel(main=main, purposes=purposes, gateways=gateways), stages
 
 
 def run_demand(
     settings: Settings, config: CityConfig, *, scenario: str = "baseline"
-) -> tuple[DemandManifest, DemandBuild, Path]:
+) -> tuple[DemandManifest, ModelBuild, Path]:
     """AM-peak trip ends and the balanced gravity OD matrix (Phase 5 M1-M2)."""
     demand, mode = _demand_settings(settings, config)
-    prepared, stages = _prepare(settings, config, demand, mode, scenario)
+    model, stages = _prepare(settings, config, demand, mode, scenario)
     try:
-        result, _ = balance(prepared, demand, demand.gravity.beta_per_min)
+        result = build_model(model, demand.gravity.beta_per_min)
     except DemandError as exc:
         raise PipelineError(str(exc)) from exc
     out_dir = city_dir(settings, config) / "demand" / scenario
     manifest = write_demand(
         result,
+        model,
         out_dir,
         city=config.city.id,
         scenario=scenario,
@@ -781,13 +816,13 @@ def run_calibration(
     """Choose β by fitting station entry shares on the training stations (Phase 5 M4)."""
     demand, mode = _demand_settings(settings, config)
     cal = demand.calibration
-    prepared, stages = _prepare(settings, config, demand, mode, scenario)
+    model, stages = _prepare(settings, config, demand, mode, scenario)
     base = city_dir(settings, config)
     stages["ridership"] = base / "ridership" / cal.dataset
     _require({"ridership": stages["ridership"]})
     try:
         targets = _targets(stages, cal)
-        result = calibrate(prepared, demand, targets, on_point=on_point)
+        result = calibrate(model, demand, targets, on_point=on_point)
     except DemandError as exc:
         raise PipelineError(str(exc)) from exc
     out_dir = base / "calibration" / scenario
@@ -822,7 +857,7 @@ def run_sensitivity(
     zones = pl.read_parquet(base / "zones" / "zones.parquet").sort("zone_idx")
     weightings = {w.name: w for w in (proxy.baseline, *proxy.sensitivity)}
 
-    def prepare(name: str) -> Prepared:
+    def prepare(name: str) -> DemandModel:
         score = (
             None
             if name == proxy.baseline.name
