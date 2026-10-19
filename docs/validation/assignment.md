@@ -115,3 +115,53 @@ address.
 **Routes with the most passenger-km:** Purple 1,773,690 (peak utilisation 0.48, max load factor
 1.72), Green 1,308,267 (0.52, 1.64), Yellow 677,294 (0.58, 1.42); then buses VV-EXP 298MN
 332,507, KIA-8 220,952 and VV-EXP TMK-1 181,886, all far above capacity for the reason above.
+
+## M3: crowding loop (ADR 0018)
+
+Each OD pair gets up to three alternatives, routed once: the fastest journey, the fastest on
+buses only and the fastest with at most one transfer. Generalised cost: walk 2.0, wait 2.0,
+transfer 5 min (DfT TAG M3.2 Table 1), riding to a station 1.0, fares over the value of time
+(₹89/h), in-vehicle minutes times the TAG crowding multiplier. Logit between a pair's
+alternatives, method of successive averages until segment loads change by under 1 %.
+
+**Toy check** (`tests/test_assignment_msa.py`): 100 trips, a 10-minute metro with room for 60
+and a 20-minute bus that never fills. Without crowding the metro would take 76.9; the loop
+moves riders to the bus and lands within 0.5 of the equilibrium found by bisection, for logit
+scales 0.12 and 0.5, conserving all 100 trips.
+
+**Bengaluru** (2026-10-19, mains power): the choice set holds 3,860,968 alternatives for
+1,782,019 pairs (2.17 per pair) and 134,632,599 rides; peak RAM 3.97 GiB. The loop converged in
+10 iterations (gap 0.33, 0.10, 0.053, … 0.0097). The first run took 218 s; two later reruns
+took 507 s and 1,046 s with the CPU mostly idle (the laptop slowed down; no cause found), and
+wrote byte-identical Parquet.
+
+| Run | Metro entries | Training level | Held-out level | Training R² | Held-out R² | Peak segments over capacity | Transfers |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| All-or-nothing (M2) | 362,058 | 2.07 | 1.73 | 0.10 | 0.37 | 17,615 | 1.48 |
+| Crowding loop, no fares | 325,474 | 1.86 | 1.58 | 0.10 | 0.37 | 19,412 | 1.28 |
+| With fares, logit 0.06 | 227,596 | 1.31 | 1.03 | −0.07 | 0.36 | 22,657 | 1.36 |
+| **With fares, logit 0.12 (baseline)** | **219,565** | **1.26** | **0.98** | −0.14 | 0.31 | 23,093 | 1.36 |
+| With fares, logit 0.24 | 211,553 | 1.21 | 0.93 | −0.20 | 0.26 | 23,420 | 1.37 |
+| Logit 0.12, curve not held at crush | 290,996 | 1.68 | 1.38 | 0.03 | 0.32 | 22,018 | 1.22 |
+
+- **Fares do most of the work.** Crowding and route choice alone bring the training level from
+  2.07 to 1.86 and transfers from 1.48 to 1.28; with fares the level falls to 1.26 and the
+  held-out level to 0.98. The shape gets worse (training R² 0.10 → −0.14): fares move riders
+  off the metro unevenly across stations.
+- **The logit scale is not identified** by the entry level: a fourfold range moves it from 1.31
+  to 1.21 and never reaches 1, while held-out R² falls. It stays at 0.12 (Hong Kong MTR,
+  Mo et al. 2020) instead of being fitted, a change from the M3 plan.
+- **The metro is no longer over capacity** in the peak hour (Purple max load factor 1.06,
+  Green and Yellow 1.00; mean loads 491–584 a train), against 1.42–1.72 all-or-nothing.
+- **Bus pile-ups remain.** Single trips still carry 1,200–1,700 people (KIA-8A 1,349 at 09:21,
+  route 22 1,684). Two reasons: the TAG multiplier is held at crush (2.47), so a bus at 25 times
+  its capacity costs no more than one just past crush; and some pairs have only one alternative.
+  Letting the curve grow past crush (last row) moves riders back to the metro rather than
+  spreading them over buses, and needs 27 iterations; it is a sensitivity option
+  (`cap_at = "none"`), not the default. Hard capacity (fail-to-board) is the remedy the phase
+  doc leaves for later.
+
+**City summary, baseline** (per transit trip): 77.4 min door to door (46.1 in vehicles, 13.7
+waiting, 14.1 walking, 3.5 riding to a station), 1.36 transfers, 22.7 % of trips start with a
+ride to a station (36.6 % all-or-nothing: the auto fare now counts), crowding 59.0 % of peak
+passenger-km (54.9 % above crush, almost all on buses).
