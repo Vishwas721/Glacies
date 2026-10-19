@@ -387,6 +387,13 @@ impl Timetable {
         })
     }
 
+    /// The same network with only the trips whose `keep[trip_id]` is non-zero.
+    fn retain_trips(&self, keep: PyReadonlyArray1<'_, u8>) -> PyResult<Self> {
+        let keep = slice(&keep, "keep")?;
+        let inner = self.inner.retain_trips(|id| keep.get(id as usize).is_some_and(|&k| k != 0));
+        Ok(Self { inner, overtaking_splits: 0 })
+    }
+
     #[getter]
     fn stop_count(&self) -> usize {
         self.inner.stop_count()
@@ -905,6 +912,294 @@ impl Timetable {
 }
 
 /// Undirected pedestrian network with stops attached to its edges (metres).
+type FareRules = Option<(Vec<f64>, Vec<u32>, Vec<f64>)>;
+
+/// Fares from `(scalars, band_hops, band_fare)`; scalars are minutes per unit of money, metro
+/// fare above the bands, metro discount, bus stage km, bus fare per stage, bus free share,
+/// ride base fare, ride base km, ride fare per km, ride penalty seconds, ride speed km/h.
+fn fare_rules(fares: FareRules) -> PyResult<Option<core::Fares>> {
+    let Some((scalars, band_hops, band_fare)) = fares else { return Ok(None) };
+    let [minutes_per_unit, metro_above, metro_discount, bus_stage_km, bus_fare_per_stage, bus_free_share, ride_base, ride_base_km, ride_per_km, ride_penalty_s, ride_speed_kmh] =
+        scalars[..]
+    else {
+        return Err(value_error("fares need 11 scalars"));
+    };
+    if band_hops.len() != band_fare.len() {
+        return Err(value_error("metro band hops and fares differ in length"));
+    }
+    Ok(Some(core::Fares {
+        minutes_per_unit,
+        metro_band_hops: band_hops,
+        metro_band_fare: band_fare,
+        metro_above,
+        metro_discount,
+        bus_stage_km,
+        bus_fare_per_stage,
+        bus_free_share,
+        ride_base,
+        ride_base_km,
+        ride_per_km,
+        ride_penalty_s,
+        ride_speed_kmh,
+    }))
+}
+
+/// Route-choice alternatives of every OD pair, held in Rust for the crowding loop (Phase 6
+/// M3). Fill it with `extend`, origin chunk by origin chunk, in a fixed order.
+#[pyclass(module = "glacies_raptor")]
+struct ChoiceSet {
+    inner: core::ChoiceSet,
+}
+
+#[pymethods]
+impl ChoiceSet {
+    #[new]
+    fn new() -> Self {
+        Self { inner: core::ChoiceSet::new() }
+    }
+
+    /// Route the alternatives of a chunk of origins (in parallel) and append them in order.
+    /// `origins` items are `(access stops, access seconds, walk-only zones, walk-only seconds,
+    /// target zones, trips)`; `origin_zones` names each origin. `cost` is `(walk weight, wait
+    /// weight, ride weight, transfer penalty minutes)`.
+    #[pyo3(signature = (
+        all, bus_only, origins, origin_zones, departures, weights, zone_count, egress_zones,
+        egress_stops, egress_seconds, metro_trip, station, row_offset, row_km, cost, fares,
+        max_travel_time, max_rounds, min_transfer_time, ride_access=None,
+    ))]
+    #[allow(clippy::too_many_arguments)] // mirrors the columnar layout of the inputs
+    #[allow(clippy::type_complexity)] // one tuple of arrays per origin
+    fn extend<'py>(
+        &mut self,
+        py: Python<'py>,
+        all: PyRef<'py, Timetable>,
+        bus_only: PyRef<'py, Timetable>,
+        origins: Vec<(
+            PyReadonlyArray1<'py, u32>,
+            PyReadonlyArray1<'py, u32>,
+            PyReadonlyArray1<'py, u32>,
+            PyReadonlyArray1<'py, u32>,
+            PyReadonlyArray1<'py, u32>,
+            PyReadonlyArray1<'py, f64>,
+        )>,
+        origin_zones: PyReadonlyArray1<'_, u32>,
+        departures: PyReadonlyArray1<'_, u32>,
+        weights: PyReadonlyArray1<'_, f64>,
+        zone_count: usize,
+        egress_zones: PyReadonlyArray1<'_, u32>,
+        egress_stops: PyReadonlyArray1<'_, u32>,
+        egress_seconds: PyReadonlyArray1<'_, u32>,
+        metro_trip: PyReadonlyArray1<'_, u8>,
+        station: PyReadonlyArray1<'_, u32>,
+        row_offset: PyReadonlyArray1<'_, u32>,
+        row_km: PyReadonlyArray1<'_, f64>,
+        cost: (f64, f64, f64, f64),
+        fares: FareRules,
+        max_travel_time: u32,
+        max_rounds: usize,
+        min_transfer_time: u32,
+        ride_access: RideAccess<'py>,
+    ) -> PyResult<()> {
+        check_rides(&ride_access, origins.len())?;
+        let origin_zones = slice(&origin_zones, "origin_zones")?.to_vec();
+        if origin_zones.len() != origins.len() {
+            return Err(value_error("origin_zones and origins differ in length"));
+        }
+        let stop_count = all.inner.stop_count();
+        let egress =
+            zone_egress(stop_count, zone_count, &egress_zones, &egress_stops, &egress_seconds)?;
+        let station = slice(&station, "station")?.to_vec();
+        if station.len() != stop_count {
+            return Err(value_error("station must have one entry per stop"));
+        }
+        let net = core::CostNetwork {
+            metro: core::MetroNetwork {
+                metro_trip: slice(&metro_trip, "metro_trip")?.iter().map(|&m| m != 0).collect(),
+                station,
+            },
+            row_offset: slice(&row_offset, "row_offset")?.to_vec(),
+            row_km: slice(&row_km, "row_km")?.to_vec(),
+        };
+        let (walk_weight, wait_weight, ride_weight, transfer_penalty_min) = cost;
+        let cost = core::CostParams {
+            walk_weight,
+            wait_weight,
+            ride_weight,
+            transfer_penalty_min,
+            fares: fare_rules(fares)?,
+        };
+        let sets = origins
+            .iter()
+            .enumerate()
+            .map(|(i, (stops, seconds, zones, walk_seconds, targets, trips))| {
+                let access = origin_access(stops, seconds, &ride_access, i, stop_count)?;
+                let (zones, walk_seconds) =
+                    (slice(zones, "walk-only zones")?, slice(walk_seconds, "walk-only seconds")?);
+                if zones.len() != walk_seconds.len() {
+                    return Err(value_error("walk-only zones and seconds differ in length"));
+                }
+                Ok((
+                    access,
+                    zones.iter().copied().zip(walk_seconds.iter().copied()).collect(),
+                    slice(targets, "targets")?.to_vec(),
+                    slice(trips, "trips")?.to_vec(),
+                ))
+            })
+            .collect::<PyResult<Vec<(Vec<core::Access>, Vec<(u32, u32)>, Vec<u32>, Vec<f64>)>>>()?;
+        let times: Vec<core::Time> =
+            slice(&departures, "departures")?.iter().map(|&d| core::Time(d)).collect();
+        let weights = slice(&weights, "weights")?.to_vec();
+        let alternatives = core::Alternatives {
+            all: &all.inner,
+            bus_only: &bus_only.inner,
+            params: params(max_rounds, min_transfer_time),
+        };
+        let results = py
+            .detach(|| {
+                let profile = core::DepartureProfile { times: &times, weights: &weights };
+                sets.par_iter()
+                    .map(|(access, walk_only, targets, trips)| {
+                        core::origin_bundles(
+                            alternatives,
+                            access,
+                            profile,
+                            &egress,
+                            walk_only,
+                            targets,
+                            trips,
+                            &net,
+                            &cost,
+                            max_travel_time,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(value_error)?;
+        for (origin, bundles) in origin_zones.into_iter().zip(results) {
+            self.inner.push(origin, bundles);
+        }
+        Ok(())
+    }
+
+    #[getter]
+    fn pair_count(&self) -> usize {
+        self.inner.pair_count()
+    }
+
+    #[getter]
+    fn alt_count(&self) -> usize {
+        self.inner.alt_count()
+    }
+
+    #[getter]
+    fn ride_count(&self) -> usize {
+        self.inner.ride_trip.len()
+    }
+
+    /// Per pair: `(origin zone, destination zone, transit, walked, unreached)` trips.
+    #[allow(clippy::type_complexity)]
+    fn pairs<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> (U32Array<'py>, U32Array<'py>, F64Array<'py>, F64Array<'py>, F64Array<'py>) {
+        let c = &self.inner;
+        (
+            c.pair_origin.clone().into_pyarray(py),
+            c.pair_dest.clone().into_pyarray(py),
+            c.pair_transit.clone().into_pyarray(py),
+            c.pair_walked.clone().into_pyarray(py),
+            c.pair_unreached.clone().into_pyarray(py),
+        )
+    }
+
+    /// `(alt_start, alt_kind, fixed generalised minutes)` per alternative (CSR by pair).
+    fn alternatives<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> (U32Array<'py>, Bound<'py, PyArray1<u8>>, F64Array<'py>) {
+        let c = &self.inner;
+        (
+            c.alt_start.clone().into_pyarray(py),
+            c.alt_kind.clone().into_pyarray(py),
+            c.alt_fixed_min.clone().into_pyarray(py),
+        )
+    }
+
+    /// Generalised minutes per alternative; `crowded` is the per-trip running sum of segment
+    /// seconds times the crowding multiplier, by stop-time row.
+    fn costs<'py>(
+        &self,
+        py: Python<'py>,
+        crowded: PyReadonlyArray1<'_, f64>,
+        row_offset: PyReadonlyArray1<'_, u32>,
+    ) -> PyResult<F64Array<'py>> {
+        let (crowded, row_offset) =
+            (slice(&crowded, "crowded")?, slice(&row_offset, "row_offset")?);
+        Ok(py.detach(|| self.inner.costs(crowded, row_offset)).into_pyarray(py))
+    }
+
+    fn shares<'py>(
+        &self,
+        py: Python<'py>,
+        costs: PyReadonlyArray1<'_, f64>,
+        theta: f64,
+    ) -> PyResult<F64Array<'py>> {
+        let costs = slice(&costs, "costs")?;
+        if costs.len() != self.inner.alt_count() {
+            return Err(value_error("one cost per alternative"));
+        }
+        Ok(self.inner.shares(costs, theta).into_pyarray(py))
+    }
+
+    /// Boardings and alightings per stop-time row under `shares`.
+    fn loads<'py>(
+        &self,
+        py: Python<'py>,
+        shares: PyReadonlyArray1<'_, f64>,
+        row_offset: PyReadonlyArray1<'_, u32>,
+        rows: usize,
+    ) -> PyResult<(F64Array<'py>, F64Array<'py>)> {
+        let (shares, row_offset) = (slice(&shares, "shares")?, slice(&row_offset, "row_offset")?);
+        if shares.len() != self.inner.alt_count() {
+            return Err(value_error("one share per alternative"));
+        }
+        let (b, a) = py.detach(|| self.inner.loads(shares, row_offset, rows));
+        Ok((b.into_pyarray(py), a.into_pyarray(py)))
+    }
+
+    /// Per pair a `(pairs, 6)` array of trip-weighted sums (as `zone_assign_many`), and metro
+    /// gate passes `(entry, exit, trips)`.
+    #[allow(clippy::type_complexity)]
+    fn summary<'py>(
+        &self,
+        py: Python<'py>,
+        shares: PyReadonlyArray1<'_, f64>,
+    ) -> PyResult<(Bound<'py, PyArray2<f64>>, (U32Array<'py>, U32Array<'py>, F64Array<'py>))> {
+        let shares = slice(&shares, "shares")?;
+        if shares.len() != self.inner.alt_count() {
+            return Err(value_error("one share per alternative"));
+        }
+        let (totals, gates) = self.inner.summary(shares);
+        let flat: Vec<f64> = totals
+            .iter()
+            .flat_map(|t| {
+                [t.in_vehicle_s, t.waiting_s, t.walking_s, t.riding_s, t.vehicles, t.ridden]
+            })
+            .collect();
+        let totals = Array2::from_shape_vec((totals.len(), 6), flat).map_err(value_error)?;
+        let (mut entry, mut exit, mut trips) = (Vec::new(), Vec::new(), Vec::new());
+        for (e, x, n) in gates {
+            entry.push(e);
+            exit.push(x);
+            trips.push(n);
+        }
+        Ok((
+            totals.into_pyarray(py),
+            (entry.into_pyarray(py), exit.into_pyarray(py), trips.into_pyarray(py)),
+        ))
+    }
+}
+
 #[pyclass(module = "glacies_raptor")]
 struct WalkGraph {
     inner: core::WalkGraph,
@@ -1011,5 +1306,6 @@ fn glacies_raptor(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Journey>()?;
     m.add_class::<Leg>()?;
     m.add_class::<WalkGraph>()?;
+    m.add_class::<ChoiceSet>()?;
     Ok(())
 }
