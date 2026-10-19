@@ -17,8 +17,14 @@ pub const NOT_REACHED: u32 = u32::MAX;
 /// Why zone inputs were rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatrixError {
-    UnknownZone { zone: u32 },
-    BadPercentile { percentile: u8 },
+    UnknownZone {
+        zone: u32,
+    },
+    BadPercentile {
+        percentile: u8,
+    },
+    /// Arrays that pair up element by element (targets and trips, times and weights) differ.
+    LengthMismatch,
 }
 
 impl fmt::Display for MatrixError {
@@ -28,6 +34,7 @@ impl fmt::Display for MatrixError {
             Self::BadPercentile { percentile } => {
                 write!(f, "percentile {percentile} is not in 1..=100")
             }
+            Self::LengthMismatch => write!(f, "paired arrays differ in length"),
         }
     }
 }
