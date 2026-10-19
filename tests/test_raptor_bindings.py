@@ -194,7 +194,10 @@ def test_zone_assign_many_spreads_trips_over_the_profile() -> None:
     )
     f64 = np.float64
     origin = (arr(A), arr(60), NONE, NONE, arr(0, 1), np.array([10.0, 4.0], dtype=f64))
-    (o, zone, transit, walked, unreached), (trip, board, alight, passengers) = tt.zone_assign_many(
+    # Trip 2 is a metro from station 10 (A) to 11 (C); B is no station.
+    metro_trip = np.array([0, 0, 1], dtype=np.uint8)
+    station = arr(10, 2**32 - 1, 11)
+    (o, zone, transit, walked, unreached), totals, rides, gates = tt.zone_assign_many(
         [origin, origin],  # the same origin twice: rides add up across origins
         arr(hm("07:59"), hm("08:20")),
         np.array([1.0, 3.0], dtype=f64),
@@ -202,10 +205,13 @@ def test_zone_assign_many_spreads_trips_over_the_profile() -> None:
         arr(0, 1),
         arr(C, B),
         arr(60, 60),
+        metro_trip,
+        station,
         7200,
         4,
         60,
     )
+    trip, board, alight, passengers = rides
     assert o.tolist() == [0, 0, 1, 1]
     assert zone.tolist() == [0, 1, 0, 1]
     assert transit.tolist() == [10.0, 4.0, 10.0, 4.0]
@@ -215,3 +221,10 @@ def test_zone_assign_many_spreads_trips_over_the_profile() -> None:
         (1, 0, 2, 5.0),
         (2, 0, 1, 15.0),
     ]
+    # Columns: in vehicle, waiting, walking, riding (s); vehicles; trips that ride. Zone 0 as in
+    # the Rust test; zone 1 (4 trips, 07:59 only): 10 min on trip 1, 2 min walking.
+    assert totals.shape == (4, 6)
+    assert totals[0].tolist() == [7500.0, 4050.0, 1200.0, 0.0, 10.0, 0.0]
+    assert totals[1].tolist() == [2400.0, 0.0, 480.0, 0.0, 4.0, 0.0]
+    entry, exit_, gate_trips = gates
+    assert list(zip(entry, exit_, gate_trips, strict=True)) == [(10, 11, 15.0)]

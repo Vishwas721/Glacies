@@ -119,11 +119,18 @@ class Timetable:
         egress_zones: U32,
         egress_stops: U32,
         egress_seconds: U32,
+        metro_trip: npt.NDArray[np.uint8],
+        station: U32,
         max_travel_time: int,
         max_rounds: int,
         min_transfer_time: int,
         ride_access: list[tuple[U32, U32]] | None = None,
-    ) -> tuple[tuple[U32, U32, F64, F64, F64], tuple[U32, U32, U32, F64]]: ...
+    ) -> tuple[
+        tuple[U32, U32, F64, F64, F64],
+        npt.NDArray[np.float64],
+        tuple[U32, U32, U32, F64],
+        tuple[U32, U32, F64],
+    ]: ...
     def plan(
         self,
         origin_stops: U32,
