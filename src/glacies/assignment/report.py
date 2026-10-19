@@ -19,6 +19,33 @@ def _clock(seconds: int) -> str:
     return f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}"
 
 
+def _msa_lines(m: AssignmentManifest, convergence: pl.DataFrame | None) -> list[str]:
+    if m.msa is None or convergence is None:
+        return []
+    x = m.msa
+    lines = [
+        "## Crowding loop",
+        "",
+        f"Logit scale {x.theta_per_min:g} per generalised minute; fares "
+        f"{'included' if x.use_fares else 'left out'}. {x.pairs:,} pairs, {x.alternatives:,} "
+        f"alternatives ({x.alternatives / x.pairs:.2f} per pair), {x.rides:,} rides stored. "
+        f"{'Converged' if x.converged else 'Did not converge'} after {x.iterations} iterations "
+        f"(final gap {x.final_gap:.4f}).",
+        "",
+        "| Iteration | Gap | Mean cost (min) | Highest multiplier |",
+        "|---:|---:|---:|---:|",
+    ]
+    last = convergence["iteration"].max()
+    for row in convergence.iter_rows(named=True):
+        n = row["iteration"]
+        if n <= 5 or n % 5 == 0 or n == last:
+            gap = "-" if row["gap"] != row["gap"] else f"{row['gap']:.4f}"
+            lines.append(
+                f"| {n} | {gap} | {row['mean_cost_min']:.1f} | {row['max_multiplier']:.2f} |"
+            )
+    return [*lines, ""]
+
+
 def build_report(
     m: AssignmentManifest,
     loads: pl.DataFrame,
@@ -27,6 +54,7 @@ def build_report(
     stop_names: pl.DataFrame,
     report_window: tuple[int, int],
     route_table: pl.DataFrame,
+    convergence: pl.DataFrame | None = None,
 ) -> str:
     """``routes``: route_idx, mode, short_name; ``trips``: trip_idx, route_idx;
     ``stop_names``: stop_idx, name (parent station names for platforms); ``route_table``:
@@ -61,6 +89,7 @@ def build_report(
         "Demand outside the window is not modelled, so vehicles before about 08:30 and after "
         "10:00 carry too few people; the report window avoids most of that edge.",
         "",
+        *_msa_lines(m, convergence),
         "## City summary (PRD §31)",
         "",
         "Per transit trip, door to door; crowding is the share of passenger-km above design "
