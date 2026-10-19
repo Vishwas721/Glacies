@@ -39,11 +39,25 @@ from glacies.analytics.travel_times import (
     zone_points,
     zone_walks,
 )
+from glacies.assignment.aon import (
+    AssignmentError,
+    AssignmentInput,
+    AssignmentManifest,
+    assign_od,
+    check_and_summarise,
+    config_input,
+    segment_loads,
+    stop_flows,
+    trip_vehicles,
+    write_assignment,
+)
+from glacies.assignment.report import build_report as assignment_report
 from glacies.cities import (
     CityConfig,
     CityConfigError,
     DemandCalibration,
     DemandConfig,
+    load_assignment,
     load_demand,
 )
 from glacies.config import Settings
@@ -921,6 +935,85 @@ def run_station_flows(
     out_dir = base / "metro" / scenario
     manifest = write_station_flows(
         flows, out_dir, city=config.city.id, scenario=scenario, mode=mode, inputs=_inputs(stages)
+    )
+    return manifest, out_dir
+
+
+def run_assignment(
+    settings: Settings,
+    config: CityConfig,
+    *,
+    scenario: str = "baseline",
+    on_chunk: Callable[[int, int], None] | None = None,
+) -> tuple[AssignmentManifest, Path]:
+    """All-or-nothing assignment of the demand OD onto scheduled trips (Phase 6 M1).
+
+    Uses the same walks and rides to stations as demand, so a trip can only take journeys the
+    demand model costed.
+    """
+    demand, mode = _demand_settings(settings, config)
+    try:
+        assignment = load_assignment(settings.assignment_config_path)
+    except CityConfigError as exc:
+        raise PipelineError(str(exc)) from exc
+    base = city_dir(settings, config)
+    stages = {
+        "transit": base / "transit",
+        "walk": base / "walk",
+        "zones": base / "zones",
+        "demand": base / "demand" / scenario,
+    }
+    _require(stages)
+    zones = pl.read_parquet(stages["zones"] / "zones.parquet").sort("zone_idx")
+    window = assignment.assignment
+    try:
+        router = load_router(base, config.routing, config.city.crs_projected)
+        walks, _ = _demand_walks(router, base, zones, config, demand, mode)
+        stop_times = pl.read_parquet(stages["transit"] / "stop_times.parquet").sort(
+            "trip_idx", "position"
+        )
+        flows = assign_od(
+            router,
+            walks,
+            pl.read_parquet(stages["demand"] / "od.parquet"),
+            stop_times,
+            window,
+            config.accessibility.max_travel_time_min * 60,
+            on_chunk=on_chunk,
+        )
+        loads = segment_loads(
+            stop_times, flows, trip_vehicles(router.routes, router.trips, assignment.capacity)
+        )
+        stats = check_and_summarise(flows, loads, window.report_window())
+    except (DemandError, RouterError, AssignmentError) as exc:
+        raise PipelineError(str(exc)) from exc
+    stops = stop_flows(stop_times, flows)
+    parents = router.stops.select(pl.col("stop_idx").alias("parent_stop_idx"), "name")
+    stop_names = (
+        router.stops.select("stop_idx", "parent_stop_idx", pl.col("name").alias("own"))
+        .join(parents, on="parent_stop_idx", how="left")
+        .select("stop_idx", pl.coalesce("name", "own").alias("name"))
+    )
+    out_dir = base / "assignment" / scenario
+    manifest = write_assignment(
+        flows,
+        loads,
+        stops,
+        stats,
+        out_dir,
+        city=config.city.id,
+        scenario=scenario,
+        window=window,
+        inputs=[
+            *(
+                AssignmentInput(stage=stage, manifest_sha256=sha256_file(d / "manifest.json"))
+                for stage, d in stages.items()
+            ),
+            config_input(window, assignment.capacity),
+        ],
+        report=lambda m: assignment_report(
+            m, loads, router.routes, router.trips, stop_names, window.report_window()
+        ),
     )
     return manifest, out_dir
 
