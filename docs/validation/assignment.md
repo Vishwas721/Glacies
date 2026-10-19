@@ -8,7 +8,8 @@ destination within 120 min, and takes its fastest journey: the Phase 5 rule, now
 every trip segment. Same walks and rides to metro stations as demand. Capacities and their
 sources are in `cities/bengaluru/assignment.toml` (Assumed).
 
-Run 2026-10-19 on mains power (`glacies build assignment`): **302 s, peak RAM 1.57 GiB**.
+Run 2026-10-19 on mains power (`glacies build assignment`): **302 s, peak RAM 1.57 GiB**;
+a rerun (235 s, 1.78 GiB) wrote byte-identical Parquet.
 
 | Quantity | Value |
 |---|---:|
