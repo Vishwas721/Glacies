@@ -168,8 +168,10 @@ verified = false
 # Bengaluru; Hong Kong MTR smart-card data put one transfer at 7.9 in-vehicle minutes: Mo et
 # al. 2020, Table 2). Riding to a station counts like in-vehicle time; its fare is separate.
 # No guidance gives the logit scale between alternatives ("a user-defined parameter", TAG M3.2
-# B.2.7); Mo et al. estimate an in-vehicle coefficient of 0.116-0.147 per minute. Start at
-# 0.12; `glacies assignment calibrate` fits it on the training stations' entry level.
+# B.2.7); Mo et al. estimate an in-vehicle coefficient of 0.116-0.147 per minute. Fitting it on
+# the training stations' entry level was tried (2026-10-19) and is not identified: 0.06 / 0.12 /
+# 0.24 give levels 1.31 / 1.26 / 1.21 and never reach 1, while held-out R² falls (0.36 / 0.31 /
+# 0.26). 0.12 stays, from Mo et al. (docs/validation/assignment.md).
 # Context, not used: the BMRCL Phase-3A DPR (2024) Table 3-52 gives a bus value of time of
 # 32.72 (2022, units not printed; probably Rs/h), well below [value_of_time].
 [route_choice]
