@@ -32,11 +32,11 @@ pub struct MetroNetwork {
 }
 
 impl MetroNetwork {
-    fn is_metro(&self, trip_id: u32) -> bool {
+    pub(crate) fn is_metro(&self, trip_id: u32) -> bool {
         self.metro_trip.get(trip_id as usize).copied().unwrap_or(false)
     }
 
-    fn station_of(&self, stop: StopIdx) -> u32 {
+    pub(crate) fn station_of(&self, stop: StopIdx) -> u32 {
         self.station.get(stop.0 as usize).copied().unwrap_or(NO_STATION)
     }
 
