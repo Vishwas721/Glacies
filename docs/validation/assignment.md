@@ -63,3 +63,55 @@ vehicles whenever they save a minute. A transfer penalty in M3's generalised cos
 **Metro boardings** are 442,373 (Purple 199,431, Green 153,340, Yellow 89,602) against
 357,270 gate entries in Phase 5: boardings count line changes inside Majestic and RV Road
 again (they are the two busiest, 50,835 and 35,890).
+
+## M2: metrics (PRD §31) and metro gate entries against BMRCL
+
+The router now returns, per OD pair, the minutes its transit trips spend in vehicles, waiting
+(at the origin, at stops and while changing), walking and riding to a station, and every metro
+*segment* as one fare-gate pass (entry and exit station; changes inside a station are not a new
+entry, the Phase 5 rule). New tables: `routes.parquet` (boardings, passenger-km and -hours, peak
+utilisation and load factor), `stations.parquet` (gate entries and exits, with the observed
+entries and station set) and `station_pairs.parquet`. Distances are straight lines between
+consecutive stops (Estimated).
+
+Run 2026-10-19 on mains power: **122 s, peak RAM 1.88 GiB**, rerun byte-identical. Loads are
+unchanged from M1.
+
+**City summary** (per transit trip; Simulated, all-or-nothing on the fastest journey):
+
+| Metric | Value |
+|---|---:|
+| travel time, door to door | 75.2 min |
+| ... in vehicles | 42.1 min |
+| ... waiting | 13.9 min |
+| ... walking | 13.3 min |
+| ... riding to a station | 5.8 min |
+| transfers | 1.48 |
+| trips starting with a ride to a station | 36.6 % |
+| passenger-km (straight line) | 12,859,509 |
+| crowding: peak passenger-km above design capacity | 59.8 % |
+| peak passenger-km above crush capacity | 52.0 % |
+| metro gate entries | 362,058 |
+
+The crowding share is high because the heaviest segments carry most passenger-km: the metro
+cores and the express and airport buses that collect every departure for which they are
+fastest (VV-EXP 298MN averages 9.7 times its peak capacity over the hour). It is the baseline
+that M3's crowding penalty should bring down, not a forecast.
+
+**Metro gate entries against BMRCL** (shares within each set, scored like demand calibration;
+simulated trips leave home 08:00–10:00, observed entries are tap-ins in hours 8–9):
+
+| Set | Stations | R² (share) | r | Mean GEH | Simulated / observed |
+|---|---:|---:|---:|---:|---:|
+| Training | 53 | 0.10 | 0.52 | 22.8 | 2.07 |
+| Held-out | 15 | 0.37 | 0.66 | 13.5 | 1.73 |
+| Excluded (Yellow Line) | 15 | −1.23 | 0.23 | 13.4 | 7.70 |
+
+These match the Phase 5 station flows (training level 2.05, held-out R² 0.39; 357,270 entries)
+despite the shifted window and hourly weights, so the assignment and the path table agree. The
+level, about twice the observed entries, is what M3 (fares, transfer penalty, crowding) has to
+address.
+
+**Routes with the most passenger-km:** Purple 1,773,690 (peak utilisation 0.48, max load factor
+1.72), Green 1,308,267 (0.52, 1.64), Yellow 677,294 (0.58, 1.42); then buses VV-EXP 298MN
+332,507, KIA-8 220,952 and VV-EXP TMK-1 181,886, all far above capacity for the reason above.
