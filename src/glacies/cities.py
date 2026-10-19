@@ -547,6 +547,202 @@ def load_demand(path: Path) -> DemandConfig:
         raise CityConfigError(f"invalid demand config {path}:\n{exc}") from exc
 
 
+# --- assignment (cities/<city>/assignment.toml, Phase 6) ----------------------------------------
+
+
+class DepartureShares(_Strict):
+    """Share of the window's departures in each clock hour; even within an hour (Estimated)."""
+
+    hours: list[int] = Field(min_length=1)
+    weights: list[float] = Field(min_length=1)
+    nature: DataNature
+
+    @model_validator(mode="after")
+    def _check(self) -> DepartureShares:
+        if len(self.hours) != len(self.weights):
+            raise ValueError("hours and weights differ in length")
+        if sorted(set(self.hours)) != self.hours or not all(0 <= h < 48 for h in self.hours):
+            raise ValueError("hours must be ascending, unique, in 0..47")
+        if min(self.weights) <= 0:
+            raise ValueError("weights must be positive")
+        return self
+
+
+class AssignmentWindow(_Strict):
+    """When trips leave home and which vehicles crowding is reported for. All Assumed."""
+
+    window_start: str = Field(description="First departure, HH:MM.")
+    window_end: str = Field(description="End of the window (exclusive), HH:MM.")
+    departure_step_s: int = Field(gt=0)
+    report_start: str = Field(description="Vehicles leaving a stop from here are reported.")
+    report_end: str = Field(description="... up to here (exclusive).")
+    profile: DepartureShares
+
+    @model_validator(mode="after")
+    def _check(self) -> AssignmentWindow:
+        start, end = _clock_seconds(self.window_start), _clock_seconds(self.window_end)
+        if end <= start:
+            raise ValueError("window_end must be after window_start")
+        if _clock_seconds(self.report_end) <= _clock_seconds(self.report_start):
+            raise ValueError("report_end must be after report_start")
+        missing = {t // 3600 for t in self.departures()} - set(self.profile.hours)
+        if missing:
+            raise ValueError(f"profile has no weight for hours {sorted(missing)}")
+        return self
+
+    def departures(self) -> list[int]:
+        """Departure times (seconds since midnight) in the half-open window."""
+        start, end = _clock_seconds(self.window_start), _clock_seconds(self.window_end)
+        return list(range(start, end, self.departure_step_s))
+
+    def weights(self) -> list[float]:
+        """Each departure's share of the window's trips (sums to 1)."""
+        share = dict(zip(self.profile.hours, self.profile.weights, strict=True))
+        departures = self.departures()
+        per_hour: dict[int, int] = {}
+        for t in departures:
+            per_hour[t // 3600] = per_hour.get(t // 3600, 0) + 1
+        raw = [share[t // 3600] / per_hour[t // 3600] for t in departures]
+        total = sum(raw)
+        return [w / total for w in raw]
+
+    def report_window(self) -> tuple[int, int]:
+        return _clock_seconds(self.report_start), _clock_seconds(self.report_end)
+
+
+class Vehicle(_Strict):
+    """Seats and standing floor of the vehicles running some trips. Assumed, with a source.
+
+    A trip gets the first vehicle of its mode whose ``route_short_names`` or
+    ``route_prefixes`` (of the route number) match, else the mode's vehicle with neither.
+    """
+
+    name: str = Field(min_length=1)
+    mode: str = Field(min_length=1)
+    route_short_names: list[str] = Field(default_factory=list)
+    route_prefixes: list[str] = Field(default_factory=list)
+    seats: int = Field(ge=0)
+    standing_area_m2: float = Field(ge=0)
+    source: str = Field(min_length=1)
+    verified: bool
+
+    @property
+    def is_default(self) -> bool:
+        return not self.route_short_names and not self.route_prefixes
+
+
+class Capacity(_Strict):
+    """Capacity = seats + standing density x standing area, at design and crush density."""
+
+    design_standing_per_m2: float = Field(gt=0)
+    crush_standing_per_m2: float = Field(gt=0)
+    vehicles: list[Vehicle] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check(self) -> Capacity:
+        if self.crush_standing_per_m2 < self.design_standing_per_m2:
+            raise ValueError("crush density must not be below design density")
+        names = [v.name for v in self.vehicles]
+        if len(set(names)) != len(names):
+            raise ValueError("vehicle names must be unique")
+        for mode in sorted({v.mode for v in self.vehicles}):
+            defaults = [v.name for v in self.vehicles if v.mode == mode and v.is_default]
+            if len(defaults) != 1:
+                raise ValueError(f"mode {mode!r} needs exactly one vehicle without route filters")
+        return self
+
+
+class CrowdingCurve(_Strict):
+    """In-vehicle time multiplier by standees per m² (D): seated a + b D, standing c + e D."""
+
+    name: str = "central"
+    seated_base: float = Field(ge=1)
+    seated_per_m2: float = Field(ge=0)
+    standing_base: float = Field(ge=1)
+    standing_per_m2: float = Field(ge=0)
+    source: str = Field(min_length=1)
+    verified: bool
+
+
+class Crowding(CrowdingCurve):
+    """The central curve (used from M3), held at crush density, plus sensitivity curves."""
+
+    function: Literal["density_linear"]
+    cap_at: Literal["crush"]
+    sensitivity: list[CrowdingCurve] = Field(default_factory=list)
+
+
+class MetroFares(_Strict):
+    band_km: list[float] = Field(min_length=1)
+    fare_inr: list[float] = Field(min_length=1)
+    above_inr: float = Field(ge=0)
+    smart_card_discount: float = Field(ge=0, lt=1)
+    distance: Literal["station_hops", "route_km"]
+    source: str = Field(min_length=1)
+    verified: bool
+
+    @model_validator(mode="after")
+    def _check(self) -> MetroFares:
+        if len(self.band_km) != len(self.fare_inr) or sorted(self.band_km) != self.band_km:
+            raise ValueError("band_km must be ascending and match fare_inr")
+        return self
+
+
+class BusFares(_Strict):
+    stage_km: float = Field(gt=0)
+    fare_per_stage_inr: float = Field(ge=0)
+    free_share: float = Field(ge=0, le=1, description="Riders who pay nothing (e.g. Shakti).")
+    source: str = Field(min_length=1)
+    verified: bool
+
+
+class RideFares(_Strict):
+    base_inr: float = Field(ge=0)
+    base_km: float = Field(ge=0)
+    per_km_inr: float = Field(ge=0)
+    source: str = Field(min_length=1)
+    verified: bool
+
+
+class Fares(_Strict):
+    """Fares for the generalised cost of route choice (M3). All Assumed."""
+
+    metro: MetroFares
+    bus: BusFares
+    ride_access: RideFares
+
+
+class ValueOfTime(_Strict):
+    inr_per_hour: float = Field(gt=0)
+    source: str = Field(min_length=1)
+    verified: bool
+
+
+class AssignmentConfig(_Strict):
+    """Transit assignment and crowding settings (Phase 6). Every value is Assumed."""
+
+    assignment: AssignmentWindow
+    capacity: Capacity
+    crowding: Crowding
+    fares: Fares
+    value_of_time: ValueOfTime
+
+
+def load_assignment(path: Path) -> AssignmentConfig:
+    """Parse and validate an ``assignment.toml`` file."""
+    try:
+        with path.open("rb") as handle:
+            raw = tomllib.load(handle)
+    except FileNotFoundError:
+        raise CityConfigError(f"assignment config not found: {path}") from None
+    except tomllib.TOMLDecodeError as exc:
+        raise CityConfigError(f"invalid TOML in {path}: {exc}") from exc
+    try:
+        return AssignmentConfig.model_validate(raw)
+    except ValidationError as exc:
+        raise CityConfigError(f"invalid assignment config {path}:\n{exc}") from exc
+
+
 def load_city(path: Path) -> CityConfig:
     """Parse and validate a ``city.toml`` file."""
     try:
