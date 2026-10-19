@@ -295,3 +295,29 @@ def test_purposes_and_gateways_add_up(
     purposes = set(pl.read_parquet(out / "od.parquet")["purpose"].unique().to_list())
     assert purposes == {"HBW_AM_peak", "education"}
     assert not (out / "gateways.parquet").exists()
+
+
+def test_assignment_on_the_toy_city(city: Path) -> None:
+    """Plumbing, conservation and determinism of `glacies build assignment` (Phase 6 M1); the
+    load arithmetic is checked by tests/test_assignment_aon.py and crates/raptor/tests."""
+    assert runner.invoke(app, ["build", "demand"]).exit_code == 0
+    result = runner.invoke(app, ["build", "assignment"])
+    assert result.exit_code == 0, result.output
+    out = city / "assignment" / "baseline"
+    od = pl.read_parquet(out / "od_assignment.parquet")
+    loads = pl.read_parquet(out / "loads.parquet")
+    demand = pl.read_parquet(city / "demand" / "baseline" / "od.parquet")
+    first = {p.name: p.read_bytes() for p in sorted(out.glob("*.parquet"))}
+
+    assert od["trips"].sum() == pytest.approx(demand["trips"].sum())
+    np.testing.assert_allclose(od["transit"] + od["walked"] + od["unreached"], od["trips"])
+    assert (loads["load"] >= 0).all()
+    assert loads["capacity"].null_count() == 0
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["nature"] == "simulated"
+    assert manifest["departures"] == 120
+    assert "Simulated" in (out / "BUILD_REPORT.md").read_text(encoding="utf-8")
+
+    again = runner.invoke(app, ["build", "assignment"])
+    assert again.exit_code == 0, again.output
+    assert {p.name: p.read_bytes() for p in sorted(out.glob("*.parquet"))} == first

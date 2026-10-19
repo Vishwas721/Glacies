@@ -1,0 +1,80 @@
+# Toyville assignment settings: test fixture values, not a real city.
+
+[assignment]
+window_start = "08:00"
+window_end = "10:00"
+departure_step_s = 60
+report_start = "08:30"
+report_end = "09:30"
+
+[assignment.profile]
+hours = [8, 9]
+weights = [0.4, 0.6]
+nature = "estimated"
+
+[capacity]
+design_standing_per_m2 = 6.0
+crush_standing_per_m2 = 8.0
+
+[[capacity.vehicles]]
+name = "bus"
+mode = "bus"
+seats = 30
+standing_area_m2 = 5.0
+source = "Glacies test fixture"
+verified = false
+
+[[capacity.vehicles]]
+name = "bus_express"
+mode = "bus"
+route_prefixes = ["10 EXP"]
+seats = 40
+standing_area_m2 = 0.0
+source = "Glacies test fixture"
+verified = false
+
+[[capacity.vehicles]]
+name = "metro"
+mode = "metro"
+seats = 100
+standing_area_m2 = 50.0
+source = "Glacies test fixture"
+verified = false
+
+[crowding]
+function = "density_linear"
+seated_base = 1.0
+seated_per_m2 = 0.09
+standing_base = 1.43
+standing_per_m2 = 0.13
+cap_at = "crush"
+source = "Glacies test fixture"
+verified = false
+
+[fares.metro]
+band_km = [2, 4]
+fare_inr = [10, 20]
+above_inr = 30
+smart_card_discount = 0.05
+distance = "station_hops"
+source = "Glacies test fixture"
+verified = false
+
+[fares.bus]
+stage_km = 2.0
+fare_per_stage_inr = 5
+free_share = 0.5
+source = "Glacies test fixture"
+verified = false
+
+[fares.ride_access]
+base_inr = 30
+base_km = 2.0
+per_km_inr = 15
+source = "Glacies test fixture"
+verified = false
+
+[value_of_time]
+inr_per_hour = 100.0
+source = "Glacies test fixture"
+verified = false

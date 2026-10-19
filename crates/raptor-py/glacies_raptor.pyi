@@ -110,6 +110,20 @@ class Timetable:
         min_transfer_time: int,
         ride_access: list[tuple[U32, U32]] | None = None,
     ) -> tuple[tuple[U32, U32, U32, U32, U32, U32], tuple[U32, U32, U32, U32, U32]]: ...
+    def zone_assign_many(
+        self,
+        origins: list[tuple[U32, U32, U32, U32, U32, F64]],
+        departures: U32,
+        weights: F64,
+        zone_count: int,
+        egress_zones: U32,
+        egress_stops: U32,
+        egress_seconds: U32,
+        max_travel_time: int,
+        max_rounds: int,
+        min_transfer_time: int,
+        ride_access: list[tuple[U32, U32]] | None = None,
+    ) -> tuple[tuple[U32, U32, F64, F64, F64], tuple[U32, U32, U32, F64]]: ...
     def plan(
         self,
         origin_stops: U32,

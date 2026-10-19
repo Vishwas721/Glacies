@@ -1,0 +1,162 @@
+# Assignment and crowding settings for Bengaluru (Phase 6). Reviewed with the user 2026-10-19.
+#
+# Every number is Assumed unless it says Observed. verified = true means the figure was read in
+# the primary document named in `source`; verified = false means press/secondary only, or a
+# value chosen by us. Capacity and crowding values are carried over to Bengaluru from where
+# they were measured, so they stay Assumed even when the figure itself is verified.
+
+[assignment]
+# Departures leave home 08:00-09:59, matching the demand definition (trips starting
+# 08:00-10:00) and the BMRCL tap-in hours used for calibration. (The Phase 5 path table used
+# 07:30-09:29.) Trips are spread over minute departures, not sampled: OD pairs carry 0.30 trips
+# on average (2,726,121 rows, 822,775 trips), so sampling would mostly add noise.
+window_start = "08:00"
+window_end = "10:00"
+departure_step_s = 60
+# Peak-hour crowding is reported for vehicles leaving a stop 08:30-09:29: earlier vehicles miss
+# riders who left before 08:00, later ones miss riders after 10:00 (no demand outside the window).
+report_start = "08:30"
+report_end = "09:30"
+
+[assignment.profile]
+# Share of the window's departures in each hour, from BMRCL entries by tap-in hour (Observed;
+# 11 Tue-Thu dates in September 2025: 72,873 in hour 8, 83,950 in hour 9). Spread evenly
+# within each hour (Assumed). Tap-in is 10-20 min after leaving home; the shift is ignored.
+hours = [8, 9]
+weights = [0.465, 0.535]
+nature = "estimated"
+
+# --- Capacities ------------------------------------------------------------------------------
+# A vehicle's capacity = seats + design standing density x standing area; crush capacity uses
+# the crush density. Load factor (reported) = load / capacity; crush factor = load / crush.
+
+[capacity]
+design_standing_per_m2 = 6.0   # AIS-052 bus body code cl. 2.2.17; BMRCL Phase-3 DPR p. xvi
+crush_standing_per_m2 = 8.0    # BMRCL Phase-3 DPR p. xviii (metro); Assumed for buses
+
+[[capacity.vehicles]]
+name = "metro_6car"
+mode = "metro"
+# Phase-3 DPR (RITES), Executive Summary p. xviii item 8: 6-car train "Full seating + 8 standee
+# passengers per sq. m ... 2004 (seating 286; standing 1718)". 1718 / 8 = 214.75 m² standing.
+# At 6/m²: 286 + 1288 = 1,574 (Table 0.20 p. xv: 18,888 per hour at 12 trains/h).
+# The often-quoted "2,000 per train" is this CRUSH figure, not design capacity.
+seats = 286
+standing_area_m2 = 214.75
+source = "Bangalore Metro Phase-3 DPR, Executive Summary, p. xv Table 0.20 and p. xviii item 8"
+verified = true
+
+[[capacity.vehicles]]
+name = "metro_yellow_6car"
+mode = "metro"
+route_short_names = ["Yellow"]
+# CRRC/Titagarh driverless 6-car trains: no capacity found in any primary source. Assumed equal
+# to the Purple/Green 6-car train until the Phase 2 rolling-stock specification is checked.
+seats = 286
+standing_area_m2 = 214.75
+source = "Assumed equal to metro_6car"
+verified = false
+
+[[capacity.vehicles]]
+name = "bus_standard"
+mode = "bus"
+# Default for every bus. Seats: Urban Bus Specifications-II (MoUD 2013) ch. 2, standard 12 m
+# city bus 32-34 seats (verified). Standing area: Assumed 5.5 m² (no BMTC figure found), giving
+# 33 + 33 = 66 at 6/m² and 77 at crush. The GTFS does not say which bus runs a trip; 1,771 of
+# 6,921 BMTC vehicles are e-buses (BMTC at a Glance, 2026-09-25), e.g. Switch EiV12 with 39 seats
+# (brochure), so 33 seats is low for part of the fleet.
+seats = 33
+standing_area_m2 = 5.5
+source = "UBS-II (MoUD 2013) ch. 2 for seats; standing area Assumed"
+verified = false
+
+[[capacity.vehicles]]
+name = "bus_vajra_ac"
+mode = "bus"
+route_prefixes = ["V-", "VV-"]
+# UBS-II ch. 6 premium AC standard bus 32-34 seats (verified). Volvo 8400 Vajra seat count not
+# found. Standing area as bus_standard (Assumed).
+seats = 33
+standing_area_m2 = 5.5
+source = "UBS-II (MoUD 2013) ch. 6 for seats; standing area Assumed"
+verified = false
+
+[[capacity.vehicles]]
+name = "bus_airport"
+mode = "bus"
+route_prefixes = ["KIA-"]
+# Vayu Vajra airport coaches carry luggage; Assumed seated plus little standing.
+seats = 33
+standing_area_m2 = 2.0
+source = "Assumed"
+verified = false
+
+# --- Crowding (used from M3) ---------------------------------------------------------------------
+# In-vehicle time multiplier by standee density D = max(0, load - seats) / standing area, from
+# UK DfT TAG unit M3.2 (May 2024) Table 3, pp. 29-30 (verified): seated 1 + 0.09 D, standing
+# 1.43 + 0.13 D. A segment's multiplier is the passenger-weighted mean of seated and standing
+# riders, so it is 1.0 until the seats are full and about 2.0 at 6/m² on the metro (seat share
+# 0.18). Beyond design density the line continues to crush density and is then held (TAG caps
+# at crush for stability). Transfer from UK rail to Bengaluru: Assumed.
+# The handoff's "1.0 at load factor 0.8 to 2.0 at 1.5" matches no source found: Wardman &
+# Whelan's load factor is passengers per SEAT, and 1.5 x design capacity exceeds metro crush.
+[crowding]
+function = "density_linear"
+seated_base = 1.0
+seated_per_m2 = 0.09
+standing_base = 1.43
+standing_per_m2 = 0.13
+cap_at = "crush"
+source = "DfT TAG unit M3.2 (May 2024), Table 3 (MVA 2008 values)"
+verified = true
+
+[[crowding.sensitivity]]
+# Hong Kong MTR, revealed preference (Hörcher, Graham & Anderson 2017): 1 + 0.1192 D seated,
+# +0.265 standing. Read in the accepted manuscript.
+name = "low"
+seated_base = 1.0
+seated_per_m2 = 0.1192
+standing_base = 1.265
+standing_per_m2 = 0.1192
+source = "Hörcher, Graham & Anderson (2017), Transportation Research Part B"
+verified = true
+
+# --- Generalised cost and fares (M3, pending decision) -------------------------------------------
+# Kept here so they are reviewed with the rest; none are used by M1 (time-only AON).
+[fares.metro]
+# BMRCL media release 08.02.2025, in force 09.02.2025 (verified): fare by distance band.
+band_km = [2, 4, 6, 8, 10, 15, 20, 25, 30]
+fare_inr = [10, 20, 30, 40, 50, 60, 70, 80, 90]
+above_inr = 90
+smart_card_discount = 0.05     # same release; QR tickets get none
+# Press only (TNM 2025-02-13): since 14.02.2025 each station hop counts as 1 km.
+distance = "station_hops"
+source = "BMRCL media release 08.02.2025"
+verified = true
+
+[fares.bus]
+# Ordinary: 2 km stages. Official chart is the 2020 one (Rs 5 per stage, verified); the 15 %
+# hike of January 2025 (Rs 6 / 12 / 18 ...) is press only.
+stage_km = 2.0
+fare_per_stage_inr = 6
+# Women ride ordinary buses free under Shakti (BMTC write-up, verified); their share of riders
+# rose to 62 % (Azim Premji University study via TNM, unverified). No official share of free
+# trips exists.
+free_share = 0.62
+source = "BMTC 2020 fare chart (verified); 2025 hike and Shakti share press only"
+verified = false
+
+[fares.ride_access]
+# Auto: Rs 36 for the first 2 km, Rs 18 per km after (from 01.08.2025; press only).
+base_inr = 36
+base_km = 2.0
+per_km_inr = 18
+source = "The South First 2025-07 (RTA notification not found)"
+verified = false
+
+[value_of_time]
+# AIIB Bangalore Metro Rail project document p. 38 (verified): bus users Rs 57.3/h on primary
+# routes in 2017 prices, x 1.56 for Bengaluru = Rs 89/h (our arithmetic). Not inflated to 2026.
+inr_per_hour = 89.0
+source = "AIIB Bangalore Metro Rail Project document (2017), p. 38, from IRC SP:30"
+verified = false

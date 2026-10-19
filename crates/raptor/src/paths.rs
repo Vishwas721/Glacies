@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::journey::rebuild;
+use crate::choice::{choose, Choice};
 use crate::matrix::{MatrixError, ZoneEgress, NOT_REACHED};
 use crate::range::range_search_each;
 use crate::{Access, Leg, Params, StopIdx, Time, Timetable};
@@ -122,48 +122,24 @@ pub fn zone_paths(
     range_search_each(tt, params, origin, departures, |i, rounds, best| {
         let departure = departures[i];
         for (pos, &zone) in targets.iter().enumerate() {
-            let on_foot = walk[zone as usize];
-            // Earliest arrival over the egress stops; ties go to the lower stop.
-            let mut by_transit = NOT_REACHED;
-            let mut via: Option<(StopIdx, u32)> = None;
-            for &(stop, seconds) in egress.of(zone as usize) {
-                let at = best[stop.0 as usize];
-                if at == Time::UNREACHED {
-                    continue;
-                }
-                let duration = at.0 - departure.0 + seconds;
-                if duration < by_transit {
-                    by_transit = duration;
-                    via = Some((stop, seconds));
-                }
-            }
-            if on_foot <= by_transit {
-                if on_foot <= max_travel_time {
-                    reached[pos] += 1;
-                    walked[pos] += 1;
-                }
-                continue;
-            }
-            let Some((stop, seconds)) = via else { continue };
-            if by_transit > max_travel_time {
-                continue;
-            }
-            reached[pos] += 1;
-            let s = stop.0 as usize;
-            let arrival = best[s];
-            let round = rounds
-                .iter()
-                .position(|r| r.ride[s].min(r.arrived_on_foot(s)) == arrival)
-                .expect("the best arrival comes from some round");
-            let journey = rebuild(
+            let journey = match choose(
                 tt,
                 departure,
                 rounds,
-                round,
-                stop,
-                seconds,
-                arrival.saturating_add(seconds),
-            );
+                best,
+                egress.of(zone as usize),
+                walk[zone as usize],
+                max_travel_time,
+            ) {
+                Choice::NotReached => continue,
+                Choice::Walked => {
+                    reached[pos] += 1;
+                    walked[pos] += 1;
+                    continue;
+                }
+                Choice::Transit(journey) => journey,
+            };
+            reached[pos] += 1;
             if let Some(&Leg::Access { to, duration }) = journey.legs.first() {
                 if rides.contains(&(to, duration)) {
                     ridden[pos] += 1;

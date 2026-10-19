@@ -406,6 +406,28 @@ def build_station_flows(city: CityOption = None) -> None:
     )
 
 
+@build_app.command("assignment")
+def build_assignment(city: CityOption = None) -> None:
+    """All-or-nothing assignment of the demand onto scheduled trips: loads (Simulated)."""
+    settings, config = _load(city)
+
+    def progress(done: int, total: int) -> None:
+        typer.echo(f"  {done:,}/{total:,} origins", err=True)
+
+    try:
+        manifest, out_dir = pipeline.run_assignment(settings, config, on_chunk=progress)
+    except PipelineError as exc:
+        _fail(str(exc))
+    s = manifest.stats
+    typer.echo(f"assignment (Simulated) -> {out_dir}")
+    typer.echo(
+        f"  {s.trips:,.0f} trips: {s.trips_transit:,.0f} on transit, {s.trips_walked:,.0f} "
+        f"walk all the way, {s.trips_unreached:,.0f} not reached; {s.boardings:,.0f} "
+        f"boardings; {s.peak_segments_over_capacity:,} of {s.peak_segments:,} peak segments "
+        f"above capacity ({s.peak_segments_over_crush:,} above crush)"
+    )
+
+
 @build_app.command("ridership")
 def build_ridership(city: CityOption = None) -> None:
     """Validate the calibration ridership snapshot into canonical tables (Observed)."""
