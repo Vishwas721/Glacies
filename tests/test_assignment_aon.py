@@ -44,7 +44,11 @@ ROUTES = pl.DataFrame(
 def flows(board: list[float], alight: list[float], od: pl.DataFrame | None = None) -> AonFlows:
     if od is None:
         od = pl.DataFrame({"trips": [12.0], "transit": [12.0], "walked": [0.0], "unreached": [0.0]})
-    return AonFlows(od=od, boardings=np.array(board), alightings=np.array(alight))
+    gates = pl.DataFrame(
+        {"entry_station": [8], "exit_station": [9], "trips": [2.0]},
+        schema={"entry_station": pl.UInt32, "exit_station": pl.UInt32, "trips": pl.Float64},
+    )
+    return AonFlows(od=od, boardings=np.array(board), alightings=np.array(alight), gates=gates)
 
 
 def vehicles() -> pl.DataFrame:

@@ -1,12 +1,18 @@
-"""Markdown build report of an all-or-nothing assignment (Phase 6 M1)."""
+"""Markdown build report of an all-or-nothing assignment (Phase 6 M1-M2)."""
 
 from __future__ import annotations
 
 import polars as pl
 
-from glacies.assignment.aon import AssignmentManifest
+from glacies.assignment.writer import AssignmentManifest
 
 TOP_SEGMENTS = 15
+TOP_ROUTES = 10
+SET_NAMES = {
+    "training": "Training stations",
+    "held_out": "Held-out stations",
+    "excluded": "Excluded lines",
+}
 
 
 def _clock(seconds: int) -> str:
@@ -20,10 +26,12 @@ def build_report(
     trips: pl.DataFrame,
     stop_names: pl.DataFrame,
     report_window: tuple[int, int],
+    route_table: pl.DataFrame,
 ) -> str:
     """``routes``: route_idx, mode, short_name; ``trips``: trip_idx, route_idx;
-    ``stop_names``: stop_idx, name (parent station names for platforms)."""
-    s = m.stats
+    ``stop_names``: stop_idx, name (parent station names for platforms); ``route_table``:
+    the per-route metrics written to routes.parquet."""
+    s, c = m.stats, m.metrics
     start, end = report_window
     named = loads.join(trips.select("trip_idx", "route_idx"), on="trip_idx").join(
         routes.select("route_idx", "mode", "short_name"), on="route_idx"
@@ -52,6 +60,25 @@ def build_report(
         "",
         "Demand outside the window is not modelled, so vehicles before about 08:30 and after "
         "10:00 carry too few people; the report window avoids most of that edge.",
+        "",
+        "## City summary (PRD §31)",
+        "",
+        "Per transit trip, door to door; crowding is the share of passenger-km above design "
+        "capacity among vehicles leaving a stop in the report window.",
+        "",
+        "| Metric | Value |",
+        "|---|---:|",
+        f"| travel time | {c.mean_travel_min:.1f} min |",
+        f"| ... in vehicles | {c.mean_in_vehicle_min:.1f} min |",
+        f"| ... waiting | {c.mean_waiting_min:.1f} min |",
+        f"| ... walking | {c.mean_walking_min:.1f} min |",
+        f"| ... riding to a station | {c.mean_riding_min:.1f} min |",
+        f"| transfers | {c.transfers_per_trip:.2f} |",
+        f"| trips starting with a ride to a station | {c.share_riding_to_station:.1%} |",
+        f"| passenger-km (straight line) | {c.passenger_km:,.0f} |",
+        f"| crowding (above design capacity) | {c.peak_crowded_pkm_share:.1%} |",
+        f"| above crush capacity | {c.peak_crush_pkm_share:.1%} |",
+        f"| metro gate entries | {c.metro_entries:,.0f} |",
         "",
         "## Peak load by line or mode (report window)",
         "",
@@ -123,6 +150,41 @@ def build_report(
     ]
     for mode, line, total in boardings.iter_rows():
         lines.append(f"| {mode} | {line} | {total:,.0f} |")
+    if m.station_fits:
+        lines += [
+            "",
+            "## Metro gate entries against BMRCL (validation level 4)",
+            "",
+            "Shares of each set's entries, as demand calibration scores them; simulated entries "
+            "are trips leaving home 08:00-10:00, observed ones tap-ins in hours 8-9.",
+            "",
+            "| Set | Stations | R² (share) | r | Mean GEH | Simulated / observed |",
+            "|---|---:|---:|---:|---:|---:|",
+        ]
+        for name, f in m.station_fits.items():
+            lines.append(
+                f"| {SET_NAMES.get(name, name)} | {f.items} | {f.r2_share:.2f} "
+                f"| {f.correlation:.2f} | {f.mean_geh:.1f} | {f.level_ratio:.2f} |"
+            )
+    lines += [
+        "",
+        f"## {TOP_ROUTES} routes with the most passenger-km",
+        "",
+        "| Mode | Route | Boardings | Passenger-km | Peak utilisation | Peak max load factor |",
+        "|---|---|---:|---:|---:|---:|",
+    ]
+    busiest = route_table.sort("passenger_km", "route_idx", descending=[True, False]).head(
+        TOP_ROUTES
+    )
+    for row in busiest.iter_rows(named=True):
+        utilisation = row["peak_utilisation"]
+        top_lf = row["peak_max_load_factor"]
+        lines.append(
+            f"| {row['mode']} | {row['short_name']} | {row['boardings']:,.0f} "
+            f"| {row['passenger_km']:,.0f} "
+            f"| {'-' if utilisation is None else f'{utilisation:.2f}'} "
+            f"| {'-' if top_lf is None else f'{top_lf:.2f}'} |"
+        )
     lines += [
         "",
         "All flows are Simulated (Estimated demand on the scheduled timetable); capacities are "
