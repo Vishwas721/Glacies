@@ -41,17 +41,27 @@ from glacies.analytics.travel_times import (
 )
 from glacies.assignment.aon import (
     AssignmentError,
-    AssignmentInput,
-    AssignmentManifest,
     assign_od,
     check_and_summarise,
-    config_input,
     segment_loads,
     stop_flows,
     trip_vehicles,
+)
+from glacies.assignment.metrics import city_metrics, route_metrics, station_fit, with_distances
+from glacies.assignment.metrics import station_flows as assignment_station_flows
+from glacies.assignment.report import build_report as assignment_report
+from glacies.assignment.writer import (
+    LOADS_NAME,
+    OD_NAME,
+    ROUTES_NAME,
+    STATION_PAIRS_NAME,
+    STOPS_NAME,
+    AssignmentInput,
+    AssignmentManifest,
+    config_input,
     write_assignment,
 )
-from glacies.assignment.report import build_report as assignment_report
+from glacies.assignment.writer import STATIONS_NAME as ASSIGNED_STATIONS
 from glacies.cities import (
     CityConfig,
     CityConfigError,
@@ -76,6 +86,7 @@ from glacies.demand.attraction import (
 from glacies.demand.calibrate import (
     CalibrationInput,
     CalibrationManifest,
+    Fit,
     SweepPoint,
     Targets,
     calibrate,
@@ -946,10 +957,11 @@ def run_assignment(
     scenario: str = "baseline",
     on_chunk: Callable[[int, int], None] | None = None,
 ) -> tuple[AssignmentManifest, Path]:
-    """All-or-nothing assignment of the demand OD onto scheduled trips (Phase 6 M1).
+    """All-or-nothing assignment of the demand OD onto scheduled trips (Phase 6 M1-M2).
 
     Uses the same walks and rides to stations as demand, so a trip can only take journeys the
-    demand model costed.
+    demand model costed. If the calibration ridership has been built, metro gate entries are
+    scored against it like demand calibration does.
     """
     demand, mode = _demand_settings(settings, config)
     try:
@@ -964,11 +976,16 @@ def run_assignment(
         "demand": base / "demand" / scenario,
     }
     _require(stages)
+    cal = demand.calibration
+    ridership_dir = base / "ridership" / cal.dataset
+    if (ridership_dir / "manifest.json").is_file():
+        stages["ridership"] = ridership_dir
     zones = pl.read_parquet(stages["zones"] / "zones.parquet").sort("zone_idx")
     window = assignment.assignment
+    report_window = window.report_window()
     try:
         router = load_router(base, config.routing, config.city.crs_projected)
-        walks, _ = _demand_walks(router, base, zones, config, demand, mode)
+        walks, metro = _demand_walks(router, base, zones, config, demand, mode)
         stop_times = pl.read_parquet(stages["transit"] / "stop_times.parquet").sort(
             "trip_idx", "position"
         )
@@ -979,15 +996,27 @@ def run_assignment(
             stop_times,
             window,
             config.accessibility.max_travel_time_min * 60,
+            metro.metro_trip,
+            metro.station,
             on_chunk=on_chunk,
         )
-        loads = segment_loads(
-            stop_times, flows, trip_vehicles(router.routes, router.trips, assignment.capacity)
+        loads = with_distances(
+            segment_loads(
+                stop_times, flows, trip_vehicles(router.routes, router.trips, assignment.capacity)
+            ),
+            router.stops,
         )
-        stats = check_and_summarise(flows, loads, window.report_window())
+        stats = check_and_summarise(flows, loads, report_window)
+        stations = assignment_station_flows(flows, metro.stations)
+        fits: dict[str, Fit] = {}
+        if "ridership" in stages:
+            observed = observed_entries(
+                pl.read_parquet(ridership_dir / RIDERSHIP_STATIONS), cal.dates, cal.hours
+            )
+            stations, fits = station_fit(stations, observed, cal)
     except (DemandError, RouterError, AssignmentError) as exc:
         raise PipelineError(str(exc)) from exc
-    stops = stop_flows(stop_times, flows)
+    routes = route_metrics(loads, router.trips, router.routes, report_window)
     parents = router.stops.select(pl.col("stop_idx").alias("parent_stop_idx"), "name")
     stop_names = (
         router.stops.select("stop_idx", "parent_stop_idx", pl.col("name").alias("own"))
@@ -996,10 +1025,14 @@ def run_assignment(
     )
     out_dir = base / "assignment" / scenario
     manifest = write_assignment(
-        flows,
-        loads,
-        stops,
-        stats,
+        {
+            LOADS_NAME: loads,
+            STOPS_NAME: stop_flows(stop_times, flows),
+            OD_NAME: flows.od,
+            ROUTES_NAME: routes,
+            ASSIGNED_STATIONS: stations,
+            STATION_PAIRS_NAME: flows.gates,
+        },
         out_dir,
         city=config.city.id,
         scenario=scenario,
@@ -1011,8 +1044,11 @@ def run_assignment(
             ),
             config_input(window, assignment.capacity),
         ],
+        stats=stats,
+        metrics=city_metrics(flows, loads, report_window),
+        station_fits=fits,
         report=lambda m: assignment_report(
-            m, loads, router.routes, router.trips, stop_names, window.report_window()
+            m, loads, router.routes, router.trips, stop_names, report_window, routes
         ),
     )
     return manifest, out_dir

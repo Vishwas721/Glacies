@@ -110,6 +110,69 @@ fn zone_egress(
     core::ZoneEgress::new(zone_count, &walks).map_err(value_error)
 }
 
+/// Per-origin assignments joined into columns; rides and gate passes summed in origin order.
+#[derive(Default)]
+struct MergedAssignment {
+    origin: Vec<u32>,
+    zone: Vec<u32>,
+    transit: Vec<f64>,
+    walked: Vec<f64>,
+    unreached: Vec<f64>,
+    totals: Array2<f64>,
+    trip: Vec<u32>,
+    board: Vec<u32>,
+    alight: Vec<u32>,
+    passengers: Vec<f64>,
+    entry: Vec<u32>,
+    exit: Vec<u32>,
+    gate_trips: Vec<f64>,
+}
+
+fn merge_assignments(results: Vec<core::ZoneAssignment>) -> PyResult<MergedAssignment> {
+    let mut m = MergedAssignment::default();
+    let mut totals: Vec<f64> = Vec::new();
+    let mut rides: std::collections::BTreeMap<(u32, u32, u32), f64> =
+        std::collections::BTreeMap::new();
+    let mut gates: std::collections::BTreeMap<(u32, u32), f64> = std::collections::BTreeMap::new();
+    for (i, result) in results.into_iter().enumerate() {
+        let i = u32::try_from(i).map_err(value_error)?;
+        m.origin.extend(std::iter::repeat_n(i, result.zones.len()));
+        m.zone.extend(result.zones);
+        m.transit.extend(result.transit);
+        m.walked.extend(result.walked);
+        m.unreached.extend(result.unreached);
+        for t in &result.totals {
+            totals.extend([
+                t.in_vehicle_s,
+                t.waiting_s,
+                t.walking_s,
+                t.riding_s,
+                t.vehicles,
+                t.ridden,
+            ]);
+        }
+        for (trip, board, alight, n) in result.rides {
+            *rides.entry((trip, board, alight)).or_insert(0.0) += n;
+        }
+        for (entry, exit, n) in result.gates {
+            *gates.entry((entry, exit)).or_insert(0.0) += n;
+        }
+    }
+    m.totals = Array2::from_shape_vec((totals.len() / 6, 6), totals).map_err(value_error)?;
+    for ((t, b, a), n) in rides {
+        m.trip.push(t);
+        m.board.push(b);
+        m.alight.push(a);
+        m.passengers.push(n);
+    }
+    for ((e, x), n) in gates {
+        m.entry.push(e);
+        m.exit.push(x);
+        m.gate_trips.push(n);
+    }
+    Ok(m)
+}
+
 fn params(max_rounds: usize, min_transfer_time: u32) -> core::Params {
     core::Params { max_rounds, min_transfer_time }
 }
@@ -643,15 +706,17 @@ impl Timetable {
         ))
     }
 
-    /// All-or-nothing assignment of each origin's trips (Phase 6 M1). `origins` items are
+    /// All-or-nothing assignment of each origin's trips (Phase 6 M1-M2). `origins` items are
     /// `(access stops, access seconds, walk-only zones, walk-only seconds, target zones, trips)`;
     /// `weights` is the departure profile. Returns per target `(origin position, zone, transit,
-    /// walked, unreached)` trips, and the rides of all origins summed per `(trip id, board
-    /// position, alight position)`, in that order (sums run in origin order, so they are
-    /// deterministic).
+    /// walked, unreached)` trips and a `(targets, 6)` array of trip-weighted sums over its transit
+    /// trips (seconds in vehicles, waiting, walking, riding to a station; vehicles; trips that
+    /// ride); the rides of all origins summed per `(trip id, board position, alight position)`;
+    /// and metro gate passes per `(entry station, exit station)`. Sums run in origin order, so
+    /// they are deterministic.
     #[pyo3(signature = (
         origins, departures, weights, zone_count, egress_zones, egress_stops, egress_seconds,
-        max_travel_time, max_rounds, min_transfer_time, ride_access=None,
+        metro_trip, station, max_travel_time, max_rounds, min_transfer_time, ride_access=None,
     ))]
     #[allow(clippy::too_many_arguments)] // mirrors the columnar layout of the inputs
     #[allow(clippy::type_complexity)] // one tuple of arrays per origin, nine arrays back
@@ -672,18 +737,30 @@ impl Timetable {
         egress_zones: PyReadonlyArray1<'_, u32>,
         egress_stops: PyReadonlyArray1<'_, u32>,
         egress_seconds: PyReadonlyArray1<'_, u32>,
+        metro_trip: PyReadonlyArray1<'_, u8>,
+        station: PyReadonlyArray1<'_, u32>,
         max_travel_time: u32,
         max_rounds: usize,
         min_transfer_time: u32,
         ride_access: RideAccess<'py>,
     ) -> PyResult<(
         (U32Array<'py>, U32Array<'py>, F64Array<'py>, F64Array<'py>, F64Array<'py>),
+        Bound<'py, PyArray2<f64>>,
         (U32Array<'py>, U32Array<'py>, U32Array<'py>, F64Array<'py>),
+        (U32Array<'py>, U32Array<'py>, F64Array<'py>),
     )> {
         check_rides(&ride_access, origins.len())?;
         let stop_count = self.inner.stop_count();
         let egress =
             zone_egress(stop_count, zone_count, &egress_zones, &egress_stops, &egress_seconds)?;
+        let station = slice(&station, "station")?.to_vec();
+        if station.len() != stop_count {
+            return Err(value_error("station must have one entry per stop"));
+        }
+        let metro = core::MetroNetwork {
+            metro_trip: slice(&metro_trip, "metro_trip")?.iter().map(|&m| m != 0).collect(),
+            station, // UNREACHED (u32::MAX) is NO_STATION
+        };
         let sets = origins
             .iter()
             .enumerate()
@@ -720,49 +797,30 @@ impl Timetable {
                             walk_only,
                             targets,
                             trips,
+                            &metro,
                             max_travel_time,
                         )
                     })
                     .collect::<Result<Vec<_>, _>>()
             })
             .map_err(value_error)?;
-        let (mut origin, mut zone, mut transit, mut walked, mut unreached) =
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
-        let mut rides: std::collections::BTreeMap<(u32, u32, u32), f64> =
-            std::collections::BTreeMap::new();
-        for (i, result) in results.into_iter().enumerate() {
-            let i = u32::try_from(i).map_err(value_error)?;
-            origin.extend(std::iter::repeat_n(i, result.zones.len()));
-            zone.extend(result.zones);
-            transit.extend(result.transit);
-            walked.extend(result.walked);
-            unreached.extend(result.unreached);
-            for (trip, board, alight, n) in result.rides {
-                *rides.entry((trip, board, alight)).or_insert(0.0) += n;
-            }
-        }
-        let (mut trip, mut board, mut alight, mut passengers) =
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-        for ((t, b, a), n) in rides {
-            trip.push(t);
-            board.push(b);
-            alight.push(a);
-            passengers.push(n);
-        }
+        let m = merge_assignments(results)?;
         Ok((
             (
-                origin.into_pyarray(py),
-                zone.into_pyarray(py),
-                transit.into_pyarray(py),
-                walked.into_pyarray(py),
-                unreached.into_pyarray(py),
+                m.origin.into_pyarray(py),
+                m.zone.into_pyarray(py),
+                m.transit.into_pyarray(py),
+                m.walked.into_pyarray(py),
+                m.unreached.into_pyarray(py),
             ),
+            m.totals.into_pyarray(py),
             (
-                trip.into_pyarray(py),
-                board.into_pyarray(py),
-                alight.into_pyarray(py),
-                passengers.into_pyarray(py),
+                m.trip.into_pyarray(py),
+                m.board.into_pyarray(py),
+                m.alight.into_pyarray(py),
+                m.passengers.into_pyarray(py),
             ),
+            (m.entry.into_pyarray(py), m.exit.into_pyarray(py), m.gate_trips.into_pyarray(py)),
         ))
     }
 
