@@ -3,6 +3,7 @@
 //! See `docs/phases/02-routing-engine.md` for the implementation plan.
 
 mod assign;
+mod bundles;
 mod choice;
 mod journey;
 mod matrix;
@@ -13,6 +14,10 @@ mod timetable;
 mod walkgraph;
 
 pub use assign::{zone_assign, DepartureProfile, JourneyTotals, ZoneAssignment};
+pub use bundles::{
+    origin_bundles, Alternatives, Bundle, ChoiceSet, CostNetwork, CostParams, Fares, OriginBundles,
+    BUS_ONLY, FASTEST, ONE_TRANSFER,
+};
 pub use journey::{plan, Journey, Leg};
 pub use matrix::{zone_travel_times, MatrixError, ZoneEgress, ZoneTimes, NOT_REACHED};
 pub use paths::{zone_paths, MetroNetwork, ZonePaths, NO_STATION};

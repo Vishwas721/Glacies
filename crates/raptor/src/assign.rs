@@ -35,7 +35,7 @@ pub struct JourneyTotals {
 }
 
 impl JourneyTotals {
-    fn add(&mut self, other: &Self, factor: f64) {
+    pub(crate) fn add(&mut self, other: &Self, factor: f64) {
         self.in_vehicle_s += other.in_vehicle_s * factor;
         self.waiting_s += other.waiting_s * factor;
         self.walking_s += other.walking_s * factor;
@@ -44,7 +44,7 @@ impl JourneyTotals {
         self.ridden += other.ridden * factor;
     }
 
-    fn of(journey: &Journey, rides: &[(StopIdx, u32)]) -> Self {
+    pub(crate) fn of(journey: &Journey, rides: &[(StopIdx, u32)]) -> Self {
         let riding = match journey.legs.first() {
             Some(&Leg::Access { to, duration }) if rides.contains(&(to, duration)) => duration,
             _ => 0,

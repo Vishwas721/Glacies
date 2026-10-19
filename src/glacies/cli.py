@@ -407,17 +407,55 @@ def build_station_flows(city: CityOption = None) -> None:
 
 
 @build_app.command("assignment")
-def build_assignment(city: CityOption = None) -> None:
-    """All-or-nothing assignment of the demand onto scheduled trips: loads (Simulated)."""
+def build_assignment(
+    city: CityOption = None,
+    aon: Annotated[
+        bool, typer.Option("--aon", help="All-or-nothing on the fastest journey, no crowding.")
+    ] = False,
+    no_fares: Annotated[
+        bool, typer.Option("--no-fares", help="Leave fares out of the generalised cost.")
+    ] = False,
+    theta: Annotated[
+        float | None, typer.Option(help="Logit scale per minute instead of assignment.toml's.")
+    ] = None,
+    variant: Annotated[
+        str | None,
+        typer.Option(help="Write to assignment/<scenario>-<variant> (default: from the options)."),
+    ] = None,
+) -> None:
+    """Assign the demand onto scheduled trips with crowding (Simulated loads and flows)."""
     settings, config = _load(city)
 
     def progress(done: int, total: int) -> None:
         typer.echo(f"  {done:,}/{total:,} origins", err=True)
 
+    def iteration(n: int, gap: float) -> None:
+        typer.echo(f"  iteration {n}: gap {gap:.4f}", err=True)
+
+    if variant is None:
+        parts = (["aon"] if aon else []) + (["no-fares"] if no_fares else [])
+        parts += [f"theta{theta:g}"] if theta is not None else []
+        variant = "-".join(parts) or None
     try:
-        manifest, out_dir = pipeline.run_assignment(settings, config, on_chunk=progress)
+        manifest, out_dir = pipeline.run_assignment(
+            settings,
+            config,
+            method="aon" if aon else "msa",
+            use_fares=False if no_fares else None,
+            theta=theta,
+            variant=variant,
+            on_chunk=progress,
+            on_iteration=iteration,
+        )
     except PipelineError as exc:
         _fail(str(exc))
+    if manifest.msa is not None:
+        x = manifest.msa
+        typer.echo(
+            f"  {x.alternatives:,} alternatives for {x.pairs:,} pairs; "
+            f"{'converged' if x.converged else 'NOT converged'} after {x.iterations} iterations "
+            f"(gap {x.final_gap:.4f})"
+        )
     s = manifest.stats
     typer.echo(f"assignment (Simulated) -> {out_dir}")
     typer.echo(

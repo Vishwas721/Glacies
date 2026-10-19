@@ -13,6 +13,7 @@ import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -49,8 +50,10 @@ from glacies.assignment.aon import (
 )
 from glacies.assignment.metrics import city_metrics, route_metrics, station_fit, with_distances
 from glacies.assignment.metrics import station_flows as assignment_station_flows
+from glacies.assignment.msa import build_choice_set, msa_flows, row_tables, run_msa
 from glacies.assignment.report import build_report as assignment_report
 from glacies.assignment.writer import (
+    CONVERGENCE_NAME,
     LOADS_NAME,
     OD_NAME,
     ROUTES_NAME,
@@ -58,6 +61,7 @@ from glacies.assignment.writer import (
     STOPS_NAME,
     AssignmentInput,
     AssignmentManifest,
+    MsaSummary,
     config_input,
     write_assignment,
 )
@@ -955,19 +959,35 @@ def run_assignment(
     config: CityConfig,
     *,
     scenario: str = "baseline",
+    method: Literal["msa", "aon"] = "msa",
+    use_fares: bool | None = None,
+    theta: float | None = None,
+    variant: str | None = None,
     on_chunk: Callable[[int, int], None] | None = None,
+    on_iteration: Callable[[int, float], None] | None = None,
 ) -> tuple[AssignmentManifest, Path]:
-    """All-or-nothing assignment of the demand OD onto scheduled trips (Phase 6 M1-M2).
+    """Assign the demand OD onto scheduled trips (Phase 6): the crowding loop by default
+    (ADR 0018), or all-or-nothing on the fastest journey (``method="aon"``, ADR 0017).
 
     Uses the same walks and rides to stations as demand, so a trip can only take journeys the
-    demand model costed. If the calibration ridership has been built, metro gate entries are
-    scored against it like demand calibration does.
+    demand model costed. ``use_fares`` and ``theta`` override ``[route_choice]``; results go to
+    ``assignment/<scenario>`` or, with ``variant``, ``assignment/<scenario>-<variant>``. If the
+    calibration ridership has been built, metro gate entries are scored against it.
     """
     demand, mode = _demand_settings(settings, config)
     try:
         assignment = load_assignment(settings.assignment_config_path)
     except CityConfigError as exc:
         raise PipelineError(str(exc)) from exc
+    overrides: dict[str, object] = {}
+    if use_fares is not None:
+        overrides["use_fares"] = use_fares
+    if theta is not None:
+        overrides["theta_per_min"] = theta
+    if overrides:
+        assignment = assignment.model_copy(
+            update={"route_choice": assignment.route_choice.model_copy(update=overrides)}
+        )
     base = city_dir(settings, config)
     stages = {
         "transit": base / "transit",
@@ -989,23 +1009,51 @@ def run_assignment(
         stop_times = pl.read_parquet(stages["transit"] / "stop_times.parquet").sort(
             "trip_idx", "position"
         )
-        flows = assign_od(
-            router,
-            walks,
-            pl.read_parquet(stages["demand"] / "od.parquet"),
-            stop_times,
-            window,
-            config.accessibility.max_travel_time_min * 60,
-            metro.metro_trip,
-            metro.station,
-            on_chunk=on_chunk,
-        )
-        loads = with_distances(
-            segment_loads(
-                stop_times, flows, trip_vehicles(router.routes, router.trips, assignment.capacity)
-            ),
-            router.stops,
-        )
+        od = pl.read_parquet(stages["demand"] / "od.parquet")
+        vehicles = trip_vehicles(router.routes, router.trips, assignment.capacity)
+        max_travel_time_s = config.accessibility.max_travel_time_min * 60
+        convergence: pl.DataFrame | None = None
+        msa_summary: MsaSummary | None = None
+        if method == "aon":
+            flows = assign_od(
+                router,
+                walks,
+                od,
+                stop_times,
+                window,
+                max_travel_time_s,
+                metro.metro_trip,
+                metro.station,
+                on_chunk=on_chunk,
+            )
+        else:
+            rows = row_tables(stop_times, router.stops)
+            choices = build_choice_set(
+                router,
+                walks,
+                od,
+                rows,
+                window,
+                metro,
+                assignment,
+                demand.ride_access,
+                max_travel_time_s,
+                on_chunk=on_chunk,
+            )
+            result = run_msa(choices, rows, vehicles, assignment, on_iteration=on_iteration)
+            flows = msa_flows(od, choices, result)
+            convergence = result.convergence
+            msa_summary = MsaSummary(
+                theta_per_min=assignment.route_choice.theta_per_min,
+                use_fares=assignment.route_choice.use_fares,
+                pairs=choices.pair_count,
+                alternatives=choices.alt_count,
+                rides=choices.ride_count,
+                iterations=convergence.height - 1,  # row 0 is the uncrowded start
+                converged=result.converged,
+                final_gap=float(convergence["gap"][-1]) if convergence.height > 1 else 0.0,
+            )
+        loads = with_distances(segment_loads(stop_times, flows, vehicles), router.stops)
         stats = check_and_summarise(flows, loads, report_window)
         stations = assignment_station_flows(flows, metro.stations)
         fits: dict[str, Fit] = {}
@@ -1023,16 +1071,19 @@ def run_assignment(
         .join(parents, on="parent_stop_idx", how="left")
         .select("stop_idx", pl.coalesce("name", "own").alias("name"))
     )
-    out_dir = base / "assignment" / scenario
+    out_dir = base / "assignment" / (scenario if variant is None else f"{scenario}-{variant}")
+    tables = {
+        LOADS_NAME: loads,
+        STOPS_NAME: stop_flows(stop_times, flows),
+        OD_NAME: flows.od,
+        ROUTES_NAME: routes,
+        ASSIGNED_STATIONS: stations,
+        STATION_PAIRS_NAME: flows.gates,
+    }
+    if convergence is not None:
+        tables[CONVERGENCE_NAME] = convergence
     manifest = write_assignment(
-        {
-            LOADS_NAME: loads,
-            STOPS_NAME: stop_flows(stop_times, flows),
-            OD_NAME: flows.od,
-            ROUTES_NAME: routes,
-            ASSIGNED_STATIONS: stations,
-            STATION_PAIRS_NAME: flows.gates,
-        },
+        tables,
         out_dir,
         city=config.city.id,
         scenario=scenario,
@@ -1042,14 +1093,15 @@ def run_assignment(
                 AssignmentInput(stage=stage, manifest_sha256=sha256_file(d / "manifest.json"))
                 for stage, d in stages.items()
             ),
-            config_input(window, assignment.capacity),
+            config_input(assignment),
         ],
         stats=stats,
         metrics=city_metrics(flows, loads, report_window),
         station_fits=fits,
         report=lambda m: assignment_report(
-            m, loads, router.routes, router.trips, stop_names, report_window, routes
+            m, loads, router.routes, router.trips, stop_names, report_window, routes, convergence
         ),
+        msa=msa_summary,
     )
     return manifest, out_dir
 

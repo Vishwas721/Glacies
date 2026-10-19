@@ -9,6 +9,7 @@ between consecutive stops (Estimated), so passenger-km run a little short of roa
 from __future__ import annotations
 
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 from pydantic import BaseModel
 
@@ -16,7 +17,16 @@ from glacies.assignment.aon import AonFlows
 from glacies.cities import DemandCalibration
 from glacies.demand.calibrate import Fit, fit, station_sets
 
+F64 = npt.NDArray[np.float64]
 EARTH_RADIUS_KM = 6371.0088
+
+
+def great_circle_km(lat0: F64, lon0: F64, lat1: F64, lon1: F64) -> F64:
+    """Haversine distance in km between points given in degrees."""
+    a0, a1 = np.radians(lat0), np.radians(lat1)
+    dlat, dlon = a1 - a0, np.radians(lon1 - lon0)
+    h = np.sin(dlat / 2) ** 2 + np.cos(a0) * np.cos(a1) * np.sin(dlon / 2) ** 2
+    return np.asarray(2 * EARTH_RADIUS_KM * np.arcsin(np.sqrt(h)), dtype=np.float64)
 
 
 def with_distances(loads: pl.DataFrame, stops: pl.DataFrame) -> pl.DataFrame:
@@ -31,11 +41,12 @@ def with_distances(loads: pl.DataFrame, stops: pl.DataFrame) -> pl.DataFrame:
         on="to_stop_idx",
         how="left",
     )
-    lat0, lat1 = np.radians(table["lat0"].to_numpy()), np.radians(table["lat1"].to_numpy())
-    dlat = lat1 - lat0
-    dlon = np.radians(table["lon1"].to_numpy() - table["lon0"].to_numpy())
-    h = np.sin(dlat / 2) ** 2 + np.cos(lat0) * np.cos(lat1) * np.sin(dlon / 2) ** 2
-    km = 2 * EARTH_RADIUS_KM * np.arcsin(np.sqrt(h))
+    km = great_circle_km(
+        table["lat0"].to_numpy(),
+        table["lon0"].to_numpy(),
+        table["lat1"].to_numpy(),
+        table["lon1"].to_numpy(),
+    )
     return table.drop("lat0", "lon0", "lat1", "lon1").with_columns(pl.Series("km", km))
 
 

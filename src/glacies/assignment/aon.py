@@ -57,6 +57,78 @@ def _row_offsets(stop_times: pl.DataFrame) -> npt.NDArray[np.int64]:
     return offsets
 
 
+def pair_table(od: pl.DataFrame) -> pl.DataFrame:
+    """origin_zone, dest_zone, trips: purposes summed, empty pairs dropped, sorted."""
+    return (
+        od.group_by("origin_zone", "dest_zone")
+        .agg(pl.col("trips").sum())
+        .filter(pl.col("trips") > 0)
+        .sort("origin_zone", "dest_zone")
+    )
+
+
+def by_origin(pairs: pl.DataFrame) -> tuple[list[int], list[U32], list[F64]]:
+    """Origins in order, with their destinations and trips (the router's batch layout)."""
+    grouped = pairs.group_by("origin_zone", maintain_order=True).agg("dest_zone", "trips")
+    return (
+        grouped["origin_zone"].to_list(),
+        [np.asarray(d, dtype=np.uint32) for d in grouped["dest_zone"].to_list()],
+        [np.asarray(t, dtype=np.float64) for t in grouped["trips"].to_list()],
+    )
+
+
+def flows_from_totals(
+    pairs: pl.DataFrame,
+    order: tuple[U32, U32],
+    outcomes: tuple[F64, F64, F64],
+    totals: F64,
+    boardings: F64,
+    alightings: F64,
+    gates: tuple[U32, U32, F64],
+) -> AonFlows:
+    """Assemble flows from the router's per-pair results.
+
+    ``order`` (origin, destination per row) must match ``pairs``; ``outcomes`` are transit,
+    walked and unreached trips; ``totals`` the ``(pairs, 6)`` trip-weighted sums.
+    """
+    origin, dest = order
+    if not (
+        np.array_equal(origin, pairs["origin_zone"].to_numpy())
+        and np.array_equal(dest, pairs["dest_zone"].to_numpy())
+    ):
+        raise AssignmentError("the router returned pairs in a different order")
+    transit, walked, unreached = outcomes
+    sums = {f"_{name}": totals[:, i] for i, name in enumerate(JOURNEY_COLUMNS)}
+
+    def per_trip(name: str, scale: float) -> pl.Expr:
+        return (
+            pl.when(pl.col("transit") > 0)
+            .then(pl.col(f"_{name}") / pl.col("transit") / scale)
+            .otherwise(None)
+        )
+
+    od = (
+        pairs.with_columns(
+            pl.Series("transit", transit, dtype=pl.Float64),
+            pl.Series("walked", walked, dtype=pl.Float64),
+            pl.Series("unreached", unreached, dtype=pl.Float64),
+            *(pl.Series(k, v, dtype=pl.Float64) for k, v in sums.items()),
+        )
+        .with_columns(
+            *(per_trip(name, 60.0).alias(f"{name}_min") for name in JOURNEY_COLUMNS[:4]),
+            per_trip("vehicles", 1.0).alias("vehicles"),
+            pl.col("_ridden").alias("ridden"),
+        )
+        .drop(list(sums))
+    )
+    entry, exit_, trips = gates
+    gate_table = pl.DataFrame(
+        {"entry_station": entry, "exit_station": exit_, "trips": trips},
+        schema={"entry_station": pl.UInt32, "exit_station": pl.UInt32, "trips": pl.Float64},
+    ).sort("entry_station", "exit_station")
+    return AonFlows(od=od, boardings=boardings, alightings=alightings, gates=gate_table)
+
+
 def assign_od(
     router: Router,
     walks: ZoneWalks,
@@ -75,22 +147,14 @@ def assign_od(
     ``metro_trip`` (by trip_idx) and ``station`` (by stop_idx) define the metro's fare gates.
     """
     routing: Routing = router.routing
-    pairs = (
-        od.group_by("origin_zone", "dest_zone")
-        .agg(pl.col("trips").sum())
-        .filter(pl.col("trips") > 0)
-        .sort("origin_zone", "dest_zone")
-    )
-    grouped = pairs.group_by("origin_zone", maintain_order=True).agg("dest_zone", "trips")
-    origins = grouped["origin_zone"].to_list()
-    dests = [np.asarray(d, dtype=np.uint32) for d in grouped["dest_zone"].to_list()]
-    trips = [np.asarray(t, dtype=np.float64) for t in grouped["trips"].to_list()]
+    pairs = pair_table(od)
+    origins, dests, trips = by_origin(pairs)
     departures = np.array(window.departures(), dtype=np.uint32)
     weights = np.array(window.weights(), dtype=np.float64)
     offsets = _row_offsets(stop_times)
     boardings = np.zeros(stop_times.height, dtype=np.float64)
     alightings = np.zeros(stop_times.height, dtype=np.float64)
-    parts = []
+    columns: list[list[npt.NDArray[np.generic]]] = [[] for _ in range(6)]
     gates: dict[tuple[int, int], float] = {}
     for start in range(0, len(origins), CHUNK_ORIGINS):
         chunk = range(start, min(start + CHUNK_ORIGINS, len(origins)))
@@ -124,56 +188,33 @@ def assign_od(
             key = (int(entry), int(exit_))
             gates[key] = gates.get(key, 0.0) + float(n)
         ids = np.asarray([origins[k] for k in chunk], dtype=np.uint32)
-        parts.append(
-            pl.DataFrame(
-                {
-                    "origin_zone": ids[o],
-                    "dest_zone": zone,
-                    "transit": transit,
-                    "walked": walked,
-                    "unreached": unreached,
-                }
-                | {f"_{name}": totals[:, i] for i, name in enumerate(JOURNEY_COLUMNS)}
-            )
-        )
+        parts: list[npt.NDArray[np.generic]] = [ids[o], zone, transit, walked, unreached, totals]
+        for column, values in zip(columns, parts, strict=True):
+            column.append(values)
         if on_chunk is not None:
             on_chunk(chunk.stop, len(origins))
-    columns = ["origin_zone", "dest_zone", "transit", "walked", "unreached"]
-    columns += [f"_{name}" for name in JOURNEY_COLUMNS]
-    assigned = (
-        pl.concat(parts) if parts else pl.DataFrame(schema=dict.fromkeys(columns, pl.Float64))
-    )
-
-    def per_trip(name: str, scale: float) -> pl.Expr:
-        return (
-            pl.when(pl.col("transit") > 0)
-            .then(pl.col(f"_{name}") / pl.col("transit") / scale)
-            .otherwise(None)
-        )
-
-    result = (
-        pairs.join(assigned, on=["origin_zone", "dest_zone"], how="left", maintain_order="left")
-        .with_columns(
-            *(per_trip(name, 60.0).alias(f"{name}_min") for name in JOURNEY_COLUMNS[:4]),
-            per_trip("vehicles", 1.0).alias("vehicles"),
-            pl.col("_ridden").alias("ridden"),
-        )
-        .drop([f"_{name}" for name in JOURNEY_COLUMNS])
-    )
+    if not columns[0]:
+        empty_u32, empty = np.zeros(0, np.uint32), np.zeros(0)
+        columns = [[empty_u32], [empty_u32], [empty], [empty], [empty], [np.zeros((0, 6))]]
+    o_all, z_all, t_all, w_all, u_all, totals_all = (np.concatenate(c) for c in columns)
     keys = sorted(gates)
-    gate_table = pl.DataFrame(
-        {
-            "entry_station": [k[0] for k in keys],
-            "exit_station": [k[1] for k in keys],
-            "trips": [gates[k] for k in keys],
-        },
-        schema={"entry_station": pl.UInt32, "exit_station": pl.UInt32, "trips": pl.Float64},
+    return flows_from_totals(
+        pairs,
+        (o_all.astype(np.uint32), z_all.astype(np.uint32)),
+        (t_all, w_all, u_all),
+        totals_all,
+        boardings,
+        alightings,
+        (
+            np.array([k[0] for k in keys], dtype=np.uint32),
+            np.array([k[1] for k in keys], dtype=np.uint32),
+            np.array([gates[k] for k in keys], dtype=np.float64),
+        ),
     )
-    return AonFlows(od=result, boardings=boardings, alightings=alightings, gates=gate_table)
 
 
 def trip_vehicles(routes: pl.DataFrame, trips: pl.DataFrame, capacity: Capacity) -> pl.DataFrame:
-    """trip_idx, vehicle, seats, capacity, crush_capacity for every trip in ``trips``.
+    """trip_idx, vehicle, seats, standing_area_m2, capacity, crush_capacity per trip.
 
     Standees are whole people: ``floor(density x standing area)``.
     """
@@ -198,6 +239,7 @@ def trip_vehicles(routes: pl.DataFrame, trips: pl.DataFrame, capacity: Capacity)
         {
             "vehicle": [v.name for v in capacity.vehicles],
             "seats": [v.seats for v in capacity.vehicles],
+            "standing_area_m2": [v.standing_area_m2 for v in capacity.vehicles],
             "capacity": [
                 v.seats + int(capacity.design_standing_per_m2 * v.standing_area_m2)
                 for v in capacity.vehicles
@@ -210,6 +252,7 @@ def trip_vehicles(routes: pl.DataFrame, trips: pl.DataFrame, capacity: Capacity)
         schema={
             "vehicle": pl.String,
             "seats": pl.UInt32,
+            "standing_area_m2": pl.Float64,
             "capacity": pl.UInt32,
             "crush_capacity": pl.UInt32,
         },

@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from glacies import __version__
 from glacies.assignment.aon import AonStats
 from glacies.assignment.metrics import CityMetrics
-from glacies.cities import AssignmentWindow, Capacity
+from glacies.cities import AssignmentConfig, AssignmentWindow
 from glacies.demand.calibrate import Fit
 from glacies.fsutil import rename_with_retry
 from glacies.provenance import DataNature, sha256_file
@@ -26,6 +26,7 @@ OD_NAME = "od_assignment.parquet"
 ROUTES_NAME = "routes.parquet"
 STATIONS_NAME = "stations.parquet"
 STATION_PAIRS_NAME = "station_pairs.parquet"
+CONVERGENCE_NAME = "convergence.parquet"
 
 COLUMN_NATURE: dict[str, dict[str, DataNature]] = {
     LOADS_NAME: {
@@ -65,7 +66,25 @@ COLUMN_NATURE: dict[str, dict[str, DataNature]] = {
         "observed": DataNature.OBSERVED,
     },
     STATION_PAIRS_NAME: {"trips": DataNature.SIMULATED},
+    CONVERGENCE_NAME: {"gap": DataNature.SIMULATED, "mean_cost_min": DataNature.SIMULATED},
 }
+
+METHOD_AON = "all-or-nothing, fastest journey per departure, expected flows"
+METHOD_MSA = (
+    "logit over fastest, bus-only and one-transfer alternatives with crowding (TAG curve), "
+    "method of successive averages"
+)
+
+
+class MsaSummary(BaseModel):
+    theta_per_min: float
+    use_fares: bool
+    pairs: int
+    alternatives: int
+    rides: int
+    iterations: int
+    converged: bool
+    final_gap: float
 
 
 class AssignmentInput(BaseModel):
@@ -85,6 +104,7 @@ class AssignmentManifest(BaseModel):
     inputs: list[AssignmentInput]
     stats: AonStats
     metrics: CityMetrics
+    msa: MsaSummary | None = None
     # Simulated gate entries against observed ones per station set (training, held_out,
     # excluded), scored like demand calibration; empty when no ridership was built.
     station_fits: dict[str, Fit] = {}
@@ -92,9 +112,9 @@ class AssignmentManifest(BaseModel):
     outputs: dict[str, str] = {}
 
 
-def config_input(window: AssignmentWindow, capacity: Capacity) -> AssignmentInput:
-    """The settings the outputs depend on (fares and crowding are not used by AON yet)."""
-    text = window.model_dump_json() + capacity.model_dump_json()
+def config_input(config: AssignmentConfig) -> AssignmentInput:
+    """The settings the outputs depend on, after any command-line overrides."""
+    text = config.model_dump_json()
     return AssignmentInput(
         stage="assignment.toml", manifest_sha256=hashlib.sha256(text.encode()).hexdigest()
     )
@@ -112,6 +132,7 @@ def write_assignment(
     metrics: CityMetrics,
     station_fits: dict[str, Fit],
     report: Callable[[AssignmentManifest], str],
+    msa: MsaSummary | None = None,
 ) -> AssignmentManifest:
     """Write ``tables`` (file name -> frame), the manifest and the report, atomically."""
     manifest = AssignmentManifest(
@@ -119,7 +140,7 @@ def write_assignment(
         scenario=scenario,
         builder_version=__version__,
         nature=DataNature.SIMULATED,
-        method="all-or-nothing, fastest journey per departure, expected flows",
+        method=METHOD_AON if msa is None else METHOD_MSA,
         window=f"{window.window_start}-{window.window_end}",
         report_window=f"{window.report_start}-{window.report_end}",
         departures=len(window.departures()),
@@ -127,6 +148,7 @@ def write_assignment(
         stats=stats,
         metrics=metrics,
         station_fits=station_fits,
+        msa=msa,
         column_nature={k: v for k, v in COLUMN_NATURE.items() if k in tables},
     )
     staging = out_dir.with_name(f".{out_dir.name}.staging")

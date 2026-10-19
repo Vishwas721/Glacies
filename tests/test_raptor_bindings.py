@@ -228,3 +228,59 @@ def test_zone_assign_many_spreads_trips_over_the_profile() -> None:
     assert totals[1].tolist() == [2400.0, 0.0, 480.0, 0.0, 4.0, 0.0]
     entry, exit_, gate_trips = gates
     assert list(zip(entry, exit_, gate_trips, strict=True)) == [(10, 11, 15.0)]
+
+
+def test_choice_set_routes_alternatives_and_splits_them() -> None:
+    # crates/raptor/tests/bundles.rs: metro trip 1 A 08:00 -> C 08:10, bus trip 2 A 08:00 ->
+    # B 08:10 -> C 08:20; 100 trips to the zone a minute from C. Stop-time rows: trip 1 at
+    # 0-1, trip 2 at 2-4.
+    tt = build(
+        3,
+        [(1, [(A, "08:00"), (C, "08:10")]), (2, [(A, "08:00"), (B, "08:10"), (C, "08:20")])],
+    )
+    bus_only = tt.retain_trips(np.array([1, 0, 1], dtype=np.uint8))
+    assert bus_only.trip_count == 1
+    f64 = np.float64
+    row_offset = arr(0, 0, 2)
+    choices = gr.ChoiceSet()
+    choices.extend(
+        tt,
+        bus_only,
+        [(arr(A), arr(60), NONE, NONE, arr(0), np.array([100.0], dtype=f64))],
+        arr(7),
+        arr(hm("07:59")),
+        np.array([1.0], dtype=f64),
+        1,
+        arr(0),
+        arr(C),
+        arr(60),
+        np.array([0, 1, 0], dtype=np.uint8),
+        arr(10, 2**32 - 1, 11),
+        row_offset,
+        np.array([0.0, 5.0, 0.0, 3.0, 6.0], dtype=f64),
+        (2.0, 2.0, 1.0, 5.0),
+        None,
+        7200,
+        4,
+        60,
+    )
+    assert (choices.pair_count, choices.alt_count, choices.ride_count) == (1, 2, 2)
+    origin, dest, transit, _, _ = choices.pairs()
+    assert (origin.tolist(), dest.tolist(), transit.tolist()) == ([7], [0], [100.0])
+    _, kinds, fixed = choices.alternatives()
+    assert kinds.tolist() == [0, 1]
+    assert fixed.tolist() == [4.0, 4.0]
+
+    crowded = np.array([0.0, 600.0, 0.0, 600.0, 1200.0], dtype=f64)
+    costs = choices.costs(crowded, row_offset)
+    assert costs.tolist() == [14.0, 24.0]
+    shares = choices.shares(costs, 0.1)
+    metro = 1 / (1 + np.exp(-1.0))
+    assert shares[0] == pytest.approx(metro)
+    boardings, alightings = choices.loads(shares, row_offset, 5)
+    assert boardings.sum() == pytest.approx(100.0)
+    assert alightings[1] == pytest.approx(100 * metro)
+    totals, (entry, exit_, trips) = choices.summary(shares)
+    assert totals.shape == (1, 6)
+    assert (entry.tolist(), exit_.tolist()) == ([10], [11])
+    assert trips[0] == pytest.approx(100 * metro, rel=1e-6)

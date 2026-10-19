@@ -49,6 +49,7 @@ class Timetable:
         entry_stations: U32 | None = None,
         entry_seconds: U32 | None = None,
     ) -> Timetable: ...
+    def retain_trips(self, keep: npt.NDArray[np.uint8]) -> Timetable: ...
     @property
     def stop_count(self) -> int: ...
     @property
@@ -141,6 +142,44 @@ class Timetable:
         max_rounds: int,
         min_transfer_time: int,
     ) -> list[Journey]: ...
+
+class ChoiceSet:
+    def __init__(self) -> None: ...
+    def extend(
+        self,
+        all: Timetable,
+        bus_only: Timetable,
+        origins: list[tuple[U32, U32, U32, U32, U32, F64]],
+        origin_zones: U32,
+        departures: U32,
+        weights: F64,
+        zone_count: int,
+        egress_zones: U32,
+        egress_stops: U32,
+        egress_seconds: U32,
+        metro_trip: npt.NDArray[np.uint8],
+        station: U32,
+        row_offset: U32,
+        row_km: F64,
+        cost: tuple[float, float, float, float],
+        fares: tuple[list[float], list[int], list[float]] | None,
+        max_travel_time: int,
+        max_rounds: int,
+        min_transfer_time: int,
+        ride_access: list[tuple[U32, U32]] | None = None,
+    ) -> None: ...
+    @property
+    def pair_count(self) -> int: ...
+    @property
+    def alt_count(self) -> int: ...
+    @property
+    def ride_count(self) -> int: ...
+    def pairs(self) -> tuple[U32, U32, F64, F64, F64]: ...
+    def alternatives(self) -> tuple[U32, npt.NDArray[np.uint8], F64]: ...
+    def costs(self, crowded: F64, row_offset: U32) -> F64: ...
+    def shares(self, costs: F64, theta: float) -> F64: ...
+    def loads(self, shares: F64, row_offset: U32, rows: int) -> tuple[F64, F64]: ...
+    def summary(self, shares: F64) -> tuple[npt.NDArray[np.float64], tuple[U32, U32, F64]]: ...
 
 class WalkGraph:
     def __init__(

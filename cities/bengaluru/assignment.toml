@@ -160,3 +160,32 @@ verified = false
 inr_per_hour = 89.0
 source = "AIIB Bangalore Metro Rail Project document (2017), p. 38, from IRC SP:30"
 verified = false
+
+# --- Route choice and the crowding loop (M3) -------------------------------------------------
+# Generalised cost in in-vehicle minutes: walk and wait weights and the transfer penalty from
+# UK DfT TAG unit M3.2 (May 2024) Table 1, p. 20 (verified): walk 1.5-2.0, wait 1.5-2.5,
+# boarding/transfer penalty 2-10 min. We take walk 2.0, wait 2.0 and 5 min (Assumed for
+# Bengaluru; Hong Kong MTR smart-card data put one transfer at 7.9 in-vehicle minutes: Mo et
+# al. 2020, Table 2). Riding to a station counts like in-vehicle time; its fare is separate.
+# No guidance gives the logit scale between alternatives ("a user-defined parameter", TAG M3.2
+# B.2.7); Mo et al. estimate an in-vehicle coefficient of 0.116-0.147 per minute. Fitting it on
+# the training stations' entry level was tried (2026-10-19) and is not identified: 0.06 / 0.12 /
+# 0.24 give levels 1.31 / 1.26 / 1.21 and never reach 1, while held-out R² falls (0.36 / 0.31 /
+# 0.26). 0.12 stays, from Mo et al. (docs/validation/assignment.md).
+# Context, not used: the BMRCL Phase-3A DPR (2024) Table 3-52 gives a bus value of time of
+# 32.72 (2022, units not printed; probably Rs/h), well below [value_of_time].
+[route_choice]
+walk_weight = 2.0
+wait_weight = 2.0
+ride_weight = 1.0
+transfer_penalty_min = 5.0
+theta_per_min = 0.12
+use_fares = true
+source = "DfT TAG M3.2 (May 2024) Table 1 for the ranges; values within them Assumed"
+verified = true
+
+[msa]
+# Assumed (decided with the user 2026-10-19): up to 50 iterations, stop when segment loads
+# change by less than 1 % between iterations.
+max_iterations = 50
+gap = 0.01

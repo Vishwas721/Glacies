@@ -232,3 +232,25 @@ fn earliest_trip_finds_the_first_catchable_departure() {
     assert_eq!(route.earliest_trip(0, t("08:31"), all), None);
     assert_eq!(route.earliest_trip(0, t("08:01"), 1), None); // only trips before index 1
 }
+
+#[test]
+fn retaining_trips_keeps_footpaths_and_station_entries() {
+    let mut b = builder(
+        3,
+        vec![
+            trip(1, &[(A, "08:00"), (B, "08:10")]),
+            trip(2, &[(B, "08:15"), (C, "08:25")]),
+            trip(3, &[(A, "08:30"), (B, "08:40")]),
+        ],
+    );
+    b.add_footpath(B, C, 120).unwrap();
+    b.set_station_entry(C, 7, 240).unwrap();
+    let (tt, _) = b.build();
+
+    assert_eq!(tt.retain_trips(|_| true), tt);
+    let without = tt.retain_trips(|id| id != 2);
+    assert_eq!(without.trip_count(), 2);
+    assert_eq!(without.route_count(), 1); // trip 2's route is gone
+    assert_eq!(without.footpaths(B), tt.footpaths(B));
+    assert_eq!(without.entry_time(C), 240);
+}
