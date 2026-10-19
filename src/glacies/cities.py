@@ -718,6 +718,26 @@ class ValueOfTime(_Strict):
     verified: bool
 
 
+class RouteChoice(_Strict):
+    """Generalised cost and logit of the crowding loop (M3), in in-vehicle minutes. Assumed."""
+
+    walk_weight: float = Field(ge=0)
+    wait_weight: float = Field(ge=0)
+    ride_weight: float = Field(ge=0, description="Riding to a station, per minute.")
+    transfer_penalty_min: float = Field(ge=0)
+    theta_per_min: float = Field(gt=0, description="Logit scale between a pair's alternatives.")
+    use_fares: bool = True
+    source: str = Field(min_length=1)
+    verified: bool
+
+
+class Msa(_Strict):
+    """Method of successive averages: stop at ``gap`` or after ``max_iterations``."""
+
+    max_iterations: int = Field(ge=1)
+    gap: float = Field(gt=0, description="Relative change of segment loads between iterations.")
+
+
 class AssignmentConfig(_Strict):
     """Transit assignment and crowding settings (Phase 6). Every value is Assumed."""
 
@@ -726,6 +746,8 @@ class AssignmentConfig(_Strict):
     crowding: Crowding
     fares: Fares
     value_of_time: ValueOfTime
+    route_choice: RouteChoice
+    msa: Msa
 
 
 def load_assignment(path: Path) -> AssignmentConfig:
