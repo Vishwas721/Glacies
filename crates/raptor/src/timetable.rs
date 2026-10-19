@@ -223,6 +223,50 @@ impl Timetable {
         self.entry[stop.0 as usize].seconds
     }
 
+    /// The same network with only the trips `keep` accepts (by trip id); footpaths and
+    /// station entries stay. Used for route-choice alternatives such as a bus-only network.
+    ///
+    /// # Panics
+    /// Never for a timetable built by [`TimetableBuilder`]: its trips are valid by construction.
+    #[must_use]
+    pub fn retain_trips(&self, keep: impl Fn(u32) -> bool) -> Self {
+        let mut builder = TimetableBuilder::new(self.stop_count);
+        for r in 0..self.routes.len() {
+            let view = self.route(RouteIdx(to_u32(r)));
+            let stops = view.stops().to_vec();
+            for trip in 0..view.trip_count() {
+                let trip_id = view.trip_id(trip);
+                if !keep(trip_id) {
+                    continue;
+                }
+                let positions = 0..stops.len();
+                builder
+                    .add_trip(TripInput {
+                        trip_id,
+                        stops: stops.clone(),
+                        arrivals: positions.clone().map(|p| view.arrival(trip, p)).collect(),
+                        departures: positions.map(|p| view.departure(trip, p)).collect(),
+                    })
+                    .expect("trips of a built timetable are valid");
+            }
+        }
+        for s in 0..self.stop_count {
+            let stop = StopIdx(s);
+            for footpath in self.footpaths(stop) {
+                builder
+                    .add_footpath(stop, footpath.to, footpath.duration)
+                    .expect("footpaths of a built timetable are valid");
+            }
+            let entry = self.entry[s as usize];
+            if let Some(station) = entry.station {
+                builder
+                    .set_station_entry(stop, station, entry.seconds)
+                    .expect("stops of a built timetable are valid");
+            }
+        }
+        builder.build().0
+    }
+
     /// Entry seconds for a footpath `from -> to`: free within one stop or one station.
     ///
     /// # Panics
