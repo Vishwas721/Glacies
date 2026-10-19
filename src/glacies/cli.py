@@ -426,6 +426,14 @@ def build_assignment(city: CityOption = None) -> None:
         f"boardings; {s.peak_segments_over_capacity:,} of {s.peak_segments:,} peak segments "
         f"above capacity ({s.peak_segments_over_crush:,} above crush)"
     )
+    m = manifest.metrics
+    typer.echo(
+        f"  per transit trip {m.mean_travel_min:.1f} min ({m.mean_waiting_min:.1f} waiting), "
+        f"{m.transfers_per_trip:.2f} transfers; crowding {m.peak_crowded_pkm_share:.1%} of peak "
+        f"passenger-km; {m.metro_entries:,.0f} metro entries"
+    )
+    for name, fit in manifest.station_fits.items():
+        typer.echo(f"  {name} stations: R2 {fit.r2_share:.2f}, level {fit.level_ratio:.2f}")
 
 
 @build_app.command("ridership")

@@ -1,4 +1,4 @@
-"""All-or-nothing transit assignment of the OD matrix onto scheduled trips (Phase 6 M1).
+"""All-or-nothing transit assignment of the OD matrix onto scheduled trips (Phase 6 M1-M2).
 
 Each OD pair's trips leave home over the assignment window in proportion to the departure
 profile (``assignment.toml``), only at departures that reach the destination within the time
@@ -13,52 +13,25 @@ crowding yet (M3). Every flow is **Simulated**: Estimated demand routed on the t
 
 from __future__ import annotations
 
-import hashlib
-import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 import polars as pl
 from pydantic import BaseModel
 
-from glacies import __version__
 from glacies.analytics.travel_times import ZoneWalks
 from glacies.cities import AssignmentWindow, Capacity, Routing
-from glacies.fsutil import rename_with_retry
-from glacies.provenance import DataNature, sha256_file
 from glacies.routing.network import Router
 
 F64 = npt.NDArray[np.float64]
+U32 = npt.NDArray[np.uint32]
 CHUNK_ORIGINS = 256
-MANIFEST_NAME = "manifest.json"
-REPORT_NAME = "BUILD_REPORT.md"
-LOADS_NAME = "loads.parquet"
-STOPS_NAME = "stop_flows.parquet"
-OD_NAME = "od_assignment.parquet"
+# Per transit trip of each pair, in this column order from the router (seconds, count, trips).
+JOURNEY_COLUMNS = ("in_vehicle", "waiting", "walking", "riding", "vehicles", "ridden")
 # Relative tolerance of the conservation checks (sums of many fractional trips).
 CONSERVATION_RTOL = 1e-9
-
-COLUMN_NATURE: dict[str, dict[str, DataNature]] = {
-    LOADS_NAME: {
-        "boardings": DataNature.SIMULATED,
-        "alightings": DataNature.SIMULATED,
-        "load": DataNature.SIMULATED,
-        "capacity": DataNature.ASSUMED,
-        "crush_capacity": DataNature.ASSUMED,
-        "load_factor": DataNature.SIMULATED,
-        "crush_factor": DataNature.SIMULATED,
-    },
-    STOPS_NAME: {"boardings": DataNature.SIMULATED, "alightings": DataNature.SIMULATED},
-    OD_NAME: {
-        "trips": DataNature.ESTIMATED,
-        "transit": DataNature.SIMULATED,
-        "walked": DataNature.SIMULATED,
-        "unreached": DataNature.SIMULATED,
-    },
-}
 
 
 class AssignmentError(ValueError):
@@ -67,9 +40,13 @@ class AssignmentError(ValueError):
 
 @dataclass(frozen=True)
 class AonFlows:
-    od: pl.DataFrame  # origin_zone, dest_zone, trips, transit, walked, unreached
+    # origin_zone, dest_zone, trips, transit, walked, unreached; per transit trip of the pair
+    # (null without one): in_vehicle_min, waiting_min, walking_min, riding_min, vehicles; and
+    # ridden, the trips whose journey starts with a ride to a station.
+    od: pl.DataFrame
     boardings: F64  # per stop_times row (trip_idx, position order)
     alightings: F64
+    gates: pl.DataFrame  # entry_station, exit_station, trips: metro fare-gate passes
 
 
 def _row_offsets(stop_times: pl.DataFrame) -> npt.NDArray[np.int64]:
@@ -87,12 +64,15 @@ def assign_od(
     stop_times: pl.DataFrame,
     window: AssignmentWindow,
     max_travel_time_s: int,
+    metro_trip: npt.NDArray[np.uint8],
+    station: U32,
     *,
     on_chunk: Callable[[int, int], None] | None = None,
 ) -> AonFlows:
     """Assign ``od`` (origin_zone, dest_zone, trips; purposes are summed) onto the trips.
 
     ``stop_times`` must be sorted by trip_idx and position, as the canonical table is.
+    ``metro_trip`` (by trip_idx) and ``station`` (by stop_idx) define the metro's fare gates.
     """
     routing: Routing = router.routing
     pairs = (
@@ -111,31 +91,38 @@ def assign_od(
     boardings = np.zeros(stop_times.height, dtype=np.float64)
     alightings = np.zeros(stop_times.height, dtype=np.float64)
     parts = []
+    gates: dict[tuple[int, int], float] = {}
     for start in range(0, len(origins), CHUNK_ORIGINS):
         chunk = range(start, min(start + CHUNK_ORIGINS, len(origins)))
         batch = [
             (*walks.access[origins[k]], *walks.walk_only[origins[k]], dests[k], trips[k])
             for k in chunk
         ]
-        (o, zone, transit, walked, unreached), (trip, board, alight, passengers) = (
+        (o, zone, transit, walked, unreached), totals, rides, passes = (
             router.timetable.zone_assign_many(
                 batch,
                 departures,
                 weights,
                 len(walks.access),
                 *walks.egress,
+                metro_trip,
+                station,
                 max_travel_time_s,
                 routing.max_rounds,
                 routing.min_transfer_time_s,
                 walks.rides([origins[k] for k in chunk]),
             )
         )
+        trip, board, alight, passengers = rides
         base = offsets[trip]
         if (base < 0).any():
             raise AssignmentError("a ride references a trip missing from stop_times")
         # Sequential, in origin order: the float sums are the same on every run.
         np.add.at(boardings, base + board, passengers)
         np.add.at(alightings, base + alight, passengers)
+        for entry, exit_, n in zip(*passes, strict=True):
+            key = (int(entry), int(exit_))
+            gates[key] = gates.get(key, 0.0) + float(n)
         ids = np.asarray([origins[k] for k in chunk], dtype=np.uint32)
         parts.append(
             pl.DataFrame(
@@ -146,18 +133,43 @@ def assign_od(
                     "walked": walked,
                     "unreached": unreached,
                 }
+                | {f"_{name}": totals[:, i] for i, name in enumerate(JOURNEY_COLUMNS)}
             )
         )
         if on_chunk is not None:
             on_chunk(chunk.stop, len(origins))
     columns = ["origin_zone", "dest_zone", "transit", "walked", "unreached"]
+    columns += [f"_{name}" for name in JOURNEY_COLUMNS]
     assigned = (
         pl.concat(parts) if parts else pl.DataFrame(schema=dict.fromkeys(columns, pl.Float64))
     )
-    result = pairs.join(
-        assigned, on=["origin_zone", "dest_zone"], how="left", maintain_order="left"
+
+    def per_trip(name: str, scale: float) -> pl.Expr:
+        return (
+            pl.when(pl.col("transit") > 0)
+            .then(pl.col(f"_{name}") / pl.col("transit") / scale)
+            .otherwise(None)
+        )
+
+    result = (
+        pairs.join(assigned, on=["origin_zone", "dest_zone"], how="left", maintain_order="left")
+        .with_columns(
+            *(per_trip(name, 60.0).alias(f"{name}_min") for name in JOURNEY_COLUMNS[:4]),
+            per_trip("vehicles", 1.0).alias("vehicles"),
+            pl.col("_ridden").alias("ridden"),
+        )
+        .drop([f"_{name}" for name in JOURNEY_COLUMNS])
     )
-    return AonFlows(od=result, boardings=boardings, alightings=alightings)
+    keys = sorted(gates)
+    gate_table = pl.DataFrame(
+        {
+            "entry_station": [k[0] for k in keys],
+            "exit_station": [k[1] for k in keys],
+            "trips": [gates[k] for k in keys],
+        },
+        schema={"entry_station": pl.UInt32, "exit_station": pl.UInt32, "trips": pl.Float64},
+    )
+    return AonFlows(od=result, boardings=boardings, alightings=alightings, gates=gate_table)
 
 
 def trip_vehicles(routes: pl.DataFrame, trips: pl.DataFrame, capacity: Capacity) -> pl.DataFrame:
@@ -315,82 +327,4 @@ def check_and_summarise(
         peak_segments=peak.height,
         peak_segments_over_capacity=peak.filter(pl.col("load_factor") > 1).height,
         peak_segments_over_crush=peak.filter(pl.col("crush_factor") > 1).height,
-    )
-
-
-# --- outputs ----------------------------------------------------------------------------------
-
-
-class AssignmentInput(BaseModel):
-    stage: str
-    manifest_sha256: str
-
-
-class AssignmentManifest(BaseModel):
-    city: str
-    scenario: str
-    builder_version: str
-    nature: DataNature
-    method: str
-    window: str
-    report_window: str
-    departures: int
-    inputs: list[AssignmentInput]
-    stats: AonStats
-    column_nature: dict[str, dict[str, DataNature]]
-    outputs: dict[str, str] = {}
-
-
-def write_assignment(
-    flows: AonFlows,
-    loads: pl.DataFrame,
-    stops: pl.DataFrame,
-    stats: AonStats,
-    out_dir: Path,
-    *,
-    city: str,
-    scenario: str,
-    window: AssignmentWindow,
-    inputs: list[AssignmentInput],
-    report: Callable[[AssignmentManifest], str],
-) -> AssignmentManifest:
-    manifest = AssignmentManifest(
-        city=city,
-        scenario=scenario,
-        builder_version=__version__,
-        nature=DataNature.SIMULATED,
-        method="all-or-nothing, fastest journey per departure, expected flows",
-        window=f"{window.window_start}-{window.window_end}",
-        report_window=f"{window.report_start}-{window.report_end}",
-        departures=len(window.departures()),
-        inputs=inputs,
-        stats=stats,
-        column_nature=COLUMN_NATURE,
-    )
-    staging = out_dir.with_name(f".{out_dir.name}.staging")
-    if staging.exists():
-        shutil.rmtree(staging)
-    staging.mkdir(parents=True)
-    outputs = {}
-    for name, frame in ((LOADS_NAME, loads), (STOPS_NAME, stops), (OD_NAME, flows.od)):
-        # Rechunk so the bytes depend only on the rows (one row group per chunk otherwise).
-        frame.rechunk().write_parquet(staging / name, compression="zstd", statistics=True)
-        outputs[name] = sha256_file(staging / name)
-    manifest = manifest.model_copy(update={"outputs": outputs})
-    (staging / MANIFEST_NAME).write_text(
-        manifest.model_dump_json(indent=2) + "\n", encoding="utf-8", newline="\n"
-    )
-    (staging / REPORT_NAME).write_text(report(manifest), encoding="utf-8", newline="\n")
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
-    out_dir.parent.mkdir(parents=True, exist_ok=True)
-    rename_with_retry(staging, out_dir)
-    return manifest
-
-
-def config_input(window: AssignmentWindow, capacity: Capacity) -> AssignmentInput:
-    """The settings the outputs depend on (fares and crowding are not used by AON yet)."""
-    text = window.model_dump_json() + capacity.model_dump_json()
-    return AssignmentInput(
-        stage="assignment.toml", manifest_sha256=hashlib.sha256(text.encode()).hexdigest()
     )
