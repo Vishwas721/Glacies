@@ -183,3 +183,35 @@ def test_zone_travel_times_validates_inputs() -> None:
     bad = np.array([0], dtype=np.uint8)
     with pytest.raises(ValueError, match="percentile 0"):
         tt.zone_travel_times_many(origins, arr(0), 1, NONE, NONE, NONE, bad, 60, 4, 60)
+
+
+def test_zone_assign_many_spreads_trips_over_the_profile() -> None:
+    # The Rust toy (crates/raptor/tests/assign.rs): trip 1 A 08:00 -> B 08:10 -> C 08:20, trip 2
+    # A 08:30 -> C 08:40. Origin 0 walks a minute to A; zone 0 is a minute from C, zone 1 from B.
+    tt = build(
+        3,
+        [(1, [(A, "08:00"), (B, "08:10"), (C, "08:20")]), (2, [(A, "08:30"), (C, "08:40")])],
+    )
+    f64 = np.float64
+    origin = (arr(A), arr(60), NONE, NONE, arr(0, 1), np.array([10.0, 4.0], dtype=f64))
+    (o, zone, transit, walked, unreached), (trip, board, alight, passengers) = tt.zone_assign_many(
+        [origin, origin],  # the same origin twice: rides add up across origins
+        arr(hm("07:59"), hm("08:20")),
+        np.array([1.0, 3.0], dtype=f64),
+        2,
+        arr(0, 1),
+        arr(C, B),
+        arr(60, 60),
+        7200,
+        4,
+        60,
+    )
+    assert o.tolist() == [0, 0, 1, 1]
+    assert zone.tolist() == [0, 1, 0, 1]
+    assert transit.tolist() == [10.0, 4.0, 10.0, 4.0]
+    assert walked.sum() == unreached.sum() == 0.0
+    assert list(zip(trip, board, alight, passengers, strict=True)) == [
+        (1, 0, 1, 8.0),
+        (1, 0, 2, 5.0),
+        (2, 0, 1, 15.0),
+    ]
