@@ -50,6 +50,8 @@ fn toy1_direct_trip() {
             to: C,
             board: t("08:00"),
             alight: t("08:20"),
+            board_pos: 0,
+            alight_pos: 2,
         }]
     );
     assert_eq!((journey.waiting_time(), journey.walking_time()), (0, 0));

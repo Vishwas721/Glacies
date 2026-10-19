@@ -154,7 +154,7 @@ impl From<core::Leg> for Leg {
                 duration,
                 ..blank
             },
-            core::Leg::Ride { route, trip_id, from, to, board, alight } => Self {
+            core::Leg::Ride { route, trip_id, from, to, board, alight, .. } => Self {
                 kind: "ride",
                 from_stop: Some(from.0),
                 to_stop: Some(to.0),

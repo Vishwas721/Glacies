@@ -8,8 +8,18 @@ use crate::{Access, Params, RouteIdx, StopIdx, Time, Timetable};
 pub enum Leg {
     /// Walk from the origin to the first stop.
     Access { to: StopIdx, duration: u32 },
-    /// Ride one trip from `from` to `to`.
-    Ride { route: RouteIdx, trip_id: u32, from: StopIdx, to: StopIdx, board: Time, alight: Time },
+    /// Ride one trip from `from` to `to`; `board_pos` and `alight_pos` are positions in the
+    /// trip's stop sequence (as given to the builder), so loads can be put on its segments.
+    Ride {
+        route: RouteIdx,
+        trip_id: u32,
+        from: StopIdx,
+        to: StopIdx,
+        board: Time,
+        alight: Time,
+        board_pos: u32,
+        alight_pos: u32,
+    },
     /// Walk between two stops while changing vehicles.
     Transfer { from: StopIdx, to: StopIdx, duration: u32 },
     /// Walk from the last stop to the destination.
@@ -167,6 +177,8 @@ pub(crate) fn rebuild(
                     to: stop,
                     board: view.departure(trip, board),
                     alight: view.arrival(trip, alight),
+                    board_pos: to_u32(board),
+                    alight_pos: to_u32(alight),
                 });
                 (round, stop, via) = (r - 1, from, boarded_via);
             }
