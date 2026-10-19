@@ -24,8 +24,11 @@ def multipliers(
     standing_area_m2: F64,
     curve: CrowdingCurve,
     crush_standing_per_m2: float,
+    *,
+    hold_at_crush: bool = True,
 ) -> F64:
-    """Multiplier per segment (1 where nobody stands)."""
+    """Multiplier per segment (1 where nobody stands). Without ``hold_at_crush`` the line
+    goes on past crush density (a sensitivity test; TAG holds it)."""
     standees = np.maximum(load - seats, 0.0)
     density = np.divide(
         standees,
@@ -33,7 +36,8 @@ def multipliers(
         out=np.where(standees > 0, crush_standing_per_m2, 0.0),
         where=standing_area_m2 > 0,
     )
-    density = np.minimum(density, crush_standing_per_m2)
+    if hold_at_crush:
+        density = np.minimum(density, crush_standing_per_m2)
     seated = curve.seated_base + curve.seated_per_m2 * density
     standing = curve.standing_base + curve.standing_per_m2 * density
     with np.errstate(invalid="ignore", divide="ignore"):

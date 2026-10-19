@@ -668,7 +668,9 @@ class Crowding(CrowdingCurve):
     """The central curve (used from M3), held at crush density, plus sensitivity curves."""
 
     function: Literal["density_linear"]
-    cap_at: Literal["crush"]
+    cap_at: Literal["crush", "none"] = Field(
+        description='"crush": density held at crush (TAG); "none": the line goes on (sensitivity).'
+    )
     sensitivity: list[CrowdingCurve] = Field(default_factory=list)
 
 

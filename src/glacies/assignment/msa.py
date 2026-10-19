@@ -200,7 +200,7 @@ def run_msa(
         )
 
     def respond(load: F64) -> tuple[F64, F64, float]:
-        m = multipliers(load, seats, area, curve, crush)
+        m = multipliers(load, seats, area, curve, crush, hold_at_crush=curve.cap_at == "crush")
         crowded = _within_trip_cumsum(rows.trip, rows.seconds * m, exclusive=True)
         costs = choices.costs(crowded, rows.offset)
         return choices.shares(costs, theta), m, float(costs.mean()) if costs.size else 0.0

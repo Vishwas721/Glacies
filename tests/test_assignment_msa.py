@@ -133,3 +133,13 @@ def test_a_larger_theta_reaches_its_own_equilibrium() -> None:
     choices, rows = _toy_choices()
     result = run_msa(choices, rows, VEHICLES, config(), theta=0.5)
     assert result.boardings[0] == pytest.approx(_equilibrium(0.5), abs=0.5)
+
+
+def test_without_the_crush_hold_the_line_goes_on() -> None:
+    # 2,500 on a 6-car train is 10.3 standees/m²; uncapped, standing weighs 1.43 + 0.13 x 10.3.
+    curve = config().crowding
+    args = (np.array([2500.0]), np.array([286.0]), np.array([214.75]), curve, 8.0)
+    d = (2500 - 286) / 214.75
+    expected = (286 * (1 + 0.09 * d) + (2500 - 286) * (1.43 + 0.13 * d)) / 2500
+    assert multipliers(*args, hold_at_crush=False)[0] == pytest.approx(expected)
+    assert multipliers(*args)[0] < expected
