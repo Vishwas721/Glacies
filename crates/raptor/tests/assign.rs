@@ -4,7 +4,8 @@ mod common;
 
 use common::{builder, t, toy2, trip, A, B, C};
 use glacies_raptor::{
-    zone_assign, Access, DepartureProfile, MatrixError, Params, Time, Timetable, ZoneEgress,
+    zone_assign, Access, DepartureProfile, JourneyTotals, MatrixError, MetroNetwork, Params, Time,
+    Timetable, ZoneEgress, NO_STATION,
 };
 
 const PARAMS: Params = Params { max_rounds: 4, min_transfer_time: 60 };
@@ -28,6 +29,10 @@ fn zones() -> ZoneEgress {
     ZoneEgress::new(3, &[(0, C, 60), (1, B, 60)]).unwrap()
 }
 
+fn no_metro() -> MetroNetwork {
+    MetroNetwork { metro_trip: vec![], station: vec![] }
+}
+
 fn times() -> [Time; 2] {
     ["07:59", "08:20"].map(t)
 }
@@ -47,6 +52,7 @@ fn trips_follow_the_profile_over_the_departures_that_reach_them() {
         &[],
         &[0, 1, 2],
         &[10.0, 4.0, 5.0],
+        &no_metro(),
         120 * 60,
     )
     .unwrap();
@@ -71,6 +77,7 @@ fn walking_wins_when_it_is_as_fast() {
         &[(1, 600)],
         &[1],
         &[4.0],
+        &no_metro(),
         120 * 60,
     )
     .unwrap();
@@ -96,6 +103,7 @@ fn a_transfer_loads_both_trips() {
         &[],
         &[0],
         &[6.0],
+        &no_metro(),
         120 * 60,
     )
     .unwrap();
@@ -116,6 +124,7 @@ fn the_time_limit_leaves_trips_unreached() {
         &[],
         &[0, 1],
         &[10.0, 4.0],
+        &no_metro(),
         15 * 60,
     )
     .unwrap();
@@ -127,11 +136,96 @@ fn the_time_limit_leaves_trips_unreached() {
 #[test]
 fn mismatched_lengths_are_an_error() {
     let profile = DepartureProfile { times: &times(), weights: &[1.0] };
-    let result =
-        zone_assign(&toy(), &PARAMS, &WALK_TO_A, profile, &zones(), &[], &[0], &[1.0], 3600);
+    let result = zone_assign(
+        &toy(),
+        &PARAMS,
+        &WALK_TO_A,
+        profile,
+        &zones(),
+        &[],
+        &[0],
+        &[1.0],
+        &no_metro(),
+        3600,
+    );
     assert_eq!(result, Err(MatrixError::LengthMismatch));
     let profile = DepartureProfile { times: &times(), weights: &[1.0, 1.0] };
-    let result =
-        zone_assign(&toy(), &PARAMS, &WALK_TO_A, profile, &zones(), &[], &[0, 1], &[1.0], 3600);
+    let result = zone_assign(
+        &toy(),
+        &PARAMS,
+        &WALK_TO_A,
+        profile,
+        &zones(),
+        &[],
+        &[0, 1],
+        &[1.0],
+        &no_metro(),
+        3600,
+    );
     assert_eq!(result, Err(MatrixError::LengthMismatch));
+}
+
+#[test]
+fn journey_totals_and_metro_gates_are_weighted_like_the_trips() {
+    // Trip 2 (the express) is a metro from station 10 (A) to 11 (C). Zone 0, 10 trips:
+    // 07:59 (weight 1): 1 min walk, trip 1 08:00-08:20, 1 min walk: 20 min riding, no wait.
+    // 08:20 (weight 3): 1 min walk, wait 08:21-08:30, metro 08:30-08:40, 1 min walk.
+    // Each weight unit is 10 / 4 = 2.5 trips: in vehicles 2.5 x (1200 + 3 x 600) = 7,500 s;
+    // waiting 2.5 x 3 x 540 = 4,050 s; walking 2.5 x 4 x 120 = 1,200 s; 10 vehicles; 7.5
+    // trips pass the gates from 10 to 11.
+    let metro =
+        MetroNetwork { metro_trip: vec![false, false, true], station: vec![10, NO_STATION, 11] };
+    let result = zone_assign(
+        &toy(),
+        &PARAMS,
+        &WALK_TO_A,
+        DepartureProfile { times: &times(), weights: &[1.0, 3.0] },
+        &zones(),
+        &[],
+        &[0],
+        &[10.0],
+        &metro,
+        120 * 60,
+    )
+    .unwrap();
+
+    assert_eq!(
+        result.totals,
+        [JourneyTotals {
+            in_vehicle_s: 7500.0,
+            waiting_s: 4050.0,
+            walking_s: 1200.0,
+            riding_s: 0.0,
+            vehicles: 10.0,
+            ridden: 0.0,
+        }]
+    );
+    assert_eq!(result.gates, [(10, 11, 7.5)]);
+}
+
+#[test]
+fn a_ride_to_the_station_is_counted_apart_from_walking() {
+    // A 4-minute board-only ride to A instead of the walk: leaving 07:55 reaches A at 07:59,
+    // waits a minute for trip 1 (08:00) to C at 08:20, then walks a minute: 4 trips ride
+    // 4 x 240 s, wait 4 x 60 s and walk 4 x 60 s.
+    let ride = [Access { stop: A, duration: 240, board_only: true }];
+    let result = zone_assign(
+        &toy(),
+        &PARAMS,
+        &ride,
+        DepartureProfile { times: &[t("07:55")], weights: &[1.0] },
+        &zones(),
+        &[],
+        &[0],
+        &[4.0],
+        &no_metro(),
+        120 * 60,
+    )
+    .unwrap();
+
+    let totals = result.totals[0];
+    assert_eq!(
+        (totals.riding_s, totals.walking_s, totals.waiting_s, totals.ridden),
+        (960.0, 240.0, 240.0, 4.0)
+    );
 }

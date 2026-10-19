@@ -313,6 +313,13 @@ def test_assignment_on_the_toy_city(city: Path) -> None:
     np.testing.assert_allclose(od["transit"] + od["walked"] + od["unreached"], od["trips"])
     assert (loads["load"] >= 0).all()
     assert loads["capacity"].null_count() == 0
+    assert (loads["km"] >= 0).all()
+    routes = pl.read_parquet(out / "routes.parquet")
+    assert routes["boardings"].sum() == pytest.approx(loads["boardings"].sum())
+    stations = pl.read_parquet(out / "stations.parquet")
+    pairs = pl.read_parquet(out / "station_pairs.parquet")
+    assert stations["entries"].sum() == pytest.approx(pairs["trips"].sum())
+    assert "City summary" in (out / "BUILD_REPORT.md").read_text(encoding="utf-8")
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["nature"] == "simulated"
     assert manifest["departures"] == 120
