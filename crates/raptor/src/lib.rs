@@ -2,6 +2,7 @@
 //!
 //! See `docs/phases/02-routing-engine.md` for the implementation plan.
 
+mod choice;
 mod journey;
 mod matrix;
 mod paths;
