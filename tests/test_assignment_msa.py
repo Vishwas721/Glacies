@@ -4,6 +4,7 @@ from pathlib import Path
 
 import glacies_raptor as gr
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 import pytest
 
@@ -51,10 +52,16 @@ def test_no_standing_area_counts_as_crush() -> None:
     assert m[0] == pytest.approx((40 * 1.72 + 10 * 2.47) / 50)
 
 
+def hm(hours: int, minutes: int) -> int:
+    return hours * 3600 + minutes * 60
+
+
+def u32(*values: int) -> npt.NDArray[np.uint32]:
+    return np.array(values, dtype=np.uint32)
+
+
 def _toy_choices(theta_trips: float = 100.0) -> tuple[gr.ChoiceSet, Rows]:
     """Metro trip 1 A 08:00 -> C 08:10; bus trip 2 A 08:00 -> B 08:10 -> C 08:20; 100 trips."""
-    hm = lambda h, m: h * 3600 + m * 60  # noqa: E731
-    u32 = lambda *v: np.array(v, dtype=np.uint32)  # noqa: E731
     times = u32(hm(8, 0), hm(8, 10), hm(8, 0), hm(8, 10), hm(8, 20))
     tt = gr.Timetable.build(3, u32(1, 2), u32(0, 2, 5), u32(A, C, A, B, C), times, times,
                             u32(), u32(), u32())  # fmt: skip
@@ -94,7 +101,7 @@ def _equilibrium(theta: float) -> float:
     def excess(x: float) -> float:
         m = multipliers(np.array([x]), np.array([30.0]), np.array([5.0]), curve, 8.0)[0]
         metro, bus = 4 + 10 * m, 4 + 20
-        return x - 100 / (1 + np.exp(-theta * (bus - metro)))
+        return float(x - 100 / (1 + np.exp(-theta * (bus - metro))))
 
     low, high = 0.0, 100.0
     for _ in range(100):

@@ -328,3 +328,13 @@ def test_assignment_on_the_toy_city(city: Path) -> None:
     again = runner.invoke(app, ["build", "assignment"])
     assert again.exit_code == 0, again.output
     assert {p.name: p.read_bytes() for p in sorted(out.glob("*.parquet"))} == first
+    assert manifest["msa"]["iterations"] >= 1
+    assert (out / "convergence.parquet").is_file()
+
+    aon = runner.invoke(app, ["build", "assignment", "--aon"])
+    assert aon.exit_code == 0, aon.output
+    aon_dir = city / "assignment" / "baseline-aon"
+    aon_manifest = json.loads((aon_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert aon_manifest["msa"] is None
+    aon_od = pl.read_parquet(aon_dir / "od_assignment.parquet")
+    assert aon_od["trips"].sum() == pytest.approx(od["trips"].sum())
