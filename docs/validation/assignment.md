@@ -174,7 +174,8 @@ baseline demand and both settings files. `glacies scenario compare` adds PRD §3
 rows and `route_deltas.parquet`.
 
 **Doubling 500-D on the Outer Ring Road** (`bengaluru_orr_frequency_double`, 2026-10-20, mains
-power): run 352 s (travel-time matrix 117 s, assignment about 230 s), peak RAM 3.88 GiB.
+power): run 352 s (travel-time matrix 117 s, assignment about 230 s), peak RAM 3.88 GiB. A
+rerun after the direction-check fix took 756 s (laptop slowdown) with the same numbers.
 
 | Metric (per transit trip unless stated) | Baseline | Scenario | Change |
 |---|---:|---:|---:|
@@ -193,7 +194,7 @@ between ORR routes. The accessibility side matches Phase 4 (19 zones up, none do
 
 The direction check first reported two values falling by 8.7e-19 and 1.7e-18: last-bit float
 differences between the baseline accessibility (summed under polars 1.x) and the scenario's
-(polars 2). The check now ignores changes under 1e-12.
+(polars 2). The check now ignores changes under 1e-12 and passes.
 
 ## M6: validation report
 
