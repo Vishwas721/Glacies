@@ -179,7 +179,7 @@ power): run 352 s (travel-time matrix 117 s, assignment about 230 s), peak RAM 3
 | Metric (per transit trip unless stated) | Baseline | Scenario | Change |
 |---|---:|---:|---:|
 | travel time | 77.40 min | 77.39 min | −0.01 |
-| waiting | 13.70 min | 13.69 min | −0.01 |
+| waiting | 13.70 min | 13.69 min | under 0.005 |
 | transfers | 1.3633 | 1.3639 | +0.0006 |
 | crowding, peak passenger-km above design capacity | 58.99 % | 58.91 % | −0.07 pp |
 | peak segments above design capacity | 23,093 | 23,069 | −24 |
@@ -202,9 +202,9 @@ differences between the baseline accessibility (summed under polars 1.x) and the
 `.png` (each route's stop-to-stop segments with the peak-hour passengers, highest and mean load
 factor, for QGIS) and `report.md`. Bengaluru baseline: 59,786 peak segments, written in 4 s.
 
-Peak-hour bus segments by mean load factor: 55 % under 0.5 (22 % of passengers), 19 % at
-0.5–1.0, 9 % at 1.0–1.5, and 16 % over 1.5 carrying 45 % of passengers (all modes). Passenger-
-weighted, the mean bus load factor is 2.93: a minority of corridors take most riders, the
+Peak-hour bus segments (59,622) by mean load factor: 55 % under 0.5 carrying 15 % of bus
+passengers, 19 % at 0.5–1.0 (19 %), 9 % at 1.0–1.5 (14 %), and 16 % over 1.5 carrying 52 %.
+Passenger-weighted, the mean bus load factor is 2.93: a minority of corridors take most riders, the
 soft-capacity model lets them exceed what could board, and the 33-seat / 5.5 m² bus capacity is
 Assumed. Metro segments: 132 of 164 under 0.5 mean load factor, none above 1.0.
 
