@@ -165,3 +165,50 @@ wrote byte-identical Parquet.
 waiting, 14.1 walking, 3.5 riding to a station), 1.36 transfers, 22.7 % of trips start with a
 ride to a station (36.6 % all-or-nothing: the auto fare now counts), crowding 59.0 % of peak
 passenger-km (54.9 % above crush, almost all on buses).
+
+## M5: assignment in scenarios (ADR 0019)
+
+A scenario run now assigns the baseline OD onto the scenario network with the same crowding loop
+(demand is fixed: the comparison shows re-routing, not new riders). Its cache key includes the
+baseline demand and both settings files. `glacies scenario compare` adds PRD §31's assignment
+rows and `route_deltas.parquet`.
+
+**Doubling 500-D on the Outer Ring Road** (`bengaluru_orr_frequency_double`, 2026-10-20, mains
+power): run 352 s (travel-time matrix 117 s, assignment about 230 s), peak RAM 3.88 GiB. A
+rerun after the direction-check fix took 756 s (laptop slowdown) with the same numbers.
+
+| Metric (per transit trip unless stated) | Baseline | Scenario | Change |
+|---|---:|---:|---:|
+| travel time | 77.40 min | 77.39 min | −0.01 |
+| waiting | 13.70 min | 13.69 min | under 0.005 |
+| transfers | 1.3633 | 1.3639 | +0.0006 |
+| crowding, peak passenger-km above design capacity | 58.99 % | 58.91 % | −0.07 pp |
+| peak segments above design capacity | 23,093 | 23,069 | −24 |
+| metro gate entries | 219,565 | 219,494 | −71 |
+| zones gaining access (45 min, p50) | | 19 | |
+
+500-D gains 3,040 boardings (4,901 → 7,941), mostly from the parallel ORR services: 500-A −452,
+V-500D −252, V-500A-KRP-BSK −148, V-500CK −137. City totals barely move, as the scenario
+expected: 500-D already runs about every 5 minutes, so the extra trips mostly shift riders
+between ORR routes. The accessibility side matches Phase 4 (19 zones up, none down).
+
+The direction check first reported two values falling by 8.7e-19 and 1.7e-18: last-bit float
+differences between the baseline accessibility (summed under polars 1.x) and the scenario's
+(polars 2). The check now ignores changes under 1e-12 and passes.
+
+## M6: validation report
+
+`glacies assignment report` writes `reports/assignment/<scenario>/`: `convergence.png`,
+`stations.png` (simulated against observed gate entries, by set), `segments_peak.geoparquet` and
+`.png` (each route's stop-to-stop segments with the peak-hour passengers, highest and mean load
+factor, for QGIS) and `report.md`. Bengaluru baseline: 59,786 peak segments, written in 4 s.
+
+Peak-hour bus segments (59,622) by mean load factor: 55 % under 0.5 carrying 15 % of bus
+passengers, 19 % at 0.5–1.0 (19 %), 9 % at 1.0–1.5 (14 %), and 16 % over 1.5 carrying 52 %.
+Passenger-weighted, the mean bus load factor is 2.93: a minority of corridors take most riders, the
+soft-capacity model lets them exceed what could board, and the 33-seat / 5.5 m² bus capacity is
+Assumed. Metro segments: 132 of 164 under 0.5 mean load factor, none above 1.0.
+
+**What the user checks** (phase doc hands-on): open `segments_peak.geoparquet` in QGIS and see
+whether the heaviest corridors match ones known to be crowded (Majestic–Silk Board, ORR, Purple
+Line core); compare `stations.png` with knowledge of busy stations.

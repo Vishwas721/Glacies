@@ -1,7 +1,8 @@
 """Run a scenario end to end, with a content-addressed result cache (PRD §53).
 
 ``run_scenario`` applies the mutations to the baseline network, then rebuilds the travel-time
-matrix and accessibility on the scenario network. Results go to
+matrix and accessibility on the scenario network and, when the baseline demand exists, assigns
+it onto the scenario network with crowding (Phase 6; demand is fixed, ADR 0019). Results go to
 ``data/processed/<city>/results/<key>/`` where ``key`` hashes everything that can change them:
 the baseline stage manifests, the mutations, the city config, the engine versions and commit,
 and the seed. A second run with the same key reuses the directory; changing any input gives a
@@ -49,6 +50,7 @@ from glacies.pipeline import (
     city_dir,
     git_state,
     run_accessibility,
+    run_assignment,
     run_matrix,
 )
 from glacies.provenance import DataNature, sha256_file
@@ -57,7 +59,7 @@ from glacies.scenario.incremental import affected_origins, baseline_matrix, chan
 from glacies.scenario.mutations import Change, apply, mutations_sha256
 from glacies.scenario.schema import Scenario, load_scenario
 
-KEY_VERSION = 1
+KEY_VERSION = 2  # 2: assignment inputs in the key (Phase 6 M5)
 RESULTS_DIR = "results"
 WALKS_DIR = "_walks"  # under RESULTS_DIR: zone walks shared by every scenario of a baseline
 RUN_NAME = "run.json"
@@ -124,6 +126,7 @@ class RunRecord(BaseModel):
     origins_recomputed: int
     origins_total: int
     walks_reused: bool
+    assignment: bool = False  # whether an assignment stage ran (needs the baseline demand)
     changes: list[ChangeRecord]
     outputs: list[StageInput]
     headline_est_jobs_share: float
@@ -160,17 +163,34 @@ def baseline_inputs(base: Path) -> list[StageInput]:
     return inputs
 
 
+def assignment_inputs(settings: Settings, base: Path) -> list[StageInput]:
+    """What an assignment stage reads besides the network: the baseline demand and the
+    demand and assignment settings. Empty when the city has no demand or no assignment.toml,
+    in which case scenario runs skip assignment."""
+    demand = base / "demand" / "baseline" / MANIFEST_NAME
+    files = (settings.assignment_config_path, settings.demand_config_path)
+    if not demand.is_file() or not all(f.is_file() for f in files):
+        return []
+    return [
+        StageInput(stage="demand", manifest_sha256=sha256_file(demand)),
+        *(StageInput(stage=f.name, manifest_sha256=sha256_file(f)) for f in files),
+    ]
+
+
 def cache_key(
     scenario: Scenario,
     config: CityConfig,
     baseline: list[StageInput],
     engine: EngineVersions,
     seed: int,
+    assignment: list[StageInput] | None = None,
 ) -> str:
+    """``assignment`` are the assignment stage's inputs, or None/empty when it does not run."""
     material = {
         "key_version": KEY_VERSION,
         "city": config.city.id,
         "baseline": [b.model_dump() for b in baseline],
+        "assignment": [a.model_dump() for a in assignment or []],
         "mutations_sha256": mutations_sha256(scenario),
         "config": config.model_dump(mode="json"),
         "engine": engine.model_dump(),
@@ -191,6 +211,7 @@ def run_scenario(
     *,
     force: bool = False,
     full: bool = False,
+    assignment: bool = True,
     engine: EngineVersions | None = None,
     on_stage: Callable[[str], None] | None = None,
     on_chunk: Callable[[int, int], None] | None = None,
@@ -198,8 +219,9 @@ def run_scenario(
     """Apply, route and measure a scenario, or return the cached result.
 
     ``full`` recomputes every origin instead of reusing the baseline matrix (and implies
-    ``force``). ``engine`` defaults to the installed versions and the git state; tests pass
-    their own.
+    ``force``). ``assignment=False`` skips the assignment stage (it also runs only when the
+    baseline demand exists). ``engine`` defaults to the installed versions and the git state;
+    tests pass their own.
     """
 
     def stage(message: str) -> None:
@@ -210,7 +232,8 @@ def run_scenario(
     base = city_dir(settings, config)
     baseline = baseline_inputs(base)
     engine = engine or engine_versions()
-    key = cache_key(scenario, config, baseline, engine, settings.random_seed)
+    assigned = assignment_inputs(settings, base) if assignment else []
+    key = cache_key(scenario, config, baseline, engine, settings.random_seed, assigned)
     out_dir = result_dir(base, key)
     if (out_dir / RUN_NAME).is_file() and not (force or full) and not engine.git_dirty:
         record = RunRecord.model_validate_json((out_dir / RUN_NAME).read_text(encoding="utf-8"))
@@ -259,6 +282,18 @@ def run_scenario(
         tt_dir=matrix.out_dir,
         out_dir=staging / "accessibility",
     )
+    stages = ["transit", "tt_matrix", "accessibility"]
+    if assigned:
+        stage("assignment with crowding")
+        run_assignment(
+            settings,
+            config,
+            scenario=scenario.scenario_id,
+            transit_dir=staging / "transit",
+            out_dir=staging / "assignment",
+            on_chunk=on_chunk,
+        )
+        stages.append("assignment")
 
     record = RunRecord(
         city=config.city.id,
@@ -279,10 +314,11 @@ def run_scenario(
         origins_recomputed=len(plan.reuse.origins) if plan.reuse else matrix.manifest.zones,
         origins_total=matrix.manifest.zones,
         walks_reused=plan.walks_reused,
+        assignment=bool(assigned),
         changes=changes,
         outputs=[
             StageInput(stage=s, manifest_sha256=sha256_file(staging / s / MANIFEST_NAME))
-            for s in ("transit", "tt_matrix", "accessibility")
+            for s in stages
         ],
         headline_est_jobs_share=access.headline_est_jobs_share,
         nature=DataNature.SIMULATED,

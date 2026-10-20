@@ -81,7 +81,8 @@ uv run glacies build paths                # fastest-journey path table per zone 
 uv run glacies build demand               # AM-peak trip ends + gravity OD matrix (Estimated)
 uv run glacies build station-flows        # metro entries/exits/station pairs of the OD (Simulated)
 uv run glacies build ridership            # BMRCL hourly entries/exits/pairs, canonical (Observed)
-uv run glacies build assignment           # OD onto trips: segment loads vs capacity (Simulated)
+uv run glacies build assignment           # OD onto trips with crowding (MSA); --aon, --no-fares, --theta
+uv run glacies assignment report          # convergence, metro entries vs BMRCL, crowded segments (QGIS)
 uv run glacies demand calibrate           # choose β on station entry shares; report in .../calibration/
 uv run glacies demand sensitivity         # demand under alternative β, proxies and priors (Estimated)
 

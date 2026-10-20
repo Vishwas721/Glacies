@@ -338,3 +338,12 @@ def test_assignment_on_the_toy_city(city: Path) -> None:
     assert aon_manifest["msa"] is None
     aon_od = pl.read_parquet(aon_dir / "od_assignment.parquet")
     assert aon_od["trips"].sum() == pytest.approx(od["trips"].sum())
+
+    report = runner.invoke(app, ["assignment", "report"])
+    assert report.exit_code == 0, report.output
+    figures = city / "reports" / "assignment" / "baseline"
+    assert (figures / "convergence.png").stat().st_size > 0
+    assert (figures / "segments_peak.png").stat().st_size > 0
+    segments = pl.read_parquet(figures / "segments_peak.geoparquet")
+    assert {"geometry", "passengers", "max_load_factor"} <= set(segments.columns)
+    assert "Crowded segments" in (figures / "report.md").read_text(encoding="utf-8")

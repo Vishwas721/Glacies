@@ -48,6 +48,8 @@ demand_app = typer.Typer(help="Calibrate and test synthetic demand.", no_args_is
 app.add_typer(demand_app, name="demand")
 scenario_app = typer.Typer(help="Define and check network scenarios.", no_args_is_help=True)
 app.add_typer(scenario_app, name="scenario")
+assignment_app = typer.Typer(help="Inspect and validate assignments.", no_args_is_help=True)
+app.add_typer(assignment_app, name="assignment")
 
 CityOption = Annotated[
     str | None, typer.Option("--city", help="City id under cities/ (default: GLACIES_CITY).")
@@ -474,6 +476,23 @@ def build_assignment(
         typer.echo(f"  {name} stations: R2 {fit.r2_share:.2f}, level {fit.level_ratio:.2f}")
 
 
+@assignment_app.command("report")
+def assignment_report(
+    scenario: Annotated[
+        str, typer.Argument(help="Assignment folder, e.g. baseline or baseline-no-fares.")
+    ] = "baseline",
+    city: CityOption = None,
+) -> None:
+    """Validation report: convergence, metro entries against ridership, crowded segments."""
+    settings, config = _load(city)
+    try:
+        result = pipeline.run_assignment_report(settings, config, scenario=scenario)
+    except PipelineError as exc:
+        _fail(str(exc))
+    typer.echo(f"assignment report -> {result.out_dir}")
+    typer.echo(f"  {', '.join(result.figures)}; {result.segments:,} peak segments for QGIS")
+
+
 @build_app.command("ridership")
 def build_ridership(city: CityOption = None) -> None:
     """Validate the calibration ridership snapshot into canonical tables (Observed)."""
@@ -815,9 +834,13 @@ def scenario_run(
     full: Annotated[
         bool, typer.Option("--full", help="Recompute every origin (implies --force).")
     ] = False,
+    no_assignment: Annotated[
+        bool, typer.Option("--no-assignment", help="Skip assigning the demand with crowding.")
+    ] = False,
     city: CityOption = None,
 ) -> None:
-    """Apply a scenario, then rebuild travel times and accessibility on it (cached).
+    """Apply a scenario, then rebuild travel times and accessibility on it (cached), and
+    assign the baseline demand onto it with crowding when the demand has been built.
 
     Only origins that can reach a changed trip are recomputed; the rest of the matrix is
     copied from the baseline, which gives the same result as a full recompute.
@@ -834,7 +857,14 @@ def scenario_run(
 
     try:
         outcome = run_scenario(
-            settings, config, path, force=force, full=full, on_stage=stage, on_chunk=progress
+            settings,
+            config,
+            path,
+            force=force,
+            full=full,
+            assignment=not no_assignment,
+            on_stage=stage,
+            on_chunk=progress,
         )
     except (ScenarioError, PipelineError) as exc:
         _fail(str(exc))
