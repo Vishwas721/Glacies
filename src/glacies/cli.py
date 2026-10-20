@@ -815,9 +815,13 @@ def scenario_run(
     full: Annotated[
         bool, typer.Option("--full", help="Recompute every origin (implies --force).")
     ] = False,
+    no_assignment: Annotated[
+        bool, typer.Option("--no-assignment", help="Skip assigning the demand with crowding.")
+    ] = False,
     city: CityOption = None,
 ) -> None:
-    """Apply a scenario, then rebuild travel times and accessibility on it (cached).
+    """Apply a scenario, then rebuild travel times and accessibility on it (cached), and
+    assign the baseline demand onto it with crowding when the demand has been built.
 
     Only origins that can reach a changed trip are recomputed; the rest of the matrix is
     copied from the baseline, which gives the same result as a full recompute.
@@ -834,7 +838,14 @@ def scenario_run(
 
     try:
         outcome = run_scenario(
-            settings, config, path, force=force, full=full, on_stage=stage, on_chunk=progress
+            settings,
+            config,
+            path,
+            force=force,
+            full=full,
+            assignment=not no_assignment,
+            on_stage=stage,
+            on_chunk=progress,
         )
     except (ScenarioError, PipelineError) as exc:
         _fail(str(exc))
