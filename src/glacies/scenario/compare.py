@@ -80,6 +80,9 @@ NO_CHANGE = "#f0efec"
 ROUTE_LINE = INK_MUTED  # context, not data: neutral ink
 DELTA_BREAKS = (0.0005, 0.002)  # 0.05 and 0.2 percentage points, as fractions
 TOP_ZONES = 10
+# Shares are sums of floats; two runs that add them in a different order (e.g. across polars
+# versions) differ in the last bit (~1e-18). Real changes are many orders larger.
+DIRECTION_TOLERANCE = 1e-12
 
 
 class ComparisonError(PipelineError):
@@ -289,9 +292,15 @@ def _direction_check(a: Side, b: Side, deltas: pl.DataFrame) -> str:
     added = sum(c.trips_added for c in b.run.changes)
     delta = deltas["est_jobs_share_delta"]
     if removed == 0:
-        wrong, rule = int((delta < 0).sum()), "trips only added: no value may fall"
+        wrong, rule = (
+            int((delta < -DIRECTION_TOLERANCE).sum()),
+            "trips only added: no value may fall",
+        )
     elif added == 0:
-        wrong, rule = int((delta > 0).sum()), "trips only removed: no value may rise"
+        wrong, rule = (
+            int((delta > DIRECTION_TOLERANCE).sum()),
+            "trips only removed: no value may rise",
+        )
     else:
         return "not checked (trips both added and removed)"
     verdict = "passed" if wrong == 0 else f"FAILED: {wrong} values moved the wrong way"
