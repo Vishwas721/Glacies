@@ -266,17 +266,24 @@ def draw_map(
 
 def write_geoparquet(frame: pl.DataFrame, cells: Sequence[str], path: Path) -> None:
     """Zones with hexagon geometry (WKB, lon/lat) and GeoParquet 1.1 metadata for QGIS."""
-    polygons = [Polygon(ring) for ring in hexagons(cells)]
-    wkb = shapely.to_wkb(np.array(polygons, dtype=object))
+    write_geometries(frame, [Polygon(ring) for ring in hexagons(cells)], "Polygon", path)
+
+
+def write_geometries(
+    frame: pl.DataFrame, geometries: Sequence[BaseGeometry], geometry_type: str, path: Path
+) -> None:
+    """Rows of ``frame`` with one lon/lat geometry each, as GeoParquet 1.1 for QGIS."""
+    shapes = np.array(geometries, dtype=object)
+    wkb = shapely.to_wkb(shapes)
     table = frame.to_arrow(compat_level=pl.CompatLevel.oldest()).append_column(
         "geometry", pa.array(list(wkb), type=pa.binary())
     )
-    bounds = shapely.total_bounds(np.array(polygons, dtype=object)).tolist()
+    bounds = shapely.total_bounds(shapes).tolist()
     geo = {
         "version": "1.1.0",
         "primary_column": "geometry",
         "columns": {
-            "geometry": {"encoding": "WKB", "geometry_types": ["Polygon"], "bbox": bounds}
+            "geometry": {"encoding": "WKB", "geometry_types": [geometry_type], "bbox": bounds}
         },  # no "crs": OGC:CRS84 (lon/lat), the GeoParquet default
     }
     metadata = dict(table.schema.metadata or {})
