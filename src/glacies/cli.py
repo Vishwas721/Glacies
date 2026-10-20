@@ -48,6 +48,8 @@ demand_app = typer.Typer(help="Calibrate and test synthetic demand.", no_args_is
 app.add_typer(demand_app, name="demand")
 scenario_app = typer.Typer(help="Define and check network scenarios.", no_args_is_help=True)
 app.add_typer(scenario_app, name="scenario")
+assignment_app = typer.Typer(help="Inspect and validate assignments.", no_args_is_help=True)
+app.add_typer(assignment_app, name="assignment")
 
 CityOption = Annotated[
     str | None, typer.Option("--city", help="City id under cities/ (default: GLACIES_CITY).")
@@ -472,6 +474,23 @@ def build_assignment(
     )
     for name, fit in manifest.station_fits.items():
         typer.echo(f"  {name} stations: R2 {fit.r2_share:.2f}, level {fit.level_ratio:.2f}")
+
+
+@assignment_app.command("report")
+def assignment_report(
+    scenario: Annotated[
+        str, typer.Argument(help="Assignment folder, e.g. baseline or baseline-no-fares.")
+    ] = "baseline",
+    city: CityOption = None,
+) -> None:
+    """Validation report: convergence, metro entries against ridership, crowded segments."""
+    settings, config = _load(city)
+    try:
+        result = pipeline.run_assignment_report(settings, config, scenario=scenario)
+    except PipelineError as exc:
+        _fail(str(exc))
+    typer.echo(f"assignment report -> {result.out_dir}")
+    typer.echo(f"  {', '.join(result.figures)}; {result.segments:,} peak segments for QGIS")
 
 
 @build_app.command("ridership")

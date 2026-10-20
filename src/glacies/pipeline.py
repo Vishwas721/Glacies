@@ -52,6 +52,7 @@ from glacies.assignment.metrics import city_metrics, route_metrics, station_fit,
 from glacies.assignment.metrics import station_flows as assignment_station_flows
 from glacies.assignment.msa import build_choice_set, msa_flows, row_tables, run_msa
 from glacies.assignment.report import build_report as assignment_report
+from glacies.assignment.validation import ValidationResult, build_validation
 from glacies.assignment.writer import (
     CONVERGENCE_NAME,
     LOADS_NAME,
@@ -1119,6 +1120,28 @@ def run_assignment(
         msa=msa_summary,
     )
     return manifest, out_dir
+
+
+def run_assignment_report(
+    settings: Settings, config: CityConfig, *, scenario: str = "baseline"
+) -> ValidationResult:
+    """Validation report of a finished assignment (Phase 6 M6): convergence, metro entries
+    against ridership and the peak-hour segment loads for QGIS."""
+    try:
+        assignment = load_assignment(settings.assignment_config_path)
+    except CityConfigError as exc:
+        raise PipelineError(str(exc)) from exc
+    base = city_dir(settings, config)
+    _require({"assignment": base / "assignment" / scenario}, {"assignment": "assignment"})
+    transit = base / "transit"
+    return build_validation(
+        base,
+        scenario,
+        pl.read_parquet(transit / "stops.parquet"),
+        pl.read_parquet(transit / "routes.parquet"),
+        pl.read_parquet(transit / "trips.parquet", columns=["trip_idx", "route_idx"]),
+        assignment.msa.gap,
+    )
 
 
 def run_ridership(settings: Settings, config: CityConfig) -> tuple[RidershipManifest, Path]:
