@@ -36,4 +36,5 @@ def test_peak_segments_sum_the_vehicles_leaving_in_the_window() -> None:
     assert segments["trips"].to_list() == [1, 1]
     assert segments["passengers"].to_list() == [40.0, 0.0]
     assert segments["max_load_factor"].to_list() == pytest.approx([40 / 60, 0.0])
+    assert segments["mean_load_factor"].to_list() == pytest.approx([40 / 60, 0.0])
     assert segments["short_name"].to_list() == ["10", "M1"]

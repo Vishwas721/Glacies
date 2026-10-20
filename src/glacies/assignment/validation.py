@@ -25,6 +25,7 @@ mpl.use("Agg")  # files only, no display
 
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection
@@ -75,8 +76,8 @@ def peak_segments(
     report_window: tuple[int, int],
 ) -> pl.DataFrame:
     """Per route and stop-to-stop segment, the vehicles leaving it in the report window:
-    trips, passengers (sum of loads), highest load and highest load factor. Empty segments
-    are kept, so quiet corridors show too."""
+    trips, passengers (sum of loads), highest load, highest and mean load factor. Empty
+    segments are kept, so quiet corridors show too."""
     start, end = report_window
     return (
         loads.filter((pl.col("departure") >= start) & (pl.col("departure") < end))
@@ -88,6 +89,13 @@ def peak_segments(
             pl.col("load").max().alias("max_load"),
             pl.col("load_factor").max().alias("max_load_factor"),
             pl.col("capacity").first(),
+        )
+        # Passengers over the places offered: how full the corridor is through the hour,
+        # where one packed trip already sets the highest load factor.
+        .with_columns(
+            (pl.col("passengers") / (pl.col("trips") * pl.col("capacity"))).alias(
+                "mean_load_factor"
+            )
         )
         .join(routes.select("route_idx", "mode", "short_name"), on="route_idx", how="left")
         .sort("route_idx", "from_stop_idx", "to_stop_idx")
@@ -136,11 +144,11 @@ def draw_convergence(convergence: pl.DataFrame, gap: float, path: Path) -> None:
     ax.plot(rows["iteration"], rows["gap"], color="#2a78d6", linewidth=2, marker="o", markersize=4)
     ax.axhline(gap, color=INK_MUTED, linestyle=(0, (4, 3)), linewidth=1)
     ax.text(
-        float(rows["iteration"].to_numpy().max()),
+        float(rows["iteration"].to_numpy().min()),
         gap,
-        f" stop at {gap:g}",
+        f"stop at {gap:g}",
         va="bottom",
-        ha="right",
+        ha="left",
         fontsize=8,
         color=INK_MUTED,
     )
@@ -209,9 +217,23 @@ def draw_stations(stations: pl.DataFrame, path: Path) -> None:
     plt.close(fig)
 
 
+def _class_note(segments: pl.DataFrame, classes: npt.NDArray[np.intp]) -> str:
+    """Share of segments and of passengers per class: dense heavy lines drawn on top can
+    make a map look fuller than it is."""
+    pax = segments["passengers"].fill_null(0.0).to_numpy()
+    total = float(pax.sum()) or 1.0
+    parts = [
+        f"{label}: {np.mean(classes == k):.0%} of segments, {pax[classes == k].sum() / total:.0%} "
+        "of passengers"
+        for k, label in enumerate(LOAD_LABELS)
+        if np.any(classes == k)
+    ]
+    return "\n".join("; ".join(parts[i : i + 2]) for i in range(0, len(parts), 2))
+
+
 def draw_segment_map(segments: pl.DataFrame, lines: list[LineString], path: Path) -> None:
-    """Segments coloured by their highest peak load factor; heavier classes drawn on top."""
-    lf = segments["max_load_factor"].fill_null(0.0).to_numpy()
+    """Segments coloured by their mean peak load factor; heavier classes drawn on top."""
+    lf = segments["mean_load_factor"].fill_null(0.0).to_numpy()
     classes = np.searchsorted([c for c, _ in LOAD_CLASSES], lf, side="right")
     classes = np.minimum(classes, len(LOAD_CLASSES) - 1)
     fig, ax = plt.subplots(figsize=(8, 8), dpi=150)
@@ -221,9 +243,7 @@ def draw_segment_map(segments: pl.DataFrame, lines: list[LineString], path: Path
     for k, (_, colour) in enumerate(LOAD_CLASSES):
         chosen = [xy[i] for i in np.flatnonzero(classes == k)]
         if chosen:
-            ax.add_collection(
-                LineCollection(chosen, colors=colour, linewidths=0.4 + 0.5 * k, zorder=k + 1)
-            )
+            ax.add_collection(LineCollection(chosen, colors=colour, linewidths=0.6, zorder=k + 1))
     if xy:
         points = np.vstack(xy)
         ax.set_xlim(points[:, 0].min(), points[:, 0].max())
@@ -236,7 +256,7 @@ def draw_segment_map(segments: pl.DataFrame, lines: list[LineString], path: Path
     ]
     ax.legend(
         handles=handles,
-        title="Highest load factor",
+        title="Mean load factor",
         title_fontsize=8,
         loc="upper left",
         bbox_to_anchor=(1.0, 1.0),
@@ -245,7 +265,16 @@ def draw_segment_map(segments: pl.DataFrame, lines: list[LineString], path: Path
         labelcolor=INK,
     )
     fig.suptitle("Peak-hour segment loads (Simulated)", x=0.02, ha="left", fontsize=12, color=INK)
-    fig.subplots_adjust(left=0.01, right=0.8, top=0.94, bottom=0.01)
+    fig.text(
+        0.02,
+        0.945,
+        _class_note(segments, classes),
+        ha="left",
+        va="top",
+        fontsize=8,
+        color=INK_MUTED,
+    )
+    fig.subplots_adjust(left=0.01, right=0.8, top=0.9, bottom=0.01)
     fig.savefig(path, facecolor=SURFACE, metadata={"Software": None})
     plt.close(fig)
 
@@ -371,7 +400,8 @@ def build_validation(
         Bullets(
             [
                 "`segments_peak.geoparquet`: one line per route and stop-to-stop segment with "
-                "trips, passengers, highest load and load factor in the report window (QGIS).",
+                "trips, passengers, highest load, highest and mean load factor in the report "
+                "window (QGIS).",
                 *[f"`{f}`" for f in figures],
             ]
         ),
