@@ -278,13 +278,13 @@ def write_geometries(
     table = frame.to_arrow(compat_level=pl.CompatLevel.oldest()).append_column(
         "geometry", pa.array(list(wkb), type=pa.binary())
     )
-    bounds = shapely.total_bounds(shapes).tolist()
+    column: dict[str, object] = {"encoding": "WKB", "geometry_types": [geometry_type]}
+    if shapes.size:  # bbox is optional, and undefined for no geometries
+        column["bbox"] = shapely.total_bounds(shapes).tolist()
     geo = {
         "version": "1.1.0",
         "primary_column": "geometry",
-        "columns": {
-            "geometry": {"encoding": "WKB", "geometry_types": [geometry_type], "bbox": bounds}
-        },  # no "crs": OGC:CRS84 (lon/lat), the GeoParquet default
+        "columns": {"geometry": column},  # no "crs": OGC:CRS84 (lon/lat), the default
     }
     metadata = dict(table.schema.metadata or {})
     metadata[b"geo"] = json.dumps(geo).encode("utf-8")
