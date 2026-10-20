@@ -587,9 +587,13 @@ def _demand_walks(
     config: CityConfig,
     demand: DemandConfig,
     mode: str,
+    transit_dir: Path | None = None,
 ) -> tuple[ZoneWalks, MetroNetwork]:
-    """Zone walks, plus board-only rides to ``mode`` platforms if demand.toml asks for them."""
-    metro = metro_network(router, base / "transit", mode)
+    """Zone walks, plus board-only rides to ``mode`` platforms if demand.toml asks for them.
+
+    ``transit_dir`` is the network the router was built from (a scenario's, by default the
+    baseline's)."""
+    metro = metro_network(router, transit_dir or base / "transit", mode)
     points = zone_points(zones)
     walks = zone_walks(router, base / "walk", points, config.accessibility)
     if demand.ride_access is not None:
@@ -963,6 +967,8 @@ def run_assignment(
     use_fares: bool | None = None,
     theta: float | None = None,
     variant: str | None = None,
+    transit_dir: Path | None = None,
+    out_dir: Path | None = None,
     on_chunk: Callable[[int, int], None] | None = None,
     on_iteration: Callable[[int, float], None] | None = None,
 ) -> tuple[AssignmentManifest, Path]:
@@ -973,6 +979,9 @@ def run_assignment(
     demand model costed. ``use_fares`` and ``theta`` override ``[route_choice]``; results go to
     ``assignment/<scenario>`` or, with ``variant``, ``assignment/<scenario>-<variant>``. If the
     calibration ridership has been built, metro gate entries are scored against it.
+
+    ``transit_dir`` swaps in another network (a scenario's) and ``out_dir`` sets where results
+    go; demand is always the baseline OD, so a scenario changes routes, not trips (ADR 0019).
     """
     demand, mode = _demand_settings(settings, config)
     try:
@@ -990,12 +999,12 @@ def run_assignment(
         )
     base = city_dir(settings, config)
     stages = {
-        "transit": base / "transit",
+        "transit": transit_dir or base / "transit",
         "walk": base / "walk",
         "zones": base / "zones",
-        "demand": base / "demand" / scenario,
+        "demand": base / "demand" / "baseline",
     }
-    _require(stages)
+    _require(stages, {"demand": "demand"})
     cal = demand.calibration
     ridership_dir = base / "ridership" / cal.dataset
     if (ridership_dir / "manifest.json").is_file():
@@ -1004,8 +1013,12 @@ def run_assignment(
     window = assignment.assignment
     report_window = window.report_window()
     try:
-        router = load_router(base, config.routing, config.city.crs_projected)
-        walks, metro = _demand_walks(router, base, zones, config, demand, mode)
+        router = load_router(
+            base, config.routing, config.city.crs_projected, transit_dir=transit_dir
+        )
+        walks, metro = _demand_walks(
+            router, base, zones, config, demand, mode, transit_dir=stages["transit"]
+        )
         stop_times = pl.read_parquet(stages["transit"] / "stop_times.parquet").sort(
             "trip_idx", "position"
         )
@@ -1071,7 +1084,9 @@ def run_assignment(
         .join(parents, on="parent_stop_idx", how="left")
         .select("stop_idx", pl.coalesce("name", "own").alias("name"))
     )
-    out_dir = base / "assignment" / (scenario if variant is None else f"{scenario}-{variant}")
+    if out_dir is None:
+        name = scenario if variant is None else f"{scenario}-{variant}"
+        out_dir = base / "assignment" / name
     tables = {
         LOADS_NAME: loads,
         STOPS_NAME: stop_flows(stop_times, flows),
