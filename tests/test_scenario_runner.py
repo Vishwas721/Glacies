@@ -334,7 +334,7 @@ def test_compare_scenario_with_baseline(city: Path, tmp_path: Path) -> None:
     assert {"h3_cell", "geometry", "jobs_45min_delta"} <= set(geo.columns)
     report = (result.out_dir / "comparison.md").read_text(encoding="utf-8")
     assert "Losses near A, B and C." in report
-    assert "Phase 6" in report
+    assert "need an assignment on both sides" in report
     assert (result.out_dir / "delta_map.png").stat().st_size > 0
 
 
@@ -362,3 +362,36 @@ def test_comparisons_are_reproducible(city: Path, tmp_path: Path) -> None:
     files = {p.name: p.read_bytes() for p in sorted(first.out_dir.iterdir())}
     second = comparison("baseline", str(path))
     assert {p.name: p.read_bytes() for p in sorted(second.out_dir.iterdir())} == files
+
+
+def test_scenarios_assign_the_baseline_demand_and_compare_flows(city: Path, tmp_path: Path) -> None:
+    """With demand built, a scenario run adds an assignment stage and the comparison adds the
+    PRD §31 assignment rows and route deltas (plumbing; toy loads are checked elsewhere)."""
+    assert runner.invoke(app, ["build", "paths"]).exit_code == 0
+    # As in the demand tests: the toy's buildings and POIs lie away from its stops, so equal
+    # scores let every zone with a stop attract trips.
+    proxy = city / "attraction" / "attraction.parquet"
+    table = pl.read_parquet(proxy)
+    table.with_columns(pl.lit(1 / table.height).alias("employment_score")).write_parquet(proxy)
+    for command in (["build", "demand"], ["build", "assignment"]):
+        result = runner.invoke(app, command)
+        assert result.exit_code == 0, result.output
+    path = write_scenario(tmp_path, "rm", REMOVE)
+    outcome = run(path)
+
+    assert outcome.record.assignment
+    assert "assignment" in {o.stage for o in outcome.record.outputs}
+    assignment = outcome.out_dir / "assignment"
+    od = pl.read_parquet(assignment / "od_assignment.parquet")
+    demand = pl.read_parquet(city / "demand" / "baseline" / "od.parquet")
+    assert od["trips"].sum() == pytest.approx(demand["trips"].sum())  # the same demand
+    assert run(path).cached
+    assert run(path, assignment=False).record.assignment is False  # a different key
+
+    compared = comparison("baseline", str(path))
+    names = set(compared.metrics["metric"].to_list())
+    assert "Assignment: waiting per transit trip" in names
+    assert "Assignment: crowding, peak passenger-km above design capacity" in names
+    routes = pl.read_parquet(compared.out_dir / "route_deltas.parquet")
+    assert {"boardings_a", "boardings_b", "boardings_delta"} <= set(routes.columns)
+    assert compared.manifest.b.assignment_manifest_sha256 is not None

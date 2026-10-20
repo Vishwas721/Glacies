@@ -10,8 +10,10 @@ Outputs (``comparisons/<a>__vs__<b>/``): ``comparison.md``, ``metrics.parquet``,
 hexagon per zone, for QGIS), ``delta_map.png`` and ``comparison.json``. All values are
 Simulated; job counts behind them are Estimated.
 
-Waiting, transfers and crowding (PRD §31) come with assignment in Phase 6: the travel-time
-matrix stores door-to-door times only.
+When both sides have an assignment (Phase 6), the metrics add PRD §31's travel time, waiting,
+transfers and crowding per transit trip, metro entries and passenger-km, and
+``route_deltas.parquet`` gives boardings and passenger-km per route on each side. Demand is the
+same baseline OD on both sides (ADR 0019), so the changes come from route choice.
 """
 
 from __future__ import annotations
@@ -59,6 +61,7 @@ from glacies.scenario.runner import (
     RUN_NAME,
     EngineVersions,
     RunRecord,
+    assignment_inputs,
     baseline_inputs,
     cache_key,
     engine_versions,
@@ -91,6 +94,7 @@ class Side:
     transit: Path
     run: RunRecord | None = None
     scenario: Scenario | None = None
+    assignment: Path | None = None  # assignment results, when the side has them
 
 
 class SideRecord(BaseModel):
@@ -98,6 +102,7 @@ class SideRecord(BaseModel):
     cache_key: str | None
     accessibility_manifest_sha256: str
     tt_matrix_manifest_sha256: str
+    assignment_manifest_sha256: str | None = None
 
 
 class ComparisonManifest(BaseModel):
@@ -127,22 +132,25 @@ def resolve_side(
     """``baseline`` or a scenario file whose result exists for the current code and data."""
     base = city_dir(settings, config)
     if ref == BASELINE:
+        assigned = base / "assignment" / BASELINE
         side = Side(
             BASELINE,
             base / "accessibility" / BASELINE,
             base / "tt_matrix" / BASELINE,
             base / "transit",
+            assignment=assigned if (assigned / MANIFEST_NAME).is_file() else None,
         )
     else:
         scenario = load_scenario(Path(ref))
-        key = cache_key(
-            scenario,
-            config,
-            baseline_inputs(base),
-            engine or engine_versions(),
-            settings.random_seed,
-        )
-        directory = result_dir(base, key)
+        engine = engine or engine_versions()
+        # A run with assignment first, then one made with assignment switched off.
+        for inputs in (assignment_inputs(settings, base), []):
+            key = cache_key(
+                scenario, config, baseline_inputs(base), engine, settings.random_seed, inputs
+            )
+            directory = result_dir(base, key)
+            if (directory / RUN_NAME).is_file():
+                break
         if not (directory / RUN_NAME).is_file():
             raise ComparisonError(
                 f"{scenario.scenario_id} has no result for the current code and data; "
@@ -156,6 +164,7 @@ def resolve_side(
             directory / "transit",
             run=run,
             scenario=scenario,
+            assignment=directory / "assignment" if run.assignment else None,
         )
     for directory in (side.accessibility, side.tt_matrix, side.transit):
         if not (directory / MANIFEST_NAME).is_file():
@@ -194,6 +203,9 @@ def compare(
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
     metrics.write_parquet(staging / "metrics.parquet")
+    routes = route_deltas(a, b)
+    if routes is not None:
+        routes.write_parquet(staging / "route_deltas.parquet")
     deltas.write_parquet(staging / "zone_deltas.parquet", compression="zstd")
     wide = _wide(deltas, zones, p, s.thresholds_min, t)
     write_geoparquet(wide, wide["h3_cell"].to_list(), staging / "zone_deltas.geoparquet")
@@ -206,7 +218,7 @@ def compare(
         f"(Simulated); {up + down:,} zones changed",
         config,
     )
-    blocks = _report(a, b, metrics, head, direction, config)
+    blocks = _report(a, b, metrics, head, direction, config, routes)
     (staging / "comparison.md").write_text(to_markdown(blocks), encoding="utf-8", newline="\n")
 
     manifest = ComparisonManifest(
@@ -237,6 +249,9 @@ def _side_record(side: Side) -> SideRecord:
         cache_key=side.run.cache_key if side.run else None,
         accessibility_manifest_sha256=sha256_file(side.accessibility / MANIFEST_NAME),
         tt_matrix_manifest_sha256=sha256_file(side.tt_matrix / MANIFEST_NAME),
+        assignment_manifest_sha256=(
+            sha256_file(side.assignment / MANIFEST_NAME) if side.assignment else None
+        ),
     )
 
 
@@ -398,6 +413,10 @@ def _metrics(
         "count",
         DataNature.SIMULATED,
     )
+    if a.assignment is not None and b.assignment is not None:
+        ma, mb = (_assignment_manifest(side) for side in (a, b))
+        for name, key, unit in ASSIGNMENT_METRICS:
+            add(name, _field(ma, key), _field(mb, key), unit, DataNature.SIMULATED)
     return pl.DataFrame(
         rows,
         schema={
@@ -409,6 +428,65 @@ def _metrics(
         },
         orient="row",
     ).with_columns((pl.col("b") - pl.col("a")).alias("delta"))
+
+
+# (metric, "metrics.<field>" or "stats.<field>" in the assignment manifest, unit)
+ASSIGNMENT_METRICS = (
+    ("Assignment: travel time per transit trip", "metrics.mean_travel_min", "minutes"),
+    ("Assignment: waiting per transit trip", "metrics.mean_waiting_min", "minutes"),
+    ("Assignment: in vehicles per transit trip", "metrics.mean_in_vehicle_min", "minutes"),
+    ("Assignment: walking per transit trip", "metrics.mean_walking_min", "minutes"),
+    ("Assignment: transfers per transit trip", "metrics.transfers_per_trip", "index"),
+    ("Assignment: crowding, peak passenger-km above design capacity",
+     "metrics.peak_crowded_pkm_share", "share"),
+    ("Assignment: peak passenger-km above crush capacity", "metrics.peak_crush_pkm_share", "share"),
+    ("Assignment: peak segments above design capacity", "stats.peak_segments_over_capacity",
+     "count"),
+    ("Assignment: metro gate entries", "metrics.metro_entries", "count"),
+    ("Assignment: boardings", "stats.boardings", "count"),
+    ("Assignment: passenger-km (straight line)", "metrics.passenger_km", "count"),
+    ("Assignment: trips on transit", "stats.trips_transit", "count"),
+)  # fmt: skip
+
+
+def _assignment_manifest(side: Side) -> dict[str, dict[str, float]]:
+    assert side.assignment is not None
+    data: dict[str, dict[str, float]] = json.loads(
+        (side.assignment / MANIFEST_NAME).read_text(encoding="utf-8")
+    )
+    return data
+
+
+def _field(manifest: dict[str, dict[str, float]], key: str) -> float:
+    group, name = key.split(".")
+    return float(manifest[group][name])
+
+
+def route_deltas(a: Side, b: Side) -> pl.DataFrame | None:
+    """Boardings and passenger-km per route on each side (routes keep their index in scenario
+    networks; added routes appear on B only), largest changes in boardings first."""
+    if a.assignment is None or b.assignment is None:
+        return None
+    columns = ["route_idx", "mode", "short_name", "boardings", "passenger_km"]
+    ra = pl.read_parquet(a.assignment / "routes.parquet", columns=columns)
+    rb = pl.read_parquet(b.assignment / "routes.parquet", columns=columns)
+    return (
+        ra.join(rb, on="route_idx", how="full", suffix="_b", coalesce=True)
+        .select(
+            "route_idx",
+            pl.coalesce("mode_b", "mode").alias("mode"),
+            pl.coalesce("short_name_b", "short_name").alias("short_name"),
+            pl.col("boardings").fill_null(0.0).alias("boardings_a"),
+            pl.col("boardings_b").fill_null(0.0),
+            pl.col("passenger_km").fill_null(0.0).alias("passenger_km_a"),
+            pl.col("passenger_km_b").fill_null(0.0),
+        )
+        .with_columns(
+            (pl.col("boardings_b") - pl.col("boardings_a")).alias("boardings_delta"),
+            (pl.col("passenger_km_b") - pl.col("passenger_km_a")).alias("passenger_km_delta"),
+        )
+        .sort(pl.col("boardings_delta").abs(), "route_idx", descending=[True, False])
+    )
 
 
 def _wide(
@@ -569,6 +647,7 @@ def _report(
     head: pl.DataFrame,
     direction: str,
     config: CityConfig,
+    routes: pl.DataFrame | None = None,
 ) -> list[Block]:
     s = config.accessibility
     blocks: list[Block] = [
@@ -611,12 +690,18 @@ def _report(
             align_right=[False, True, True, True],
         ),
         Para(
-            "PRD §31 also lists average waiting, transfers and crowding. They need per-journey "
-            "results and passenger demand, which arrive with assignment (Phase 6); the "
-            "travel-time matrix stores door-to-door times only. The mean door-to-door time is "
-            "taken over the pairs connected in both networks, so its A value can differ "
-            "slightly between comparisons. The two zone counts compare B against A (A's column "
-            "is 0 by definition)."
+            (
+                "Assignment rows (PRD §31 waiting, transfers and crowding) assign the same "
+                "baseline demand onto each network with crowding, so they show how trips "
+                "re-route, not new trips (Simulated; ADR 0019). "
+                if routes is not None
+                else "Waiting, transfers and crowding (PRD §31) need an assignment on both "
+                "sides; run `glacies build assignment` for the baseline and the scenario with "
+                "its demand built. "
+            )
+            + "The mean door-to-door time is taken over the pairs connected in both networks, "
+            "so its A value can differ slightly between comparisons. The two zone counts "
+            "compare B against A (A's column is 0 by definition)."
         ),
         Heading(2, "Direction check"),
         Para(direction),
@@ -658,6 +743,28 @@ def _report(
                 align_right=[False, False, True, True, True, True],
             )
         )
+    if routes is not None:
+        changed = routes.filter(pl.col("boardings_delta").abs() > 0.5)
+        blocks.append(Heading(2, "Routes whose boardings change most"))
+        blocks.append(
+            Table(
+                ["Mode", "Route", "Boardings A", "Boardings B", "Change", "Passenger-km change"],
+                [
+                    [
+                        r["mode"],
+                        r["short_name"],
+                        f"{r['boardings_a']:,.0f}",
+                        f"{r['boardings_b']:,.0f}",
+                        f"{r['boardings_delta']:+,.0f}",
+                        f"{r['passenger_km_delta']:+,.0f}",
+                    ]
+                    for r in changed.head(TOP_ZONES).iter_rows(named=True)
+                ],
+                align_right=[False, False, True, True, True, True],
+            )
+            if changed.height
+            else Para("No route changes by more than half a boarding.")
+        )
     blocks += [
         Heading(2, "Files"),
         Bullets(
@@ -666,6 +773,11 @@ def _report(
                 "`zone_deltas.geoparquet`: one hexagon per zone for QGIS (headline A/B and the "
                 "change at each threshold).",
                 "`metrics.parquet`: the table above.",
+                *(
+                    ["`route_deltas.parquet`: boardings and passenger-km per route, A and B."]
+                    if routes is not None
+                    else []
+                ),
             ]
         ),
     ]
