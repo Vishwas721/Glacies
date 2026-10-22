@@ -23,8 +23,8 @@ page), while the PRD asks for free and open-source software.
   which calls the scenario runner and then writes the comparison with the baseline into the
   result folder (`results/<key>/comparison/`). The child prints its stages and chunk counts as
   JSON lines; the job copies them into the simulation record. Cancelling or the timeout
-  (`GLACIES_SIMULATION_TIMEOUT_S`, 45 min, Assumed) terminates the child; the runner's staging
-  folder is cleared by the next run.
+  (`GLACIES_SIMULATION_TIMEOUT_S`, 45 min, Assumed) terminates the child; its half-written
+  `results/.<key>.staging` folder stays until the same scenario runs again.
 - **Our own record in Redis** (`glacies:sim:<id>`): status (queued, running, completed, failed,
   cancelled), stage, chunks done, result key, error (the end of the child's log). RQ's own job
   data expires; ours does not. A queued job is cancelled by taking it off the queue, a running
