@@ -7,7 +7,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
 from glacies import __version__
-from glacies.api.routers import cities
+from glacies.api.routers import cities, network
 from glacies.config import Settings, get_settings
 
 
@@ -28,6 +28,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return Health(status="ok", version=__version__)
 
     app.include_router(cities.router)
+    app.include_router(network.router)
     return app
 
 
