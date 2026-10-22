@@ -88,7 +88,9 @@ uv run glacies demand sensitivity         # demand under alternative β, proxies
 
 # Infra
 docker compose up -d          # PostGIS :5433 (host), Redis :6379
-uv run uvicorn glacies.api.app:app --reload   # API on :8000
+uv run uvicorn glacies.api.app:app --reload   # API on :8000, docs at /docs (ADR 0020)
+#   /api/cities[/{city}], /api/cities/{city}/{routes[/{idx}],stops,network,zones}
+#   POST /api/cities/{city}/route; /api/cities/{city}/scenarios (CRUD, user files in data/scenarios)
 
 # Everything the hooks check
 uv run pre-commit run --all-files
