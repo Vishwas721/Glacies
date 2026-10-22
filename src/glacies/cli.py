@@ -661,6 +661,22 @@ def _point(text: str) -> tuple[float, float]:
 
 
 @app.command()
+def worker(
+    burst: Annotated[bool, typer.Option(help="Stop when the queue is empty.")] = False,
+) -> None:
+    """Run simulations queued by the API, one at a time (needs Redis: docker compose up -d)."""
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    from glacies.jobs.worker import serve
+
+    settings = get_settings()
+    try:
+        serve(settings, burst=burst)
+    except RedisConnectionError as exc:
+        _fail(f"cannot reach Redis at {settings.redis_url} ({exc}); run docker compose up -d")
+
+
+@app.command()
 def route(
     origin: Annotated[str, typer.Argument(help="Origin as LAT,LON.")],
     destination: Annotated[str, typer.Argument(help="Destination as LAT,LON.")],
