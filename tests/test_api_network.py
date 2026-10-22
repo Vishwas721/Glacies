@@ -53,6 +53,12 @@ def test_lists_and_describes_cities(client: TestClient) -> None:
 
     assert city["service_date"] == "2026-10-13"
     assert city["window"] == ["07:30", "09:30"]
+    assert city["accessibility"] == {
+        "percentiles": [25, 50, 75],
+        "thresholds_min": [15, 30, 45, 60],
+        "headline_percentile": 50,
+        "headline_threshold_min": 45,
+    }
     available = {o["name"]: o["available"] for o in city["outputs"]}
     assert (available["transit"], available["walk"], available["assignment"]) == (True, True, False)
     assert {s["id"] for s in city["sources"]} >= {"toy_gtfs", "toy_osm"}

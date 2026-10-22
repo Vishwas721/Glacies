@@ -46,6 +46,13 @@ class Source(BaseModel):
     verified: bool
 
 
+class AccessibilityOptions(BaseModel):
+    percentiles: list[int] = Field(description="Percentiles over departure times (Assumed).")
+    thresholds_min: list[int] = Field(description="Travel-time thresholds (Assumed).")
+    headline_percentile: int
+    headline_threshold_min: int
+
+
 class CityDetail(CitySummary):
     timezone: str
     bbox: tuple[float, float, float, float] = Field(
@@ -55,6 +62,7 @@ class CityDetail(CitySummary):
     window: tuple[str, str] = Field(
         description="AM departure window of the travel-time matrix, [start, end) HH:MM."
     )
+    accessibility: AccessibilityOptions
     outputs: list[Output]
     sources: list[Source] = Field(description="Every configured data source, for attribution.")
 
@@ -79,6 +87,12 @@ def get_city(city: CityDep) -> CityDetail:
         bbox=config.city.bbox,
         service_date=config.network.service_date if config.network else None,
         window=(config.accessibility.window_start, config.accessibility.window_end),
+        accessibility=AccessibilityOptions(
+            percentiles=config.accessibility.percentiles,
+            thresholds_min=config.accessibility.thresholds_min,
+            headline_percentile=config.accessibility.headline_percentile,
+            headline_threshold_min=config.accessibility.headline_threshold_min,
+        ),
         outputs=[
             Output(
                 name=name, available=(city.data / folder / "manifest.json").is_file(), command=cmd
