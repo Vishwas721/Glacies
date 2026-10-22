@@ -51,7 +51,7 @@ def _dirs(settings: Settings, city: City) -> dict[Literal["repository", "user"],
     }
 
 
-def _find(settings: Settings, city: City, scenario_id: str) -> tuple[str, Path] | None:
+def find(settings: Settings, city: City, scenario_id: str) -> tuple[str, Path] | None:
     if not _SCENARIO_ID.match(scenario_id):
         return None
     for source, folder in _dirs(settings, city).items():
@@ -117,7 +117,7 @@ def list_scenarios(city: CityDep, settings: SettingsDep) -> list[ScenarioSummary
 
 @router.get("/{scenario_id}", response_model=ScenarioRecord)
 def get_scenario(scenario_id: str, city: CityDep, settings: SettingsDep) -> ScenarioRecord:
-    hit = _find(settings, city, scenario_id)
+    hit = find(settings, city, scenario_id)
     if hit is None:
         raise HTTPException(404, f"no scenario {scenario_id!r}")
     return _record(*hit)
@@ -127,7 +127,7 @@ def get_scenario(scenario_id: str, city: CityDep, settings: SettingsDep) -> Scen
 def create_scenario(scenario: Scenario, city: CityDep, settings: SettingsDep) -> ScenarioRecord:
     _check(city, scenario)
     with _lock:
-        if _find(settings, city, scenario.scenario_id) is not None:
+        if find(settings, city, scenario.scenario_id) is not None:
             raise HTTPException(409, f"scenario {scenario.scenario_id!r} already exists")
         path = _dirs(settings, city)["user"] / f"{scenario.scenario_id}.json"
         _write(path, scenario)
@@ -179,7 +179,7 @@ def delete_scenario(scenario_id: str, city: CityDep, settings: SettingsDep) -> R
 
 
 def _editable(settings: Settings, city: City, scenario_id: str) -> Path:
-    hit = _find(settings, city, scenario_id)
+    hit = find(settings, city, scenario_id)
     if hit is None:
         raise HTTPException(404, f"no scenario {scenario_id!r}")
     source, path = hit
