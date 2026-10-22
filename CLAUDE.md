@@ -87,10 +87,14 @@ uv run glacies demand calibrate           # choose β on station entry shares; r
 uv run glacies demand sensitivity         # demand under alternative β, proxies and priors (Estimated)
 
 # Infra
-docker compose up -d          # PostGIS :5433 (host), Redis :6379
+docker compose up -d          # PostGIS :5433 (host), Valkey (Redis protocol) :6379
 uv run uvicorn glacies.api.app:app --reload   # API on :8000, docs at /docs (ADR 0020)
 #   /api/cities[/{city}], /api/cities/{city}/{routes[/{idx}],stops,network,zones}
 #   POST /api/cities/{city}/route; /api/cities/{city}/scenarios (CRUD, user files in data/scenarios)
+#   /api/cities/{city}/results/{baseline|key}/{metrics,accessibility,crowding,flows}
+#   POST /api/simulations, GET /api/simulations[/{id}[/metrics|accessibility|crowding|flows]],
+#   POST /api/simulations/{id}/cancel (ADR 0021)
+uv run glacies worker                         # runs queued simulations, one at a time
 
 # Everything the hooks check
 uv run pre-commit run --all-files

@@ -17,7 +17,7 @@ loads and 1.8M assigned OD pairs. The canonical network keeps no GTFS shapes.
 - **Parquet is the source.** Endpoints query `data/processed/<city>/` with DuckDB (pinned to
   1.5.x; 2.0.0 was a day old when this was written), one in-memory connection per query, file
   paths from the city configuration only. PostGIS stays the QGIS copy; the API does not need
-  Docker until the job queue (M4).
+  Docker until the job queue (M4, ADR 0021).
 - **City-scoped paths.** `/api/cities/{city}/routes` and so on, not the PRD's `/api/routes`:
   the engine is city-agnostic, so the city is part of every request.
 - **Map layers by size.** Routes, stops and segments are GeoJSON (gzip shrinks them about ten
