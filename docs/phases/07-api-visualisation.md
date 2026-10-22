@@ -30,7 +30,7 @@ Phases 3–6 produce Parquet outputs and a scenario runner callable from Python.
 | Decision | Guidance | Your choice |
 |---|---|---|
 | Queue library | RQ (recommended for simplicity) | RQ, one worker. On Windows RQ only offers `SimpleWorker` (no fork, cannot kill a running job), so each job runs `glacies scenario run` as a child process that cancelling terminates (M4). |
-| Basemap | OpenFreeMap or self-hosted PMTiles (zero cost, no key) | OpenFreeMap (no key or limits, but no SLA) plus a local Bengaluru PMTiles cut from a Protomaps build as fallback; CI uses a blank style (M5). |
+| Basemap | OpenFreeMap or self-hosted PMTiles (zero cost, no key) | OpenFreeMap (no key or limits, but no SLA); `VITE_BASEMAP=blank` for offline work and CI (M5). The local PMTiles fallback moves to M9 with the fresh-machine compose profile, where it is needed. |
 | Network data transport | GeoJSON per route on demand + MVT for zones | GeoJSON for routes, stops and stop-pair segments (gzipped); zones as H3 ids + values, no MVT (ADR 0020). |
 | State management | TanStack Query + local component state (avoid Redux) | As suggested. |
 | Playback | 15-min time slices of aggregated segment flows | 15-min slices per directed stop pair (all routes summed), 08:00-11:45. Loads are one pulse (trips leave home 08:00-09:59), so warm-up and drain slices are shown as partial (M8). |

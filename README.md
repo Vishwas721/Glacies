@@ -59,13 +59,14 @@ git clone https://github.com/Vishwas721/Glacies.git && cd Glacies
 cp .env.example .env
 uv sync && uv run pre-commit install
 (cd web && pnpm install)
-docker compose up -d                            # PostGIS + Redis
+docker compose up -d                            # PostGIS + Valkey (the simulation queue)
 
 uv run glacies ingest verify                    # raw archive matches its manifests
 uv run glacies build-city bengaluru --clean     # rebuild every processed dataset (~5 min)
 
 uv run uvicorn glacies.api.app:app --reload     # http://localhost:8000/api/health
-(cd web && pnpm dev)                             # http://localhost:5173
+uv run glacies worker                           # runs simulations queued from the UI
+(cd web && pnpm dev)                             # http://localhost:5173 (VITE_BASEMAP=blank: no tiles)
 ```
 
 Run all checks:

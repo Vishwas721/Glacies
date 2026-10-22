@@ -56,6 +56,7 @@ cargo test --workspace
 # Web (from web/)
 pnpm install
 pnpm lint && pnpm typecheck && pnpm test && pnpm build
+pnpm dev                      # :5173, proxies /api to :8000; VITE_BASEMAP=blank for no tiles
 
 # Data archive (see data/README.md)
 uv run glacies ingest list | register | fetch | verify
