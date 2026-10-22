@@ -1,0 +1,73 @@
+{
+    "$schema": "../../schemas/scenario.schema.json",
+    "schema_version": 1,
+    "scenario_id": "bengaluru_demo_east_corridor",
+    "base_network": "baseline",
+    "title": "East Bengaluru package: 500-D twice as often, 304-K removed, tech-park feeder added",
+    "description": "The PRD §73 demonstration: the three Phase 4 scenarios applied together. Modify frequencies: 500-D (route 1066) on the Outer Ring Road runs twice as often. Remove overlapping service: 304-K (routes 2255 and 2256) duplicates the Purple Line between Hope Farm and KR Pura. Introduce a corridor: a 10-min feeder from Kundalahalli metro to the ORR tech parks at 20 km/h (Assumed). Each change is documented in its own scenario file.",
+    "expected_change": "Gains along the ORR (Silk Board to Hebbal) and near the feeder stops between Kundalahalli and Bellandur; losses along Whitefield Main Road away from Purple Line stations. Each effect is small city-wide, as in the separate runs.",
+    "mutations": [
+        {
+            "type": "modify_headway",
+            "route_id": "1066",
+            "headway_factor": 0.5
+        },
+        {
+            "type": "remove_route",
+            "route_id": "2255"
+        },
+        {
+            "type": "remove_route",
+            "route_id": "2256"
+        },
+        {
+            "type": "add_route",
+            "route_id": "FEEDER-KDL-ECO",
+            "name": "Kundalahalli Metro - Eco Space feeder",
+            "mode": "bus",
+            "stops": [
+                "38799",
+                "21152",
+                "20803",
+                "20957",
+                "20721",
+                "20595",
+                "20641",
+                "20955",
+                "20959",
+                "21037",
+                "35409",
+                "21031",
+                "20894",
+                "21058",
+                "20753",
+                "20770"
+            ],
+            "return_stops": [
+                "20771",
+                "20754",
+                "21059",
+                "20895",
+                "21032",
+                "22670",
+                "22668",
+                "21038",
+                "20960",
+                "20956",
+                "20640",
+                "20596",
+                "20722",
+                "20958",
+                "20802",
+                "21153",
+                "38798"
+            ],
+            "headway_secs": 600,
+            "speed_kmh": 20,
+            "span": [
+                "07:00",
+                "22:00"
+            ]
+        }
+    ]
+}
