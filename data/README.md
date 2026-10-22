@@ -9,6 +9,8 @@ data/
 │   ├── data/                            the files exactly as downloaded
 │   └── manifest.json                    DatasetManifest: source, licence, per-file sha256
 ├── interim/<city>/                      clipped / reprojected / validated intermediates
+├── scenarios/<city>/                    scenarios made in the UI (the API's user files; kept
+│                                        out of processed/, which clean builds delete)
 └── processed/<city>/                    canonical datasets consumed by the engine
     └── results/<cache-key>/             one scenario run: transit/, tt_matrix/, accessibility/,
                                          run.json (`glacies scenario run`; a cache, deleted by
