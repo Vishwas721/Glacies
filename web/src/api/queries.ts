@@ -21,6 +21,13 @@ import type {
 const forever = { staleTime: Infinity, gcTime: Infinity } as const;
 const base = (city: string) => `/api/cities/${city}`;
 
+export const useCities = () =>
+  useQuery({
+    queryKey: ["cities"],
+    queryFn: () => api<{ id: string; name: string; country: string }[]>("/api/cities"),
+    ...forever,
+  });
+
 export const useCity = (city: string) =>
   useQuery({ queryKey: ["city", city], queryFn: () => api<CityDetail>(base(city)), ...forever });
 
@@ -81,13 +88,6 @@ export const useScenarios = (city: string) =>
   useQuery({
     queryKey: ["scenarios", city],
     queryFn: () => api<ScenarioSummary[]>(`${base(city)}/scenarios`),
-  });
-
-export const useScenario = (city: string, id: string | null) =>
-  useQuery({
-    queryKey: ["scenario", city, id],
-    queryFn: () => api<ScenarioRecord>(`${base(city)}/scenarios/${id}`),
-    enabled: id !== null,
   });
 
 /** Create the scenario, or replace the user's copy of it if it already exists. */
