@@ -13,13 +13,18 @@ export interface ZoneValue {
   value: number;
 }
 
-export function zoneLayer(id: string, zones: ZoneValue[], opacity = 0.55): Layer {
+export function zoneLayer(id: string, zones: ZoneValue[], opacity = 0.6): Layer {
   const top = upperBound(zones.map((z) => z.value));
   return new H3HexagonLayer<ZoneValue>({
     id,
     data: zones,
     getHexagon: (z) => z.h3,
-    getFillColor: (z) => [...viridis(z.value / top), 255],
+    // Values below a quarter of the top fade toward clear: almost every zone reaches some tiny
+    // share, and a solid low colour would hide the basemap over the whole study area.
+    getFillColor: (z) => [
+      ...viridis(z.value / top),
+      Math.round(255 * Math.min(1, (4 * z.value) / top)),
+    ],
     extruded: false,
     stroked: false,
     opacity,
@@ -38,8 +43,11 @@ export function networkLayer(network: Network): Layer {
     data: network.features,
     getSourcePosition: (f) => f.geometry.coordinates[0],
     getTargetPosition: (f) => f.geometry.coordinates[1],
-    getColor: (f) => [...modeColour(f.properties.modes), 200],
-    getWidth: (f) => 1 + Math.sqrt(f.properties.window_trips) / 2,
+    getColor: (f) => [
+      ...modeColour(f.properties.modes),
+      f.properties.modes.includes("metro") ? 230 : 110,
+    ],
+    getWidth: (f) => 0.5 + Math.sqrt(f.properties.window_trips) / 3,
     widthUnits: "pixels",
     widthMaxPixels: 8,
     pickable: true,

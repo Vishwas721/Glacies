@@ -4,10 +4,15 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 import type { Layer, PickingInfo } from "@deck.gl/core";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { AttributionControl, Map as MapLibre, NavigationControl } from "maplibre-gl";
+import { AttributionControl, Map as MapLibre, NavigationControl, setWorkerUrl } from "maplibre-gl";
+// MapLibre finds its worker by a URL relative to its own module, which Vite's pre-bundling
+// moves; bundling the worker here gives it a URL that works in dev and in the build.
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { useEffect, useRef } from "react";
 
 import { basemapStyle } from "./basemap";
+
+setWorkerUrl(workerUrl);
 
 interface MapViewProps {
   bbox: [number, number, number, number];
@@ -30,7 +35,7 @@ export function MapView({ bbox, layers, attribution, onClick, getTooltip }: MapV
       bounds: [bbox[0], bbox[1], bbox[2], bbox[3]],
       attributionControl: false,
     });
-    map.addControl(new AttributionControl({ compact: false, customAttribution: attribution }));
+    map.addControl(new AttributionControl({ compact: true, customAttribution: attribution }));
     map.addControl(new NavigationControl({ showCompass: false }), "top-left");
     const deck = new MapboxOverlay({ interleaved: false, layers: [] });
     map.addControl(deck);

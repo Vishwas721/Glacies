@@ -102,7 +102,9 @@ export function LayerPanel({ state, onChange, percentiles, thresholds, legend }:
               ≥ <Field value={legend.top} info={legend.info} />
             </span>
           </div>
-          <p className="note">{legend.info?.description} Colours top out at the 98th percentile.</p>
+          <p className="note">
+            {legend.info?.description} Colours top out at the 98th percentile; low values are paler.
+          </p>
         </div>
       )}
     </section>
