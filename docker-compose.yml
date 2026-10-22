@@ -20,15 +20,17 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # Simulation queue and state (PRD §50). Valkey speaks the Redis protocol under BSD-3;
+  # Redis itself is RSALv2/SSPL from 7.4 (ADR 0021).
   redis:
-    image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    image: valkey/valkey:8.1-alpine
+    command: ["valkey-server", "--appendonly", "yes"]
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10

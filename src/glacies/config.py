@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     city: str = "bengaluru"
     database_url: str = "postgresql://glacies:glacies@localhost:5433/glacies"
     redis_url: str = "redis://localhost:6379/0"
+    # A simulation is stopped after this long (Assumed): runs took 6-12 min on the dev laptop.
+    simulation_timeout_s: int = 2700
     random_seed: int = 42
 
     @property

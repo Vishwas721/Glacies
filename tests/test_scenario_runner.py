@@ -20,8 +20,7 @@ from glacies.routing.network import load_router, parse_clock
 from glacies.scenario.compare import Comparison, compare
 from glacies.scenario.incremental import affected_origins
 from glacies.scenario.runner import EngineVersions, RunOutcome, run_scenario
-from tests.gtfs_edit import TOY_FEED
-from tests.zone_inputs import write_buildings, write_landcover, write_population
+from tests import toy_city
 
 FIXTURES = Path(__file__).parent / "fixtures"
 runner = CliRunner()
@@ -31,25 +30,7 @@ CLEAN = EngineVersions(glacies="t", glacies_raptor="t", git_commit="abc", git_di
 @pytest.fixture
 def city(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Toyville built from raw, with a baseline matrix and accessibility."""
-    monkeypatch.setenv("GLACIES_CITIES_DIR", str(FIXTURES / "cities"))
-    monkeypatch.setenv("GLACIES_CITY", "toyville")
-    monkeypatch.setenv("GLACIES_DATA_DIR", str(tmp_path / "data"))
-    downloads = tmp_path / "downloads"
-    downloads.mkdir()
-    sources = {
-        "toy_gtfs": shutil.copytree(TOY_FEED, downloads / "toy_feed"),
-        "toy_osm": shutil.copy(FIXTURES / "osm" / "toy.osm", downloads / "toy.osm"),
-        "toy_population": write_population(downloads / "pop.tif"),
-        "toy_landcover": write_landcover(downloads / "lc.tif"),
-        "toy_buildings": write_buildings(downloads / "buildings.csv.gz"),
-    }
-    for name, path in sources.items():
-        result = runner.invoke(app, ["ingest", "register", name, str(path), "--snapshot", "v1"])
-        assert result.exit_code == 0, result.output
-    for command in (["build-city"], ["build", "tt-matrix"], ["build", "accessibility"]):
-        result = runner.invoke(app, command)
-        assert result.exit_code == 0, result.output
-    return tmp_path / "data" / "processed" / "toyville"
+    return toy_city.build(tmp_path, monkeypatch)
 
 
 def write_scenario(
@@ -367,15 +348,7 @@ def test_comparisons_are_reproducible(city: Path, tmp_path: Path) -> None:
 def test_scenarios_assign_the_baseline_demand_and_compare_flows(city: Path, tmp_path: Path) -> None:
     """With demand built, a scenario run adds an assignment stage and the comparison adds the
     PRD §31 assignment rows and route deltas (plumbing; toy loads are checked elsewhere)."""
-    assert runner.invoke(app, ["build", "paths"]).exit_code == 0
-    # As in the demand tests: the toy's buildings and POIs lie away from its stops, so equal
-    # scores let every zone with a stop attract trips.
-    proxy = city / "attraction" / "attraction.parquet"
-    table = pl.read_parquet(proxy)
-    table.with_columns(pl.lit(1 / table.height).alias("employment_score")).write_parquet(proxy)
-    for command in (["build", "demand"], ["build", "assignment"]):
-        result = runner.invoke(app, command)
-        assert result.exit_code == 0, result.output
+    toy_city.assign(city)
     path = write_scenario(tmp_path, "rm", REMOVE)
     outcome = run(path)
 
@@ -395,3 +368,24 @@ def test_scenarios_assign_the_baseline_demand_and_compare_flows(city: Path, tmp_
     routes = pl.read_parquet(compared.out_dir / "route_deltas.parquet")
     assert {"boardings_a", "boardings_b", "boardings_delta"} <= set(routes.columns)
     assert compared.manifest.b.assignment_manifest_sha256 is not None
+
+
+def test_comparison_can_be_written_next_to_the_result(city: Path, tmp_path: Path) -> None:
+    path = write_scenario(tmp_path, "rm", REMOVE)
+    outcome = run(path)
+    settings = get_settings()
+    target = outcome.out_dir / "comparison"
+
+    result = compare(
+        settings,
+        load_city(settings.city_config_path),
+        "baseline",
+        str(path),
+        engine=CLEAN,
+        out_dir=target,
+    )
+
+    assert result.out_dir == target
+    assert (target / "metrics.parquet").is_file()
+    assert result.manifest.b.cache_key == outcome.record.cache_key
+    assert not (city / "comparisons").exists()
