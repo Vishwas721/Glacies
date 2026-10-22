@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     data_dir: Path = Path("data")
     cities_dir: Path = Path("cities")
+    scenarios_dir: Path = Path("scenarios")  # scenario files kept in the repository
     city: str = "bengaluru"
     database_url: str = "postgresql://glacies:glacies@localhost:5433/glacies"
     redis_url: str = "redis://localhost:6379/0"
@@ -35,6 +36,11 @@ class Settings(BaseSettings):
     @property
     def processed_dir(self) -> Path:
         return self.data_dir / "processed"
+
+    @property
+    def user_scenarios_dir(self) -> Path:
+        """Scenarios made in the UI: outside ``processed/``, which clean builds delete."""
+        return self.data_dir / "scenarios"
 
     @property
     def city_config_path(self) -> Path:
