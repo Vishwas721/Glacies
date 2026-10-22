@@ -182,8 +182,13 @@ def compare(
     b_ref: str,
     *,
     engine: EngineVersions | None = None,
+    out_dir: Path | None = None,
 ) -> Comparison:
-    """Write the comparison of B against A; ``engine`` overrides the version used to find runs."""
+    """Write the comparison of B against A; ``engine`` overrides the version used to find runs.
+
+    ``out_dir`` defaults to ``comparisons/<a>__vs__<b>``, named by scenario id; simulation jobs
+    write next to their result instead, so an edited scenario never shows an older comparison.
+    """
     a = resolve_side(settings, config, a_ref, engine)
     b = resolve_side(settings, config, b_ref, engine)
     if a.label == b.label:
@@ -200,7 +205,7 @@ def compare(
     direction = _direction_check(a, b, deltas)
     metrics = _metrics(a, b, zones, config, up, down)
 
-    out_dir = base / COMPARISONS_DIR / f"{a.label}__vs__{b.label}"
+    out_dir = out_dir or base / COMPARISONS_DIR / f"{a.label}__vs__{b.label}"
     staging = out_dir.with_name(f".{out_dir.name}.staging")
     if staging.exists():
         shutil.rmtree(staging)

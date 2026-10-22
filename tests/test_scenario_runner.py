@@ -395,3 +395,24 @@ def test_scenarios_assign_the_baseline_demand_and_compare_flows(city: Path, tmp_
     routes = pl.read_parquet(compared.out_dir / "route_deltas.parquet")
     assert {"boardings_a", "boardings_b", "boardings_delta"} <= set(routes.columns)
     assert compared.manifest.b.assignment_manifest_sha256 is not None
+
+
+def test_comparison_can_be_written_next_to_the_result(city: Path, tmp_path: Path) -> None:
+    path = write_scenario(tmp_path, "rm", REMOVE)
+    outcome = run(path)
+    settings = get_settings()
+    target = outcome.out_dir / "comparison"
+
+    result = compare(
+        settings,
+        load_city(settings.city_config_path),
+        "baseline",
+        str(path),
+        engine=CLEAN,
+        out_dir=target,
+    )
+
+    assert result.out_dir == target
+    assert (target / "metrics.parquet").is_file()
+    assert result.manifest.b.cache_key == outcome.record.cache_key
+    assert not (city / "comparisons").exists()
