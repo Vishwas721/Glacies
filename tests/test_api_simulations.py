@@ -155,3 +155,8 @@ def test_a_simulation_runs_end_to_end(
     assert route["boardings_scenario"] is not None
     assert_labelled(changed)
     assert client.get("/api/cities/toyville/results/baseline/changes").status_code == 404
+    # Finished results are listed from disk, so they outlive the Redis records.
+    listed = client.get("/api/cities/toyville/results").json()
+    assert [(r["key"], r["scenario_id"], r["compared"]) for r in listed] == [
+        (sim["result_key"], "faster_r1", True)
+    ]

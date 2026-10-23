@@ -15,7 +15,7 @@ from typing import Annotated, Literal
 
 import polars as pl
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from glacies.api.deps import City, CityDep, SettingsDep
 from glacies.api.labels import Labelled, field
@@ -29,6 +29,7 @@ from glacies.scenario.compare import BASELINE
 from glacies.scenario.runner import RUN_NAME, RunRecord
 
 router = APIRouter(prefix="/api/cities/{city}/results/{result}", tags=["results"])
+listing = APIRouter(prefix="/api/cities/{city}/results", tags=["results"])
 _memo = Memo()
 _KEY = re.compile(r"^[0-9a-f]{64}$")
 FRAME_S = 900  # 15-minute playback frames (PRD §42)
@@ -444,7 +445,10 @@ def changes(city: City, result: Result, top: int) -> Changes:
     folder = city.data / "results" / result.ref
     if result.ref == BASELINE or not (folder / RUN_NAME).is_file():
         raise HTTPException(404, "the baseline has no changes")
-    run = RunRecord.model_validate_json((folder / RUN_NAME).read_text(encoding="utf-8"))
+    try:
+        run = RunRecord.model_validate_json((folder / RUN_NAME).read_text(encoding="utf-8"))
+    except ValidationError:
+        raise HTTPException(404, f"{result.ref} is from an older runner; run it again") from None
     base_routes = pl.read_parquet(city.data / "transit" / "routes.parquet")
     scenario_routes = pl.read_parquet(result.transit / "routes.parquet")
     deltas = (
@@ -541,3 +545,39 @@ def get_changes(
     top: Annotated[int, Query(ge=1, le=100, description="How many route changes.")] = 10,
 ) -> Changes:
     return changes(city, resolve(city, result), top)
+
+
+class ResultSummary(BaseModel):
+    key: str
+    scenario_id: str
+    title: str
+    finished_at: str
+    assignment: bool = Field(description="The run assigned demand (crowding and flows exist).")
+    compared: bool = Field(description="A comparison with the baseline was written.")
+
+
+@listing.get("", response_model=list[ResultSummary])
+def list_results(city: CityDep) -> list[ResultSummary]:
+    """Scenario results on disk, newest first: the cache is the record of what was run, so
+    results stay available when Redis (and the simulation records) are not."""
+    folder = city.data / "results"
+    found = []
+    for run_file in sorted(folder.glob(f"*/{RUN_NAME}")) if folder.is_dir() else []:
+        key = run_file.parent.name
+        if not _KEY.match(key):
+            continue
+        try:
+            run = RunRecord.model_validate_json(run_file.read_text(encoding="utf-8"))
+        except ValidationError:
+            continue  # written by an older runner; its cache key no longer matches anything
+        found.append(
+            ResultSummary(
+                key=key,
+                scenario_id=run.scenario_id,
+                title=run.title,
+                finished_at=run.finished_at,
+                assignment=run.assignment,
+                compared=(run_file.parent / COMPARISON / "comparison.json").is_file(),
+            )
+        )
+    return sorted(found, key=lambda r: (r.finished_at, r.key), reverse=True)
