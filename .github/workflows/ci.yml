@@ -148,12 +148,57 @@ jobs:
       - name: Build
         run: pnpm build
 
+  e2e:
+    name: E2E (browser)
+    needs: changes
+    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    # The demo story on Toyville through the real API, worker and queue (web/e2e).
+    services:
+      valkey:
+        image: valkey/valkey:8.1-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain (uv sync builds the glacies-raptor extension)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: web
+      - run: pnpm e2e
+        working-directory: web
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 7
+
   # Single required status check for branch protection. Jobs skipped by the path
   # filter count as success, so docs-only PRs are never blocked.
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, hygiene, python, rust, web]
+    needs: [changes, hygiene, python, rust, web, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any required job failed or was cancelled
