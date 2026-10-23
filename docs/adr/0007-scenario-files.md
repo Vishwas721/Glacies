@@ -39,7 +39,8 @@ headway" has more than one reasonable meaning.
 - Scenarios stay small and comparable, and survive network rebuilds as long as the GTFS ids
   survive. A new feed snapshot that renames ids makes `glacies scenario check` fail loudly
   rather than apply a scenario to the wrong route.
-- A `route_id` is one GTFS route, not a route number: BMTC splits 500-D across 22 route ids.
+- A `route_id` is one GTFS route, not a route number: BMTC splits 500-D across 15 route ids
+  (22 route names start with "500-D", but seven of them are other numbers such as 500-DJ).
   Removing a whole line means listing its ids; a route-number selector can be added later.
 - Any change to the file format bumps `schema_version`; the loader rejects versions it does not
   know instead of guessing.
