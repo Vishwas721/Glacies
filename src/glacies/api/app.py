@@ -59,6 +59,7 @@ def create_app(settings: Settings | None = None, redis: Redis | None = None) -> 
     app.include_router(network.router)
     app.include_router(routing.router)
     app.include_router(scenarios.router)
+    app.include_router(results.listing)
     app.include_router(results.router)
     app.include_router(simulations.router)
     return app

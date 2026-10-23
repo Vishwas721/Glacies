@@ -1,10 +1,25 @@
 // Progress of a queued or running simulation, with cancel (PRD §45).
 
-import { useCancelSimulation, useSimulation } from "../api/queries";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 
-export function SimulationStatus({ id }: { id: string }) {
+import { useCancelSimulation, useSimulation } from "../api/queries";
+import type { ResultChoice } from "../compare/results";
+
+interface Props {
+  id: string;
+  onShowResult?: (choice: ResultChoice) => void;
+}
+
+export function SimulationStatus({ id, onShowResult }: Props) {
   const { data: sim, error } = useSimulation(id);
   const cancel = useCancelSimulation();
+  const client = useQueryClient();
+  const finished = sim?.status === "completed";
+  // A finished run joins the list of results to compare with.
+  useEffect(() => {
+    if (finished) void client.invalidateQueries({ queryKey: ["results"] });
+  }, [finished, client]);
   if (error) return <p className="error">{error.message}</p>;
   if (!sim) return <p className="note">Queuing…</p>;
   const { progress } = sim;
@@ -36,8 +51,13 @@ export function SimulationStatus({ id }: { id: string }) {
           Cancel
         </button>
       )}
-      {sim.status === "completed" && (
-        <p className="note">Results are ready; the comparison view arrives with milestone M7.</p>
+      {sim.status === "completed" && sim.result_key && onShowResult && (
+        <button
+          type="button"
+          onClick={() => onShowResult({ key: sim.result_key!, label: sim.scenario_id })}
+        >
+          Show results
+        </button>
       )}
     </div>
   );

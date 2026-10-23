@@ -213,3 +213,93 @@ export interface Simulation {
   started_at: string | null;
   finished_at: string | null;
 }
+
+// Results of the baseline or of one scenario run (src/glacies/api/routers/results.py).
+export interface MetricRow {
+  metric: string;
+  unit: string;
+  nature: Nature;
+  baseline: number;
+  scenario: number;
+  delta: number;
+}
+
+export interface Pairs {
+  from_stop_idx: number[];
+  to_stop_idx: number[];
+  coordinates: [number, number, number, number][];
+  mode: string[];
+}
+
+export interface Crowding extends Labelled {
+  window: [string, string];
+  pairs: Pairs;
+  vehicles: number[];
+  passengers: number[];
+  load_factor: number[];
+  max_load_factor: number[];
+}
+
+export interface Frame {
+  start: string;
+  partial: boolean;
+  passenger_segments: number;
+}
+
+export interface Flows extends Labelled {
+  frame_minutes: number;
+  demand_window: [string, string];
+  report_window: [string, string];
+  frames: Frame[];
+  pairs: Pairs;
+  frame_idx: number[];
+  pair_idx: number[];
+  passengers: number[];
+  load_factor: number[];
+  dropped_passengers: number;
+}
+
+export type ChangeKind = "removed" | "added" | "modified";
+
+export interface ChangedRoute {
+  mutation_idx: number;
+  kind: ChangeKind;
+  route_id: string;
+  route_idx: number[];
+  name: string | null;
+  mode: string | null;
+  trips_removed: number;
+  trips_added: number;
+  boardings_baseline: number | null;
+  boardings_scenario: number | null;
+  coordinates: LonLat[][];
+}
+
+export interface RouteDelta {
+  route_idx: number;
+  name: string | null;
+  mode: string;
+  boardings_baseline: number;
+  boardings_scenario: number;
+  boardings_delta: number;
+}
+
+export interface Changes extends Labelled {
+  routes: ChangedRoute[];
+  largest_boardings_changes: RouteDelta[];
+}
+
+export interface ResultSummary {
+  key: string;
+  scenario_id: string;
+  title: string;
+  finished_at: string;
+  assignment: boolean;
+  compared: boolean;
+}
+
+export interface Checks extends Labelled {
+  report_window: [string, string];
+  station_fits: { set: string; stations: number; level_ratio: number }[];
+  bus_load_bands: { band: string; segment_share: number; passenger_share: number }[];
+}

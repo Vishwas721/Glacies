@@ -6,7 +6,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
   Accessibility,
+  Changes,
+  Checks,
   CityDetail,
+  Crowding,
+  Flows,
+  MetricRow,
+  ResultSummary,
   Network,
   RouteDetail,
   RouteList,
@@ -145,3 +151,52 @@ export function useCancelSimulation() {
     onSuccess: (sim) => client.setQueryData(["simulation", sim.id], sim),
   });
 }
+
+export const useResults = (city: string) =>
+  useQuery({
+    queryKey: ["results", city],
+    queryFn: () => api<ResultSummary[]>(`${base(city)}/results`),
+  });
+
+// A result is "baseline" or a scenario run's cache key; results never change once written.
+const result = (city: string, ref: string, part: string) => `${base(city)}/results/${ref}/${part}`;
+
+export const useMetrics = (city: string, ref: string | null) =>
+  useQuery({
+    queryKey: ["metrics", city, ref],
+    queryFn: () => api<{ rows: MetricRow[] }>(result(city, ref!, "metrics")),
+    enabled: ref !== null,
+    ...forever,
+  });
+
+export const useChanges = (city: string, ref: string | null) =>
+  useQuery({
+    queryKey: ["changes", city, ref],
+    queryFn: () => api<Changes>(result(city, ref!, "changes")),
+    enabled: ref !== null,
+    ...forever,
+  });
+
+export const useCrowding = (city: string, ref: string, enabled: boolean) =>
+  useQuery({
+    queryKey: ["crowding", city, ref],
+    queryFn: () => api<Crowding>(result(city, ref, "crowding")),
+    enabled,
+    ...forever,
+  });
+
+export const useFlows = (city: string, ref: string, enabled: boolean) =>
+  useQuery({
+    queryKey: ["flows", city, ref],
+    queryFn: () => api<Flows>(result(city, ref, "flows")),
+    enabled,
+    ...forever,
+  });
+
+export const useChecks = (city: string, ref: string, enabled: boolean) =>
+  useQuery({
+    queryKey: ["checks", city, ref],
+    queryFn: () => api<Checks>(result(city, ref, "checks")),
+    enabled,
+    ...forever,
+  });

@@ -204,7 +204,7 @@ differences between the baseline accessibility (summed under polars 1.x) and the
 factor, for QGIS) and `report.md`. Bengaluru baseline: 59,786 peak segments, written in 4 s.
 
 Peak-hour bus segments (59,622) by mean load factor: 55 % under 0.5 carrying 15 % of bus
-passengers, 19 % at 0.5–1.0 (19 %), 9 % at 1.0–1.5 (14 %), and 16 % over 1.5 carrying 52 %.
+passengers, 19 % at 0.5–1.0 (19 %), 9 % at 1.0–1.5 (13 %), and 16 % over 1.5 carrying 52 %.
 Passenger-weighted, the mean bus load factor is 2.93: a minority of corridors take most riders, the
 soft-capacity model lets them exceed what could board, and the 33-seat / 5.5 m² bus capacity is
 Assumed. Metro segments: 132 of 164 under 0.5 mean load factor, none above 1.0.

@@ -145,3 +145,24 @@ def test_a_simulation_runs_end_to_end(
     # The same result is reachable by its key, as the baseline is by name.
     by_key = client.get(f"/api/cities/toyville/results/{sim['result_key']}/accessibility").json()
     assert by_key == access
+    # What changed: R1 runs twice as often, drawn through its three stops.
+    changed = client.get(f"/api/simulations/{job_id}/changes").json()
+    [route] = changed["routes"]
+    assert (route["kind"], route["route_id"], route["name"]) == ("modified", "R1", "10")
+    assert route["trips_added"] > 0
+    assert [len(line) for line in route["coordinates"]] == [3]
+    assert route["mutation_idx"] == 0
+    assert route["boardings_scenario"] is not None
+    assert_labelled(changed)
+    assert client.get("/api/cities/toyville/results/baseline/changes").status_code == 404
+    # Model checks: bands of peak bus segments cover every segment once.
+    checked = client.get(f"/api/simulations/{job_id}/checks").json()
+    bands = checked["bus_load_bands"]
+    assert [b["band"] for b in bands] == ["under 0.5", "0.5-1.0", "1.0-1.5", "over 1.5"]
+    assert sum(b["segment_share"] for b in bands) in (0, pytest.approx(1.0))
+    assert_labelled(checked)
+    # Finished results are listed from disk, so they outlive the Redis records.
+    listed = client.get("/api/cities/toyville/results").json()
+    assert [(r["key"], r["scenario_id"], r["compared"]) for r in listed] == [
+        (sim["result_key"], "faster_r1", True)
+    ]

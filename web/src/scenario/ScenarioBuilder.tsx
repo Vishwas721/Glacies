@@ -11,6 +11,7 @@ import type {
   ScenarioRecord,
   StopFeature,
 } from "../api/types";
+import type { ResultChoice } from "../compare/results";
 import { AddRouteForm } from "./AddRouteForm";
 import { type Draft, emptyDraft, fromScenario, toScenario } from "./draft";
 import { RouteList } from "./RouteList";
@@ -28,6 +29,7 @@ interface Props {
   onPickingChange: (picking: boolean) => void;
   picked: StopFeature[];
   onPickedChange: (stops: StopFeature[]) => void;
+  onShowResult?: (choice: ResultChoice) => void;
 }
 
 export function ScenarioBuilder(props: Props) {
@@ -178,7 +180,7 @@ export function ScenarioBuilder(props: Props) {
           Simulate
         </button>
       </section>
-      {simulation && <SimulationStatus id={simulation} />}
+      {simulation && <SimulationStatus id={simulation} onShowResult={props.onShowResult} />}
     </div>
   );
 }

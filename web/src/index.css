@@ -31,7 +31,7 @@ body {
 
 .layout {
   display: grid;
-  grid-template-columns: 320px 1fr 300px;
+  grid-template-columns: 320px 1fr 340px;
   flex: 1;
   min-height: 0;
 }
@@ -201,4 +201,45 @@ progress {
     --simulated: #c3a6f5;
     --assumed: #cbd5e0;
   }
+}
+
+.inline {
+  display: inline !important;
+  margin-right: 8px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+.metrics {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin: 4px 0 8px;
+}
+
+.metrics th,
+.metrics td {
+  text-align: left;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.metrics th {
+  font-weight: normal;
+}
+
+.delta-legend td {
+  padding: 1px 6px 1px 0;
+  font-size: 0.85rem;
+}
+
+input[type="range"] {
+  width: 100%;
 }
