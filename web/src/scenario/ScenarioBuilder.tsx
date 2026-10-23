@@ -60,11 +60,16 @@ export function ScenarioBuilder(props: Props) {
       const { draft: next, unsupported } = fromScenario(record.scenario, routes.routes);
       const copy = !record.editable;
       setNotes([
-        ...(copy ? [`${id} is a repository scenario; saving makes your own copy.`] : []),
+        ...(copy
+          ? [
+              `${id} is a repository scenario: simulate it as it is, or edit and save your own copy.`,
+            ]
+          : []),
         ...unsupported.map((u) => `Not editable here, dropped: ${u}`),
       ]);
       onDraftChange(copy ? { ...next, scenarioId: `${next.scenarioId}_copy` } : next);
-      setSavedAs(copy || unsupported.length ? null : next.scenarioId);
+      // Unedited, the scenario on the server is exactly this one, so it can run as it is.
+      setSavedAs(unsupported.length ? null : record.scenario.scenario_id);
     } catch (e) {
       setProblems([e instanceof Error ? e.message : String(e)]);
     }
