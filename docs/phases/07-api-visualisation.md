@@ -30,7 +30,7 @@ Phases 3–6 produce Parquet outputs and a scenario runner callable from Python.
 | Decision | Guidance | Your choice |
 |---|---|---|
 | Queue library | RQ (recommended for simplicity) | RQ, one worker. On Windows RQ only offers `SimpleWorker` (no fork, cannot kill a running job), so each job runs `glacies scenario run` as a child process that cancelling terminates (M4). |
-| Basemap | OpenFreeMap or self-hosted PMTiles (zero cost, no key) | OpenFreeMap (no key or limits, but no SLA); `VITE_BASEMAP=blank` for offline work and CI (M5). The local PMTiles fallback moves to M9 with the fresh-machine compose profile, where it is needed. |
+| Basemap | OpenFreeMap or self-hosted PMTiles (zero cost, no key) | OpenFreeMap (no key or limits, but no SLA); `VITE_BASEMAP=blank` for offline work and CI. No self-hosted PMTiles: the blank style is the fallback (ADR 0022). |
 | Network data transport | GeoJSON per route on demand + MVT for zones | GeoJSON for routes, stops and stop-pair segments (gzipped); zones as H3 ids + values, no MVT (ADR 0020). |
 | State management | TanStack Query + local component state (avoid Redux) | As suggested. |
 | Playback | 15-min time slices of aggregated segment flows | 15-min slices per directed stop pair (all routes summed), 08:00-11:45. Loads are one pulse (trips leave home 08:00-09:59), so warm-up and drain slices are shown as partial (M8). |
@@ -86,10 +86,13 @@ compose services for `api` and `worker`, `docs/demo.md` (the demo script).
 ## 9. Definition of done
 
 - [ ] The full PRD §73 demonstration works from the browser on a fresh machine following the README.
-- [ ] Simulations run asynchronously with visible progress and can be cancelled.
-- [ ] The map stays responsive (≥ 30 fps panning) with all zones and routes loaded.
-- [ ] Every number in the UI has a data-nature label; attributions are visible.
-- [ ] The E2E smoke test passes in CI.
+      (Agent, 2026-10-23: works with `docker compose --profile app up` on the development laptop,
+      including a Bengaluru run in the container; not yet tried on a second machine.)
+- [x] Simulations run asynchronously with visible progress and can be cancelled (ADR 0021).
+- [x] The map stays responsive (≥ 30 fps panning) with all zones and routes loaded: 44-45 fps
+      panning with zones, network, stops and crowding on (Intel UHD Graphics, Chrome, 2026-10-23).
+- [x] Every number in the UI has a data-nature label; attributions are visible.
+- [x] The E2E smoke test passes in CI (`web/e2e`, ADR 0022).
 
 ## 10. Risks & pitfalls
 

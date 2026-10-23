@@ -213,5 +213,12 @@ describe("Scenario builder", () => {
     expect(await screen.findByText(/faster is a repository scenario/)).toBeInTheDocument();
     expect(screen.getByPlaceholderText("my_scenario")).toHaveValue("faster_copy");
     expect(screen.getByRole("combobox", { name: "10 frequency" })).toHaveValue("0.5");
+    // Unedited it runs as it is; any edit means saving a copy first.
+    expect(screen.getByText(/saved as faster$/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Simulate" })).toBeEnabled();
+    fireEvent.change(screen.getByRole("combobox", { name: "10 frequency" }), {
+      target: { value: "0.75" },
+    });
+    expect(screen.getByRole("button", { name: "Simulate" })).toBeDisabled();
   });
 });

@@ -1,0 +1,14 @@
+# Mounted at run time or rebuilt in the image; .git stays (the build records the engine commit).
+data/
+.e2e/
+.venv/
+target/
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+.env

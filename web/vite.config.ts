@@ -8,11 +8,13 @@ export default defineConfig({
     // The scenario JSON Schema lives in the repository's schemas/, outside web/.
     fs: { allow: [".", "../schemas"] },
     proxy: {
-      "/api": "http://localhost:8000",
+      // The browser tests run their own API on another port.
+      "/api": process.env.GLACIES_API_URL ?? "http://localhost:8000",
     },
   },
   test: {
     environment: "jsdom",
     setupFiles: ["./src/setupTests.ts"],
+    include: ["src/**/*.test.{ts,tsx}"], // e2e/ runs under Playwright
   },
 });

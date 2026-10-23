@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import json
+import os
 import shutil
 import time
 from collections.abc import Callable
@@ -145,6 +146,11 @@ class RunOutcome:
 
 def engine_versions() -> EngineVersions:
     commit, dirty = git_state(Path(__file__).resolve().parents[3], ENGINE_PATHS)
+    if commit is None:
+        # Installed without a checkout (the container image): the build recorded the engine
+        # commit, so new code still means new cache keys.
+        commit = os.environ.get("GLACIES_ENGINE_COMMIT") or None
+        dirty = os.environ.get("GLACIES_ENGINE_DIRTY") == "1" if commit else None
     return EngineVersions(
         glacies=__version__,
         glacies_raptor=importlib.metadata.version("glacies-raptor"),

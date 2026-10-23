@@ -389,3 +389,20 @@ def test_comparison_can_be_written_next_to_the_result(city: Path, tmp_path: Path
     assert (target / "metrics.parquet").is_file()
     assert result.manifest.b.cache_key == outcome.record.cache_key
     assert not (city / "comparisons").exists()
+
+
+def test_engine_version_without_a_checkout_comes_from_the_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from glacies.scenario import runner as module
+
+    monkeypatch.setattr(module, "git_state", lambda *_: (None, None))
+    monkeypatch.delenv("GLACIES_ENGINE_COMMIT", raising=False)
+    assert (module.engine_versions().git_commit, module.engine_versions().git_dirty) == (None, None)
+
+    monkeypatch.setenv("GLACIES_ENGINE_COMMIT", "abc123")
+    monkeypatch.setenv("GLACIES_ENGINE_DIRTY", "0")
+    assert (module.engine_versions().git_commit, module.engine_versions().git_dirty) == (
+        "abc123",
+        False,
+    )

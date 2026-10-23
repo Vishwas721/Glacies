@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     cities_dir: Path = Path("cities")
     scenarios_dir: Path = Path("scenarios")  # scenario files kept in the repository
+    web_dist: Path = Path("web/dist")  # the built web app, served at / when present
     city: str = "bengaluru"
     database_url: str = "postgresql://glacies:glacies@localhost:5433/glacies"
     redis_url: str = "redis://localhost:6379/0"

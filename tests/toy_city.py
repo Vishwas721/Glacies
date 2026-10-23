@@ -1,6 +1,7 @@
 """Toyville built from raw by the real pipeline, as far as a test needs."""
 
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 import polars as pl
@@ -22,9 +23,15 @@ def invoke(*command: str) -> None:
 
 def build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Toyville with a baseline matrix and accessibility; returns its processed folder."""
-    monkeypatch.setenv("GLACIES_CITIES_DIR", str(FIXTURES / "cities"))
-    monkeypatch.setenv("GLACIES_CITY", "toyville")
-    monkeypatch.setenv("GLACIES_DATA_DIR", str(tmp_path / "data"))
+    return build_in(tmp_path, monkeypatch.setenv)
+
+
+def build_in(tmp_path: Path, setenv: Callable[[str, str], None]) -> Path:
+    """As ``build``, setting the environment with ``setenv`` (the end-to-end setup has no
+    pytest)."""
+    setenv("GLACIES_CITIES_DIR", str(FIXTURES / "cities"))
+    setenv("GLACIES_CITY", "toyville")
+    setenv("GLACIES_DATA_DIR", str(tmp_path / "data"))
     downloads = tmp_path / "downloads"
     downloads.mkdir()
     sources = {

@@ -166,3 +166,28 @@ def test_a_simulation_runs_end_to_end(
     assert [(r["key"], r["scenario_id"], r["compared"]) for r in listed] == [
         (sim["result_key"], "faster_r1", True)
     ]
+
+
+def test_the_child_reads_the_engine_version_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An edit to the source tree during a run changes the version; the comparison must still
+    find the result the run wrote under the version it started with."""
+    from glacies.jobs import child
+    from glacies.scenario import compare, runner
+    from glacies.scenario.runner import EngineVersions
+
+    toy_city.build(tmp_path, monkeypatch)
+    path = tmp_path / "faster_r1.json"
+    path.write_text(json.dumps(SCENARIO), encoding="utf-8")
+    calls = iter(range(100))
+
+    def drifting() -> EngineVersions:
+        return EngineVersions(
+            glacies="t", glacies_raptor="t", git_commit=f"c{next(calls)}", git_dirty=False
+        )
+
+    for module in (child, runner, compare):
+        monkeypatch.setattr(module, "engine_versions", drifting)
+
+    assert child.main(["toyville", str(path)]) == 0
