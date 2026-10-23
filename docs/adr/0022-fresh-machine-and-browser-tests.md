@@ -49,6 +49,6 @@ phase plan also suggested a self-hosted PMTiles basemap as a fallback for OpenFr
   then reused by the host in 4 s.
 - Same platform, same bytes; across platforms, the same numbers to rounding. The Linux image and
   Windows give an identical travel-time matrix (whole seconds), while floating-point outputs differ
-  in the last bit (accessibility shares by at most 9e-19, loads by 9e-13 passengers) because the
-  maths libraries round differently. Sharing results between them is therefore safe; comparing
+  in the last bit (accessibility shares by at most 9e-19, loads by 9e-13 passengers), most likely
+  because the platforms' maths libraries round functions such as `exp` differently (not traced). Sharing results between them is therefore safe; comparing
   their files byte for byte is not.
