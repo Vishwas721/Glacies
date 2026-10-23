@@ -9,6 +9,7 @@ from threading import Thread
 from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from redis import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -62,6 +63,10 @@ def create_app(settings: Settings | None = None, redis: Redis | None = None) -> 
     app.include_router(results.listing)
     app.include_router(results.router)
     app.include_router(simulations.router)
+    # The built web app (`pnpm build`), so one server is enough on a fresh machine. Mounted
+    # last: /api routes match first.
+    if (settings.web_dist / "index.html").is_file():
+        app.mount("/", StaticFiles(directory=settings.web_dist, html=True), name="web")
     return app
 
 
