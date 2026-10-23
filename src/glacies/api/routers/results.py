@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import polars as pl
 from fastapi import APIRouter, HTTPException, Query
@@ -26,6 +26,7 @@ from glacies.jobs.child import COMPARISON
 from glacies.provenance import DataNature
 from glacies.routing.network import clock
 from glacies.scenario.compare import BASELINE
+from glacies.scenario.runner import RUN_NAME, RunRecord
 
 router = APIRouter(prefix="/api/cities/{city}/results/{result}", tags=["results"])
 _memo = Memo()
@@ -35,6 +36,7 @@ MIN_PASSENGERS = 0.01  # rows below this are rounding residue of fractional expe
 # Values are rounded for transport: 0.01 passenger and 0.001 of capacity are far below anything a
 # map colour can show.
 SIM = DataNature.SIMULATED
+ASSUMED = DataNature.ASSUMED
 
 
 @dataclass(frozen=True)
@@ -366,6 +368,140 @@ def flows(settings: Settings, city: City, result: Result) -> Flows:
     )
 
 
+# --- what changed ------------------------------------------------------------------------
+
+Coord = tuple[float, float]
+KIND: dict[str, Literal["removed", "added", "modified"]] = {
+    "remove_route": "removed",
+    "add_route": "added",
+    "modify_headway": "modified",
+}
+
+
+class ChangedRoute(BaseModel):
+    mutation_idx: int = Field(description="Index of the change in the scenario's mutations.")
+    kind: Literal["removed", "added", "modified"]
+    route_id: str
+    route_idx: list[int] = Field(description="Matching routes (usually one; feeds may repeat ids).")
+    name: str | None
+    mode: str | None
+    trips_removed: int
+    trips_added: int
+    boardings_baseline: float | None
+    boardings_scenario: float | None
+    coordinates: list[list[Coord]] = Field(
+        description="One line per stop pattern, stop to stop (Assumed)."
+    )
+
+
+class RouteDelta(BaseModel):
+    route_idx: int
+    name: str | None
+    mode: str
+    boardings_baseline: float
+    boardings_scenario: float
+    boardings_delta: float
+
+
+class Changes(Labelled):
+    routes: list[ChangedRoute]
+    largest_boardings_changes: list[RouteDelta] = Field(
+        description="Routes whose boardings changed most, either way: where riders moved."
+    )
+
+
+def _route_lines(transit: Path, route_idx: list[int]) -> dict[int, list[list[Coord]]]:
+    if not route_idx:
+        return {}
+    table = query(
+        """
+        SELECT p.route_idx, ps.pattern_idx, s.lon, s.lat
+        FROM read_parquet($patterns) p
+        JOIN read_parquet($pattern_stops) ps USING (pattern_idx)
+        JOIN read_parquet($stops) s USING (stop_idx)
+        WHERE list_contains($routes, p.route_idx)
+        ORDER BY p.route_idx, ps.pattern_idx, ps.position
+        """,
+        {
+            "patterns": str(transit / "patterns.parquet"),
+            "pattern_stops": str(transit / "pattern_stops.parquet"),
+            "stops": str(transit / "stops.parquet"),
+            "routes": route_idx,
+        },
+    )
+    lines: dict[int, list[list[Coord]]] = {}
+    for (route, _), group in table.group_by("route_idx", "pattern_idx", maintain_order=True):
+        coords = list(zip(group["lon"].round(6), group["lat"].round(6), strict=True))
+        lines.setdefault(int(str(route)), []).append(coords)
+    return lines
+
+
+def changes(city: City, result: Result, top: int) -> Changes:
+    folder = city.data / "results" / result.ref
+    if result.ref == BASELINE or not (folder / RUN_NAME).is_file():
+        raise HTTPException(404, "the baseline has no changes")
+    run = RunRecord.model_validate_json((folder / RUN_NAME).read_text(encoding="utf-8"))
+    base_routes = pl.read_parquet(city.data / "transit" / "routes.parquet")
+    scenario_routes = pl.read_parquet(result.transit / "routes.parquet")
+    deltas = (
+        pl.read_parquet(result.comparison / "route_deltas.parquet")
+        if result.comparison and (result.comparison / "route_deltas.parquet").is_file()
+        else None
+    )
+    boardings: dict[int, tuple[float, float]] = {}
+    if deltas is not None:
+        pairs = deltas.select("route_idx", "boardings_a", "boardings_b").iter_rows()
+        boardings = {r: (a, b) for r, a, b in pairs}
+    out = []
+    for change in run.changes:
+        kind = KIND.get(change.type, "modified")
+        routes = base_routes if kind == "removed" else scenario_routes
+        rows = routes.filter(pl.col("source_route_id") == change.route_id)
+        idx = rows["route_idx"].to_list()
+        lines = _route_lines(city.data / "transit" if kind == "removed" else result.transit, idx)
+        a, b = (sum(boardings[i][k] for i in idx if i in boardings) for k in (0, 1))
+        out.append(
+            ChangedRoute(
+                mutation_idx=change.mutation - 1,
+                kind=kind,
+                route_id=change.route_id,
+                route_idx=idx,
+                name=rows["short_name"][0] if rows.height else None,
+                mode=rows["mode"][0] if rows.height else None,
+                trips_removed=change.trips_removed,
+                trips_added=change.trips_added,
+                boardings_baseline=a if boardings else None,
+                boardings_scenario=b if boardings else None,
+                coordinates=[line for i in idx for line in lines.get(i, [])],
+            )
+        )
+    largest: list[RouteDelta] = []
+    if deltas is not None:
+        biggest = deltas.sort(pl.col("boardings_delta").abs(), descending=True).head(top)
+        largest = [
+            RouteDelta(
+                route_idx=r["route_idx"],
+                name=r["short_name"],
+                mode=r["mode"],
+                boardings_baseline=r["boardings_a"],
+                boardings_scenario=r["boardings_b"],
+                boardings_delta=r["boardings_delta"],
+            )
+            for r in biggest.iter_rows(named=True)
+        ]
+    return Changes(
+        fields={
+            "trips_removed": field(ASSUMED, "Timetabled trips the change takes away.", "trips"),
+            "trips_added": field(ASSUMED, "Timetabled trips the change adds.", "trips"),
+            "boardings_baseline": field(SIM, "Boardings by the AM-peak demand, baseline.", "pax"),
+            "boardings_scenario": field(SIM, "Boardings by the AM-peak demand, scenario.", "pax"),
+            "boardings_delta": field(SIM, "Scenario minus baseline.", "pax"),
+        },
+        routes=out,
+        largest_boardings_changes=largest,
+    )
+
+
 # --- endpoints ----------------------------------------------------------------------------
 
 
@@ -392,3 +528,12 @@ def get_crowding(city: CityDep, result: str, settings: SettingsDep) -> Crowding:
 @router.get("/flows", response_model=Flows)
 def get_flows(city: CityDep, result: str, settings: SettingsDep) -> Flows:
     return flows(settings, city, resolve(city, result))
+
+
+@router.get("/changes", response_model=Changes)
+def get_changes(
+    city: CityDep,
+    result: str,
+    top: Annotated[int, Query(ge=1, le=100, description="How many route changes.")] = 10,
+) -> Changes:
+    return changes(city, resolve(city, result), top)

@@ -137,3 +137,9 @@ def simulation_crowding(sim_id: str, settings: SettingsDep, redis: RedisDep) -> 
 def simulation_flows(sim_id: str, settings: SettingsDep, redis: RedisDep) -> results.Flows:
     city, result = _result(settings, redis, sim_id)
     return results.flows(settings, city, result)
+
+
+@router.get("/{sim_id}/changes", response_model=results.Changes)
+def simulation_changes(sim_id: str, settings: SettingsDep, redis: RedisDep) -> results.Changes:
+    city, result = _result(settings, redis, sim_id)
+    return results.changes(city, result, top=10)
