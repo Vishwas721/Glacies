@@ -36,6 +36,39 @@ services:
       retries: 10
     restart: unless-stopped
 
+
+  # The application itself, for a fresh machine: `docker compose --profile app up -d --build`,
+  # then http://localhost:8000. Data comes from ./data (build it first, see the README).
+  api:
+    profiles: [app]
+    build: .
+    image: glacies:local
+    environment: &app-env
+      GLACIES_REDIS_URL: redis://redis:6379/0
+      GLACIES_DATABASE_URL: postgresql://${POSTGRES_USER:-glacies}:${POSTGRES_PASSWORD:-glacies}@postgis:5432/${POSTGRES_DB:-glacies}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes: &app-volumes
+      - ./data:/app/data
+      - ./cities:/app/cities:ro
+      - ./scenarios:/app/scenarios:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    profiles: [app]
+    build: .
+    image: glacies:local
+    command: ["glacies", "worker"]
+    environment: *app-env
+    volumes: *app-volumes
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgis-data:
   redis-data:
