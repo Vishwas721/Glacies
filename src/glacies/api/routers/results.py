@@ -8,6 +8,7 @@ zone table. Everything here is Simulated except the zone population and capaciti
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ from pydantic import BaseModel, Field, ValidationError
 from glacies.api.deps import City, CityDep, SettingsDep
 from glacies.api.labels import Labelled, field
 from glacies.api.store import Memo, query
+from glacies.assignment.validation import LOAD_LABELS, peak_segments
 from glacies.cities import load_assignment
 from glacies.config import Settings
 from glacies.jobs.child import COMPARISON
@@ -510,6 +512,83 @@ def changes(city: City, result: Result, top: int) -> Changes:
     )
 
 
+# --- model checks -------------------------------------------------------------------------
+
+
+class StationFit(BaseModel):
+    set: str = Field(description="training, held_out (scored) or excluded (not scored).")
+    stations: int
+    level_ratio: float = Field(description="Simulated over observed metro gate entries.")
+
+
+class LoadBand(BaseModel):
+    band: str = Field(description="Mean load factor over the report window.")
+    segment_share: float
+    passenger_share: float
+
+
+class Checks(Labelled):
+    """How far to trust the loads: the assignment against observed metro entries, and how
+    many bus passengers ride segments loaded past what could physically board (soft capacity)."""
+
+    report_window: tuple[str, str]
+    station_fits: list[StationFit]
+    bus_load_bands: list[LoadBand] = Field(description="Peak bus segments by mean load factor.")
+
+
+LOAD_EDGES = (0.5, 1.0, 1.5)  # the bands of `glacies assignment report`
+
+
+def checks(settings: Settings, city: City, result: Result) -> Checks:
+    assigned = _assigned(result)
+    manifest = json.loads((assigned / "manifest.json").read_text(encoding="utf-8"))
+    fits = [
+        StationFit(set=name, stations=f["items"], level_ratio=f["level_ratio"])
+        for name, f in sorted((manifest.get("station_fits") or {}).items())
+    ]
+    _, _, lo, hi = _window(settings, city)
+    transit = result.transit
+    segments = peak_segments(
+        pl.read_parquet(assigned / "loads.parquet"),
+        pl.read_parquet(transit / "trips.parquet", columns=["trip_idx", "route_idx"]),
+        pl.read_parquet(transit / "routes.parquet", columns=["route_idx", "mode", "short_name"]),
+        (lo, hi),
+    ).filter(pl.col("mode") == "bus")
+    # Each band holds load factors from its lower edge up to (not including) the next.
+    lf = pl.col("mean_load_factor").fill_null(0.0)
+    band = pl.lit(LOAD_LABELS[-1])
+    for edge, label in reversed(list(zip(LOAD_EDGES, LOAD_LABELS, strict=False))):
+        band = pl.when(lf < edge).then(pl.lit(label)).otherwise(band)
+    table = segments.group_by(band.alias("band")).agg(
+        pl.len().alias("segments"), pl.col("passengers").sum()
+    )
+    count = dict(zip(table["band"], table["segments"], strict=True))
+    riders = dict(zip(table["band"], table["passengers"], strict=True))
+    total_segments, total_riders = segments.height or 1, float(segments["passengers"].sum()) or 1.0
+    return Checks(
+        fields={
+            "stations": field(
+                DataNature.OBSERVED, "Stations with observed entries in the set.", "count"
+            ),
+            "level_ratio": field(
+                SIM, "Simulated metro entries over observed gate entries; 1 is right.", "ratio"
+            ),
+            "segment_share": field(SIM, "Share of peak bus segments in the band.", "share"),
+            "passenger_share": field(SIM, "Share of peak bus passengers riding them.", "share"),
+        },
+        report_window=(clock(lo), clock(hi)),
+        station_fits=fits,
+        bus_load_bands=[
+            LoadBand(
+                band=label,
+                segment_share=count.get(label, 0) / total_segments,
+                passenger_share=float(riders.get(label, 0.0)) / total_riders,
+            )
+            for label in LOAD_LABELS
+        ],
+    )
+
+
 # --- endpoints ----------------------------------------------------------------------------
 
 
@@ -581,3 +660,8 @@ def list_results(city: CityDep) -> list[ResultSummary]:
             )
         )
     return sorted(found, key=lambda r: (r.finished_at, r.key), reverse=True)
+
+
+@router.get("/checks", response_model=Checks)
+def get_checks(city: CityDep, result: str, settings: SettingsDep) -> Checks:
+    return checks(settings, city, resolve(city, result))

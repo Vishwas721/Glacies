@@ -143,3 +143,9 @@ def simulation_flows(sim_id: str, settings: SettingsDep, redis: RedisDep) -> res
 def simulation_changes(sim_id: str, settings: SettingsDep, redis: RedisDep) -> results.Changes:
     city, result = _result(settings, redis, sim_id)
     return results.changes(city, result, top=10)
+
+
+@router.get("/{sim_id}/checks", response_model=results.Checks)
+def simulation_checks(sim_id: str, settings: SettingsDep, redis: RedisDep) -> results.Checks:
+    city, result = _result(settings, redis, sim_id)
+    return results.checks(settings, city, result)

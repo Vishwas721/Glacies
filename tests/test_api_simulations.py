@@ -155,6 +155,12 @@ def test_a_simulation_runs_end_to_end(
     assert route["boardings_scenario"] is not None
     assert_labelled(changed)
     assert client.get("/api/cities/toyville/results/baseline/changes").status_code == 404
+    # Model checks: bands of peak bus segments cover every segment once.
+    checked = client.get(f"/api/simulations/{job_id}/checks").json()
+    bands = checked["bus_load_bands"]
+    assert [b["band"] for b in bands] == ["under 0.5", "0.5-1.0", "1.0-1.5", "over 1.5"]
+    assert sum(b["segment_share"] for b in bands) in (0, pytest.approx(1.0))
+    assert_labelled(checked)
     # Finished results are listed from disk, so they outlive the Redis records.
     listed = client.get("/api/cities/toyville/results").json()
     assert [(r["key"], r["scenario_id"], r["compared"]) for r in listed] == [
