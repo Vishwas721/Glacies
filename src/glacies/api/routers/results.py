@@ -308,6 +308,8 @@ class Frame(BaseModel):
 
 class Flows(Labelled):
     frame_minutes: int
+    demand_window: tuple[str, str] = Field(description="Trips leave home in [start, end).")
+    report_window: tuple[str, str] = Field(description="Full frames: crowding is reported here.")
     frames: list[Frame]
     pairs: Pairs
     frame_idx: list[int] = Field(description="Index into `frames` of each row.")
@@ -351,6 +353,8 @@ def flows(settings: Settings, city: City, result: Result) -> Flows:
             ),
         },
         frame_minutes=FRAME_S // 60,
+        demand_window=(clock(start), clock(end)),
+        report_window=(clock(lo), clock(hi)),
         frames=[
             Frame(
                 start=clock(b),

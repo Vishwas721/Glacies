@@ -77,6 +77,10 @@ def test_flows_are_15_minute_frames_with_partial_ones_marked(client: TestClient)
     body = client.get(f"{URL}/flows").json()
 
     frames = [(f["start"], f["partial"], f["passenger_segments"]) for f in body["frames"]]
+    assert (body["demand_window"], body["report_window"]) == (
+        ["08:00", "10:00"],
+        ["08:30", "09:30"],
+    )
     assert frames == [
         ("08:00", True, 0.0),  # the 08:02 residue is dropped
         ("08:15", True, 0.0),
