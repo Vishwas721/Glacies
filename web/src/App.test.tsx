@@ -57,7 +57,9 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Bus and metro network" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Stops" }));
-    fireEvent.click(screen.getByRole("radio", { name: "None" }));
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Zones" })).getByRole("radio", { name: "None" }),
+    );
 
     await waitFor(() => expect(layerIds()).toEqual(["stops"]));
   });
