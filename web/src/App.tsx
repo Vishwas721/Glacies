@@ -6,8 +6,12 @@ import { useCallback, useMemo, useState } from "react";
 
 import {
   useAccessibility,
+  useChanges,
+  useChecks,
   useCities,
   useCity,
+  useCrowding,
+  useFlows,
   useNetwork,
   useRoute,
   useRoutes,
@@ -15,6 +19,18 @@ import {
   useZones,
 } from "./api/queries";
 import type { FieldInfo, SegmentFeature, StopFeature } from "./api/types";
+import { ComparePanel } from "./compare/ComparePanel";
+import {
+  changesLayer,
+  deltaZoneLayer,
+  loadLayer,
+  type PairValue,
+  pairValues,
+} from "./compare/layers";
+import { ModelChecks } from "./compare/ModelChecks";
+import { Playback } from "./compare/Playback";
+import { ResultPicker } from "./compare/ResultPicker";
+import type { ResultChoice } from "./compare/results";
 import { LayerPanel } from "./map/LayerPanel";
 import { INITIAL_LAYERS, type LayerState, type Legend } from "./map/layerState";
 import {
@@ -31,7 +47,7 @@ import { upperBound } from "./map/colours";
 import { emptyDraft, type Draft } from "./scenario/draft";
 import { ScenarioBuilder } from "./scenario/ScenarioBuilder";
 import { Field } from "./ui/Quantity";
-import { format } from "./ui/format";
+import { format, formatDelta } from "./ui/format";
 
 export function App() {
   const cities = useCities();
@@ -68,23 +84,45 @@ function CityView({ city }: { city: string }) {
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<StopFeature[]>([]);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [result, setResult] = useState<ResultChoice | null>(null);
+  const [frame, setFrame] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  // Without a chosen result everything shows the baseline.
+  const view = result ? layers.view : "baseline";
+  const resultRef = result && view !== "baseline" ? result.key : "baseline";
 
   const showStops = layers.stops || picking;
   const stops = useStops(city);
   const zones = useZones(city);
   const access = useAccessibility(
     city,
-    "baseline",
+    resultRef,
     layers.percentile,
     layers.thresholdMin,
     layers.zones === "accessibility",
   );
   const route = useRoute(city, selectedRoute);
+  const crowding = useCrowding(city, resultRef, layers.loads === "crowding");
+  const flows = useFlows(city, resultRef, layers.loads === "flows");
+  const changes = useChanges(city, result?.key ?? null);
+  const checks = useChecks(city, resultRef, layers.loads !== "none");
 
   // The zone values and their label for the layer chosen.
-  const zoneData = useMemo((): { values: ZoneValue[]; info: FieldInfo | undefined } | null => {
+  const zoneData = useMemo((): {
+    values: ZoneValue[];
+    info: FieldInfo | undefined;
+    delta?: boolean;
+  } | null => {
     if (layers.zones === "accessibility" && access.data) {
       const a = access.data;
+      const delta = a.est_jobs_share_delta;
+      if (view === "change" && delta) {
+        return {
+          values: a.h3_cell.map((h3, i) => ({ h3, value: delta[i]! })),
+          info: a.fields.est_jobs_share_delta,
+          delta: true,
+        };
+      }
       return {
         values: a.h3_cell.map((h3, i) => ({ h3, value: a.est_jobs_share[i]! })),
         info: a.fields.est_jobs_share,
@@ -106,13 +144,45 @@ function CityView({ city }: { city: string }) {
       };
     }
     return null;
-  }, [layers.zones, access.data, zones.data]);
+  }, [layers.zones, access.data, zones.data, view]);
+
+  const crowdValues = useMemo((): PairValue[] | null => {
+    const c = crowding.data;
+    if (!c) return null;
+    return pairValues(
+      c.pairs,
+      c.passengers.map((_, i) => i),
+      c.passengers,
+      c.load_factor,
+    );
+  }, [crowding.data]);
+  const flowFrames = useMemo((): PairValue[][] | null => {
+    const f = flows.data;
+    if (!f) return null;
+    const frames: PairValue[][] = f.frames.map(() => []);
+    pairValues(f.pairs, f.pair_idx, f.passengers, f.load_factor).forEach((v, i) =>
+      frames[f.frame_idx[i]!]!.push(v),
+    );
+    return frames;
+  }, [flows.data]);
+  const shownFrame = flowFrames ? Math.min(frame, flowFrames.length - 1) : 0;
 
   const pickedKeys = useMemo(() => new Set(picked.map(stopKey)), [picked]);
   const deckLayers = useMemo(() => {
     const out: Layer[] = [];
-    if (zoneData) out.push(zoneLayer(`zones-${layers.zones}`, zoneData.values));
+    if (zoneData) {
+      out.push(
+        zoneData.delta
+          ? deltaZoneLayer(zoneData.values)
+          : zoneLayer(`zones-${layers.zones}`, zoneData.values),
+      );
+    }
     if (layers.network && network.data) out.push(networkLayer(network.data));
+    if (layers.loads === "crowding" && crowdValues) out.push(loadLayer("crowding", crowdValues));
+    if (layers.loads === "flows" && flowFrames) {
+      out.push(loadLayer("flows", flowFrames[shownFrame] ?? []));
+    }
+    if (view !== "baseline" && changes.data) out.push(changesLayer(changes.data.routes));
     if (route.data && selectedRoute !== null) out.push(routeLayer(route.data.features));
     if (showStops && stops.data) out.push(stopsLayer(stops.data.features, pickedKeys));
     if (picked.length) out.push(draftLayer(picked.map((s) => s.geometry.coordinates)));
@@ -120,6 +190,11 @@ function CityView({ city }: { city: string }) {
   }, [
     zoneData,
     layers,
+    crowdValues,
+    flowFrames,
+    shownFrame,
+    view,
+    changes.data,
     network.data,
     route.data,
     selectedRoute,
@@ -166,11 +241,22 @@ function CityView({ city }: { city: string }) {
       }
       if (id?.startsWith("zones-") && zoneInfo) {
         const z = info.object as ZoneValue;
-        return `${format(z.value, zoneInfo.unit)} (${zoneInfo.nature})`;
+        const text = zoneData?.delta
+          ? formatDelta(z.value, zoneInfo.unit)
+          : format(z.value, zoneInfo.unit);
+        return `${text} (${zoneInfo.nature})`;
+      }
+      if (id === "crowding" || id === "flows") {
+        const v = info.object as PairValue;
+        return `${format(v.passengers, "count")} passengers, ${format(v.loadFactor, "ratio")}× design capacity (Simulated)`;
+      }
+      if (id === "changes") {
+        const c = info.object as { name: string; kind: string };
+        return `${c.name}: ${c.kind}`;
       }
       return null;
     },
-    [zoneInfo],
+    [zoneInfo, zoneData?.delta],
   );
 
   if (detail.error) return <Message text={detail.error.message} />;
@@ -201,6 +287,7 @@ function CityView({ city }: { city: string }) {
               onPickingChange={setPicking}
               picked={picked}
               onPickedChange={setPicked}
+              onShowResult={setResult}
             />
           ) : (
             <p className="note">Loading routes…</p>
@@ -216,14 +303,27 @@ function CityView({ city }: { city: string }) {
           />
         </section>
         <aside className="panel" aria-label="Metrics">
+          <ResultPicker city={city} value={result} onChange={setResult} />
           <h2>Layers</h2>
           <LayerPanel
+            hasResult={result !== null}
             state={layers}
             onChange={setLayers}
             percentiles={c.accessibility.percentiles}
             thresholds={c.accessibility.thresholds_min}
             legend={legend}
           />
+          {layers.loads === "flows" && flows.data && (
+            <Playback
+              flows={flows.data}
+              frame={shownFrame}
+              onFrame={setFrame}
+              playing={playing}
+              onPlaying={setPlaying}
+            />
+          )}
+          {layers.loads !== "none" && checks.data && <ModelChecks checks={checks.data} />}
+          {result && <ComparePanel city={city} result={result.key} />}
           {selection && (
             <SelectionCard selection={selection} info={zoneInfo} fields={network.data?.fields} />
           )}
