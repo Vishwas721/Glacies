@@ -62,12 +62,28 @@ uv sync && uv run pre-commit install
 docker compose up -d                            # PostGIS + Valkey (the simulation queue)
 
 uv run glacies ingest verify                    # raw archive matches its manifests
-uv run glacies build-city bengaluru --clean     # rebuild every processed dataset (~5 min)
+uv run glacies build-city bengaluru --clean     # network, walk, zones, attraction (~5 min)
+for stage in tt-matrix accessibility demand-matrix paths demand assignment; do
+  uv run glacies build $stage                   # what the app and simulations read
+done
 
 uv run uvicorn glacies.api.app:app --reload     # http://localhost:8000/api/health
 uv run glacies worker                           # runs simulations queued from the UI
 (cd web && pnpm dev)                             # http://localhost:5173 (VITE_BASEMAP=blank: no tiles)
 ```
+
+The demonstration is scripted in [docs/demo.md](docs/demo.md).
+
+### On a machine with only Docker
+
+With a built `data/` folder (copied over, or built as above), one command runs the app:
+
+```bash
+docker compose --profile app up -d --build      # API + web app on http://localhost:8000, worker, Valkey
+```
+
+The first build compiles the Rust core (about 12 minutes on the development laptop); data, city
+configuration and scenarios are mounted from the checkout, not copied into the image.
 
 Run all checks:
 
@@ -75,6 +91,7 @@ Run all checks:
 uv run ruff check && uv run mypy && uv run pytest
 cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 (cd web && pnpm lint && pnpm typecheck && pnpm test && pnpm build)
+(cd web && pnpm e2e)       # the demo story in Chrome on Toyville; needs Valkey (docker compose up -d redis)
 ```
 
 ## Documentation
