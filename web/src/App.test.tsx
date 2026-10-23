@@ -64,6 +64,15 @@ describe("App", () => {
     await waitFor(() => expect(layerIds()).toEqual(["stops"]));
   });
 
+  it("shows baseline loads without claiming they are a scenario's", async () => {
+    fakeApi(CITY);
+    renderWithClient(<App />);
+
+    fireEvent.click(await screen.findByRole("radio", { name: "Peak-hour crowding" }));
+
+    expect(screen.getByLabelText("Load legend")).not.toHaveTextContent("Loads show the scenario");
+  });
+
   it("says when the API is not reachable", async () => {
     vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
 

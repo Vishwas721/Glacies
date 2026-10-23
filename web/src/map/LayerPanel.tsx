@@ -164,7 +164,7 @@ export function LayerPanel({ hasResult, state, onChange, percentiles, thresholds
           <p className="note">
             Load over design capacity <NatureBadge nature="simulated" />; capacities{" "}
             <NatureBadge nature="assumed" />.{" "}
-            {state.view === "change" && "Loads show the scenario."}
+            {hasResult && state.view === "change" && "Loads show the scenario."}
           </p>
         </div>
       )}
