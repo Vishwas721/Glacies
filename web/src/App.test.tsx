@@ -1,5 +1,5 @@
-import type { Layer } from "@deck.gl/core";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import type { Layer, PickingInfo } from "@deck.gl/core";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -7,9 +7,19 @@ import { CITY, fakeApi, renderWithClient } from "./testing";
 
 // jsdom has no WebGL: the map is replaced by a list of the layers it would draw.
 let drawn: Layer[] = [];
+let click: ((info: PickingInfo) => void) | undefined;
 vi.mock("./map/MapView", () => ({
-  MapView: ({ layers, attribution }: { layers: Layer[]; attribution: string }) => {
+  MapView: ({
+    layers,
+    attribution,
+    onClick,
+  }: {
+    layers: Layer[];
+    attribution: string;
+    onClick?: (info: PickingInfo) => void;
+  }) => {
     drawn = layers;
+    click = onClick;
     return (
       <div data-testid="map" data-attribution={attribution}>
         {layers.map((l) => l.id).join(" ")}
@@ -85,6 +95,27 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("radio", { name: "Peak-hour crowding" }));
 
     expect(screen.getByLabelText("Load legend")).not.toHaveTextContent("Loads show the scenario");
+  });
+
+  it("inspects a zone clicked on the map with every value labelled", async () => {
+    fakeApi(CITY);
+    renderWithClient(<App />);
+    await waitFor(() => expect(layerIds()).toContain("zones-accessibility"));
+
+    act(() =>
+      click?.({
+        layer: { id: "zones-accessibility" },
+        object: { h3: "8861892a1bfffff", value: 0 },
+      } as unknown as PickingInfo),
+    );
+
+    const card = await screen.findByRole("region", { name: "Selected zone" });
+    expect(card).toHaveTextContent("8861892a1bfffff");
+    expect(card).toHaveTextContent("Residents120");
+    expect(within(card).getAllByText("Estimated")).toHaveLength(2);
+    expect(card).toHaveTextContent("Estimated jobs within 45 min (p50)");
+    fireEvent.click(within(card).getByRole("button", { name: "Clear" }));
+    expect(screen.queryByRole("region", { name: "Selected zone" })).not.toBeInTheDocument();
   });
 
   it("says when the API is not reachable", async () => {

@@ -23,6 +23,7 @@ import {
 import type { FieldInfo, SegmentFeature, StopFeature } from "./api/types";
 import { ComparePanel } from "./compare/ComparePanel";
 import {
+  type ChangeLine,
   changesLayer,
   deltaZoneLayer,
   loadLayer,
@@ -48,13 +49,22 @@ import { MapLegend } from "./map/MapLegend";
 import { type Focus, MapView } from "./map/MapView";
 import { upperBound } from "./map/colours";
 import { emptyDraft, type Draft } from "./scenario/draft";
+import {
+  ChangeCard,
+  RouteCard,
+  SegmentCard,
+  type Selection,
+  StopCard,
+  ZoneCard,
+  type ZoneFact,
+  type ZoneFacts,
+} from "./inspect/Inspector";
 import { ScenarioBuilder } from "./scenario/ScenarioBuilder";
 import { SimulationStatus } from "./scenario/SimulationStatus";
 import { Dock, type DockTab } from "./shell/Dock";
 import { Masthead, type NetworkSize } from "./shell/Masthead";
 import { initialMode, type Mode, MODES, rememberMode } from "./shell/modes";
 import { Rail } from "./shell/Rail";
-import { Field } from "./ui/Quantity";
 import { format, formatDelta } from "./ui/format";
 
 export function App() {
@@ -74,11 +84,6 @@ function Message({ text }: { text: string }) {
     </div>
   );
 }
-
-type Selection =
-  | { kind: "stop"; stop: StopFeature }
-  | { kind: "segment"; segment: SegmentFeature }
-  | { kind: "zone"; zone: ZoneValue };
 
 function CityView({ city }: { city: string }) {
   const detail = useCity(city);
@@ -237,7 +242,9 @@ function CityView({ city }: { city: string }) {
       } else if (id === "network") {
         setSelection({ kind: "segment", segment: info.object as SegmentFeature });
       } else if (id?.startsWith("zones-")) {
-        setSelection({ kind: "zone", zone: info.object as ZoneValue });
+        setSelection({ kind: "zone", h3: (info.object as ZoneValue).h3 });
+      } else if (id === "changes") {
+        setSelection({ kind: "change", mutationIdx: (info.object as ChangeLine).mutationIdx });
       } else {
         setSelection(null);
       }
@@ -270,7 +277,7 @@ function CityView({ city }: { city: string }) {
         return `${format(v.passengers, "count")} passengers, ${format(v.loadFactor, "ratio")}× design capacity (Simulated)`;
       }
       if (id === "changes") {
-        const c = info.object as { name: string; kind: string };
+        const c = info.object as ChangeLine;
         return `${c.name}: ${c.kind}`;
       }
       return null;
@@ -279,6 +286,47 @@ function CityView({ city }: { city: string }) {
   );
 
   const [focus, setFocus] = useState<Focus | null>(null);
+  const [searchSeed, setSearchSeed] = useState<{ text: string; n: number } | undefined>();
+
+  const zoneFacts = useMemo((): ZoneFacts | null => {
+    if (selection?.kind !== "zone") return null;
+    const h3 = selection.h3;
+    const facts: ZoneFact[] = [];
+    let edge = false;
+    const z = zones.data;
+    const zi = z ? z.h3_cell.indexOf(h3) : -1;
+    if (z && zi >= 0) {
+      facts.push({ label: "Residents", value: z.population[zi]!, info: z.fields.population });
+      if (z.est_employment_share) {
+        facts.push({
+          label: "Share of estimated employment",
+          value: z.est_employment_share[zi]!,
+          info: z.fields.est_employment_share,
+        });
+      }
+    }
+    const a = access.data;
+    const ai = a ? a.h3_cell.indexOf(h3) : -1;
+    if (a && ai >= 0) {
+      const delta = a.est_jobs_share_delta?.[ai];
+      // A scenario's accessibility carries the change; the baseline is scenario minus it.
+      const withBaseline = (value: number) =>
+        delta !== undefined && resultRef !== "baseline" ? { baseline: value - delta } : {};
+      facts.push({
+        label: `Estimated jobs within ${a.threshold_min} min (p${a.percentile})`,
+        value: a.est_jobs_share[ai]!,
+        info: a.fields.est_jobs_share,
+        ...withBaseline(a.est_jobs_share[ai]!),
+      });
+      facts.push({
+        label: `Population within ${a.threshold_min} min (p${a.percentile})`,
+        value: a.population_share[ai]!,
+        info: a.fields.population_share,
+      });
+      edge = a.edge_zone[ai] ?? false;
+    }
+    return { h3, facts, edge };
+  }, [selection, zones.data, access.data, resultRef]);
   // Everything a scenario changed, to fly to: the story is local (docs/demo.md step 5).
   const changedBox = useMemo((): Focus["bbox"] | null => {
     const points = (changes.data?.routes ?? []).flatMap((r) => r.coordinates.flat());
@@ -383,6 +431,7 @@ function CityView({ city }: { city: string }) {
               onPickingChange={setPicking}
               picked={picked}
               onPickedChange={setPicked}
+              searchSeed={searchSeed}
               onSimulation={(id) => {
                 setSimulation(id);
                 openDock("runs");
@@ -438,22 +487,54 @@ function CityView({ city }: { city: string }) {
         />
       </main>
       <aside className="inspector" aria-label="Inspector" hidden={!inspectorOpen}>
-        {selection && (
-          <SelectionCard selection={selection} info={zoneInfo} fields={network.data?.fields} />
+        {selection?.kind === "zone" && zoneFacts && (
+          <ZoneCard zone={zoneFacts} onClose={() => setSelection(null)} />
         )}
+        {selection?.kind === "stop" && (
+          <StopCard
+            stop={selection.stop}
+            info={stops.data?.fields.routes}
+            onClose={() => setSelection(null)}
+          />
+        )}
+        {selection?.kind === "segment" && (
+          <SegmentCard
+            segment={selection.segment}
+            fields={network.data?.fields}
+            window={c.window}
+            onClose={() => setSelection(null)}
+          />
+        )}
+        {selection?.kind === "change" &&
+          changes.data &&
+          (() => {
+            const change = changes.data.routes.find(
+              (r) => r.mutation_idx === selection.mutationIdx,
+            );
+            return (
+              change && (
+                <ChangeCard
+                  change={change}
+                  fields={changes.data.fields}
+                  onClose={() => setSelection(null)}
+                />
+              )
+            );
+          })()}
         {route.data && selectedRoute !== null && (
-          <section className="card" aria-label="Selected route">
-            <h3>
-              {route.data.route.short_name ?? route.data.route.route_id}{" "}
-              <span className="muted">{route.data.route.long_name}</span>
-            </h3>
-            <p>
-              <Field value={route.data.route.trips} info={route.data.fields.trips} /> on the day
-            </p>
-            <button type="button" className="link" onClick={() => setSelectedRoute(null)}>
-              clear
-            </button>
-          </section>
+          <RouteCard
+            route={route.data}
+            onClose={() => setSelectedRoute(null)}
+            onEdit={
+              mode === "design"
+                ? undefined
+                : () => {
+                    const r = route.data!.route;
+                    setSearchSeed({ text: r.short_name ?? r.route_id, n: Date.now() });
+                    setMode("design");
+                  }
+            }
+          />
         )}
         {mode === "compare" && result && <ComparePanel city={city} result={result.key} />}
         {layers.loads !== "none" && checks.data && <ModelChecks checks={checks.data} />}
@@ -464,48 +545,5 @@ function CityView({ city }: { city: string }) {
         )}
       </aside>
     </div>
-  );
-}
-
-function SelectionCard({
-  selection,
-  info,
-  fields,
-}: {
-  selection: Selection;
-  info: FieldInfo | undefined;
-  fields: Record<string, FieldInfo> | undefined;
-}) {
-  if (selection.kind === "stop") {
-    const s = selection.stop.properties;
-    return (
-      <section className="card" aria-label="Selected stop">
-        <h3>{s.name ?? s.stop_id}</h3>
-        <p className="muted">
-          {s.feed} stop {s.stop_id} · {s.modes.join(", ")}
-        </p>
-      </section>
-    );
-  }
-  if (selection.kind === "segment") {
-    const p = selection.segment.properties;
-    return (
-      <section className="card" aria-label="Selected segment">
-        <h3>{p.modes.join(", ")} segment</h3>
-        <p>
-          <Field value={p.window_trips} info={fields?.window_trips} /> trips in the AM window,{" "}
-          <Field value={p.routes} info={fields?.routes} /> routes
-        </p>
-      </section>
-    );
-  }
-  return (
-    <section className="card" aria-label="Selected zone">
-      <h3>Zone {selection.zone.h3}</h3>
-      <p>
-        <Field value={selection.zone.value} info={info} />
-      </p>
-      <p className="note">{info?.description}</p>
-    </section>
   );
 }

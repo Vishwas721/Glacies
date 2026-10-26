@@ -27,6 +27,8 @@ interface Props {
   onPickingChange: (picking: boolean) => void;
   picked: StopFeature[];
   onPickedChange: (stops: StopFeature[]) => void;
+  /** Search the route list for this, e.g. a route chosen on the map. */
+  searchSeed?: { text: string; n: number };
   /** A simulation was queued; its progress shows in the dock. */
   onSimulation: (id: string) => void;
 }
@@ -154,6 +156,7 @@ export function ScenarioBuilder(props: Props) {
         onChange={change}
         selected={props.selectedRoute}
         onSelect={props.onSelectRoute}
+        seed={props.searchSeed}
       />
       <AddRouteForm
         picking={props.picking}

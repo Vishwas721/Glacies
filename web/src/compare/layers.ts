@@ -50,7 +50,8 @@ export const KIND_COLOUR: Record<ChangeKind, RGB> = {
   modified: CHANGED,
 };
 
-interface ChangeLine {
+export interface ChangeLine {
+  mutationIdx: number;
   kind: ChangeKind;
   name: string;
   path: LonLat[];
@@ -59,7 +60,12 @@ interface ChangeLine {
 /** Removed routes dashed, added routes solid and wide, modified routes solid (PRD §41). */
 export function changesLayer(routes: ChangedRoute[]): Layer {
   const data: ChangeLine[] = routes.flatMap((r) =>
-    r.coordinates.map((path) => ({ kind: r.kind, name: r.name ?? r.route_id, path })),
+    r.coordinates.map((path) => ({
+      mutationIdx: r.mutation_idx,
+      kind: r.kind,
+      name: r.name ?? r.route_id,
+      path,
+    })),
   );
   return new PathLayer<ChangeLine, PathStyleExtensionProps<ChangeLine>>({
     id: "changes",
