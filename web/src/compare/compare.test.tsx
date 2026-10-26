@@ -55,7 +55,7 @@ describe("Comparing a result with the baseline", () => {
     const panel = await screen.findByRole("region", { name: "Comparison" });
     const headline = await within(panel).findByRole("table", { name: "Headline metrics" });
     expect(headline).toHaveTextContent("travel time per transit trip");
-    expect(headline).toHaveTextContent("77.4 min → 77.4 min");
+    expect(headline).toHaveTextContent("77.40 min → 77.39 min");
     expect(headline).toHaveTextContent("−0.0074 min");
     expect(headline).toHaveTextContent("+0.0017 pp");
     expect(within(headline).getAllByText("Simulated")).toHaveLength(2);

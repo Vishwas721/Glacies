@@ -4,7 +4,7 @@
 import { useChanges, useMetrics } from "../api/queries";
 import type { Changes, MetricRow } from "../api/types";
 import { NatureBadge, Quantity } from "../ui/Quantity";
-import { format, formatDelta } from "../ui/format";
+import { format, formatDelta, formatPair } from "../ui/format";
 import { KIND_COLOUR } from "./layers";
 import { toCss } from "../map/colours";
 
@@ -19,11 +19,12 @@ const HEADLINE = [
 ];
 
 function Row({ row }: { row: MetricRow }) {
+  const [before, after] = formatPair(row.baseline, row.scenario, row.unit);
   return (
     <tr>
       <th scope="row">{row.metric.replace(/^Assignment: /, "")}</th>
       <td>
-        {format(row.baseline, row.unit)} → {format(row.scenario, row.unit)}
+        {before} → {after}
       </td>
       <td>{formatDelta(row.delta, row.unit)}</td>
       <td>
