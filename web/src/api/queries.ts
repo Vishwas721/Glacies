@@ -143,12 +143,28 @@ export const useSimulation = (id: string | null) =>
       query.state.data && FINISHED.has(query.state.data.status) ? false : 2000,
   });
 
+/**
+ * The city's simulations, newest first (ADR 0021). Polled every two seconds while one is
+ * queued or running, every fifteen otherwise, so runs started elsewhere show up too.
+ */
+export const useSimulations = (city: string) =>
+  useQuery({
+    queryKey: ["simulations", city],
+    queryFn: () => api<Simulation[]>(`/api/simulations?city=${city}`),
+    refetchInterval: (query) =>
+      query.state.data?.some((s) => !FINISHED.has(s.status)) ? 2000 : 15_000,
+    retry: false,
+  });
+
 export function useCancelSimulation() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
       api<Simulation>(`/api/simulations/${id}/cancel`, { method: "POST" }),
-    onSuccess: (sim) => client.setQueryData(["simulation", sim.id], sim),
+    onSuccess: (sim) => {
+      client.setQueryData(["simulation", sim.id], sim);
+      void client.invalidateQueries({ queryKey: ["simulations"] });
+    },
   });
 }
 

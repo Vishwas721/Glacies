@@ -1,0 +1,164 @@
+/* The run console: the selected run on the left, the queue's history on the right. */
+
+.console {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px 24px;
+  align-items: start;
+}
+
+.console > * {
+  min-width: 0;
+}
+
+.console-list {
+  overflow: auto;
+  max-height: 100%;
+}
+
+.runs {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.runs th {
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 0 8px 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.runs td {
+  padding: 5px 8px 5px 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.run {
+  cursor: pointer;
+}
+
+.run:hover td {
+  background: var(--ink-3);
+}
+
+.run[aria-selected="true"] td {
+  background: color-mix(in srgb, var(--ice) 8%, transparent);
+}
+
+.run-status {
+  display: inline-block;
+  min-width: 70px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.run-status::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: 1px;
+  background: currentColor;
+}
+
+.run-queued {
+  color: var(--text-2);
+}
+
+.run-running {
+  color: var(--amber);
+}
+
+.run-running::before {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.run-completed {
+  color: #6fd3a0;
+}
+
+.run-failed {
+  color: var(--danger);
+}
+
+.run-cancelled {
+  color: var(--text-3);
+}
+
+.run-tag {
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--ice);
+  border: 1px solid var(--ice-dim);
+  border-radius: 2px;
+}
+
+.run-head {
+  margin: 0 0 10px;
+}
+
+.run-head .mono {
+  font-size: 11px;
+}
+
+/* Stages as a track: done filled, the current one pulsing, the rest hollow. */
+.stage-track {
+  list-style: none;
+  display: flex;
+  gap: 4px;
+  padding: 0;
+  margin: 0 0 10px;
+}
+
+.stage-track li {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  padding-top: 7px;
+  border-top: 3px solid var(--ink-4);
+  line-height: 1.25;
+}
+
+.stage-track li[data-state="done"] {
+  border-top-color: var(--ice-dim);
+  color: var(--text-2);
+}
+
+.stage-track li[data-state="now"] {
+  border-top-color: var(--amber);
+  color: var(--text);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.run-times {
+  margin: 8px 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.run-actions {
+  display: flex;
+  gap: 8px;
+}

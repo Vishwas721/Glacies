@@ -102,6 +102,30 @@ describe("Scenario builder", () => {
     await waitFor(() => expect(posted(calls, "/api/simulations/sim_1/cancel")).toHaveLength(1));
   });
 
+  it("will not queue a scenario that is already queued or running", async () => {
+    const calls = fakeApi({
+      ...CITY,
+      "POST /api/cities/toyville/scenarios": (c: Call) => ({
+        source: "user",
+        editable: true,
+        scenario: c.body,
+      }),
+      "GET /api/simulations": [RUNNING],
+    });
+    await ready();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Find a route" }), {
+      target: { value: "10" },
+    });
+    fireEvent.click(await screen.findByRole("checkbox", { name: "10 in service" }));
+    fill("no_r1", "Without route 10");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(/no_r1 is already queued or running/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Simulate" })).toBeDisabled();
+    expect(posted(calls, "/api/simulations")).toHaveLength(0);
+  });
+
   it("checks the schema before saving and shows what is wrong", async () => {
     const calls = fakeApi(CITY);
     await ready();

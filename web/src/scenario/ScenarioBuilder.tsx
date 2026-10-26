@@ -29,6 +29,8 @@ interface Props {
   onPickedChange: (stops: StopFeature[]) => void;
   /** Search the route list for this, e.g. a route chosen on the map. */
   searchSeed?: { text: string; n: number };
+  /** Scenarios queued or running now: simulating one again would only queue a duplicate. */
+  activeScenarios?: ReadonlySet<string>;
   /** A simulation was queued; its progress shows in the dock. */
   onSimulation: (id: string) => void;
 }
@@ -90,8 +92,9 @@ export function ScenarioBuilder(props: Props) {
       },
     );
   };
+  const alreadyRunning = savedAs !== null && (props.activeScenarios?.has(savedAs) ?? false);
   const onSimulate = () => {
-    if (!savedAs) return;
+    if (!savedAs || alreadyRunning) return;
     start.mutate(savedAs, {
       onSuccess: (r) => props.onSimulation(r.job_id),
       onError: (e) => setProblems([e.message]),
@@ -171,6 +174,9 @@ export function ScenarioBuilder(props: Props) {
           {changes} change{changes === 1 ? "" : "s"}
           {savedAs ? `, saved as ${savedAs}` : ", not saved"}
         </p>
+        {alreadyRunning && (
+          <p className="note">{savedAs} is already queued or running: follow it under Runs.</p>
+        )}
         {problems.length > 0 && (
           <ul className="error" aria-label="Problems">
             {problems.map((p) => (
@@ -185,7 +191,7 @@ export function ScenarioBuilder(props: Props) {
           type="button"
           className="primary"
           onClick={onSimulate}
-          disabled={!savedAs || start.isPending}
+          disabled={!savedAs || start.isPending || alreadyRunning}
         >
           Simulate
         </button>

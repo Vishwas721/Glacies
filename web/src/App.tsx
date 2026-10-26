@@ -15,8 +15,10 @@ import {
   useCrowding,
   useFlows,
   useNetwork,
+  useResults,
   useRoute,
   useRoutes,
+  useSimulations,
   useStops,
   useZones,
 } from "./api/queries";
@@ -33,7 +35,7 @@ import {
 import { ModelChecks } from "./compare/ModelChecks";
 import { Playback } from "./compare/Playback";
 import { ResultPicker } from "./compare/ResultPicker";
-import type { ResultChoice } from "./compare/results";
+import { comparableResults, type ResultChoice } from "./compare/results";
 import { LayerPanel } from "./map/LayerPanel";
 import { INITIAL_LAYERS, type LayerState, type Legend } from "./map/layerState";
 import {
@@ -60,7 +62,8 @@ import {
   type ZoneFacts,
 } from "./inspect/Inspector";
 import { ScenarioBuilder } from "./scenario/ScenarioBuilder";
-import { SimulationStatus } from "./scenario/SimulationStatus";
+import { RunConsole } from "./runs/RunConsole";
+import { isActive } from "./runs/runs";
 import { Dock, type DockTab } from "./shell/Dock";
 import { Masthead, type NetworkSize } from "./shell/Masthead";
 import { initialMode, type Mode, MODES, rememberMode } from "./shell/modes";
@@ -129,6 +132,8 @@ function CityView({ city }: { city: string }) {
   const crowding = useCrowding(city, resultRef, layers.loads === "crowding");
   const flows = useFlows(city, resultRef, layers.loads === "flows");
   const changes = useChanges(city, result?.key ?? null);
+  const simulations = useSimulations(city);
+  const results = useResults(city);
   const checks = useChecks(city, resultRef, layers.loads !== "none");
 
   // The zone values and their label for the layer chosen.
@@ -354,23 +359,31 @@ function CityView({ city }: { city: string }) {
   const VIEW_NAME = { baseline: "Baseline", scenario: "Scenario", change: "Change" } as const;
   const showing = result ? `${VIEW_NAME[view]} · ${result.label}` : "Baseline";
 
+  const active = (simulations.data ?? []).filter(isActive);
+  const queue = simulations.error
+    ? { label: "Queue", state: "down" as const, detail: simulations.error.message }
+    : active.length
+      ? { label: "Queue", state: "busy" as const, detail: `${active.length} queued or running` }
+      : { label: "Queue", state: "ok" as const, detail: "idle" };
+
   const dockTabs: DockTab[] = [
     {
       id: "runs",
       label: "Runs",
-      content: simulation ? (
-        <SimulationStatus
-          id={simulation}
+      hint: active.length ? `${active.length} active` : undefined,
+      content: (
+        <RunConsole
+          city={city}
+          current={simulation}
+          onCurrent={setSimulation}
           onShowResult={(choice) => {
-            setResult(choice);
+            // Name the result by its scenario's title once the results list has it.
+            const listed = comparableResults(results.data ?? []).find((r) => r.key === choice.key);
+            setResult(listed ?? choice);
+            setLayers({ ...layers, view: "change" });
             setMode("compare");
           }}
         />
-      ) : (
-        <p className="note">
-          No simulation started yet. Save a scenario in Design and press Simulate; its progress
-          shows here.
-        </p>
       ),
     },
   ];
@@ -396,7 +409,7 @@ function CityView({ city }: { city: string }) {
       <Rail
         mode={mode}
         onMode={setMode}
-        status={[{ label: "API", state: "ok", detail: `serving ${c.name}` }]}
+        status={[{ label: "API", state: "ok", detail: `serving ${c.name}` }, queue]}
       />
       <aside className="side" aria-label={current.title}>
         <header className="side-head">
@@ -432,6 +445,7 @@ function CityView({ city }: { city: string }) {
               picked={picked}
               onPickedChange={setPicked}
               searchSeed={searchSeed}
+              activeScenarios={new Set(active.map((s) => s.scenario_id))}
               onSimulation={(id) => {
                 setSimulation(id);
                 openDock("runs");
