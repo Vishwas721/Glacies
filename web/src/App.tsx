@@ -230,10 +230,18 @@ function CityView({ city }: { city: string }) {
   const shownFrame = flowFrames ? Math.min(frame, flowFrames.length - 1) : 0;
 
   const pickedKeys = useMemo(() => new Set(picked.map(stopKey)), [picked]);
+  // Relief raises levels only: a raised change map or lens would mislead or break the cut.
+  const reliefUsable =
+    layers.zones !== "none" && !split && !(view === "change" && layers.zones === "accessibility");
+  const relief = layers.relief && reliefUsable;
   const deckLayers = useMemo(() => {
     const out: Layer[] = [];
     const west: ClipBox = [-180, -90, lensCentre, 90];
     const east: ClipBox = [lensCentre, -90, 180, 90];
+    // In relief the network goes first: the zones' near-clear low hexagons still fill the depth
+    // buffer, and lines drawn after them at ground level would vanish.
+    const network_ = layers.network && network.data ? networkLayer(network.data) : null;
+    if (relief && network_) out.push(network_);
     if (zoneData?.baseline) {
       // One colour scale for both sides, or equal colours would not mean equal values.
       const top = upperBound(zoneData.baseline.map((v) => v.value));
@@ -243,10 +251,10 @@ function CityView({ city }: { city: string }) {
       out.push(
         zoneData.delta
           ? deltaZoneLayer(zoneData.values)
-          : zoneLayer(`zones-${layers.zones}`, zoneData.values),
+          : zoneLayer(`zones-${layers.zones}`, zoneData.values, { relief }),
       );
     }
-    if (layers.network && network.data) out.push(networkLayer(network.data));
+    if (!relief && network_) out.push(network_);
     if (layers.loads === "crowding" && baseCrowdValues && crowdValues) {
       out.push(loadLayer("crowding-baseline", baseCrowdValues, west));
       out.push(loadLayer("crowding", crowdValues, east));
@@ -270,6 +278,7 @@ function CityView({ city }: { city: string }) {
     baseCrowdValues,
     split,
     lensCentre,
+    relief,
     flowFrames,
     shownFrame,
     view,
@@ -534,26 +543,45 @@ function CityView({ city }: { city: string }) {
             getTooltip={getTooltip}
             focus={focus}
             lens={lens}
+            tilt={relief}
             controls={
-              changedBox && (
+              <>
                 <button
                   type="button"
-                  aria-label="Fit the changed routes"
-                  title="Fit the changed routes"
-                  onClick={() => setFocus({ id: `changes-${Date.now()}`, bbox: changedBox })}
+                  aria-label="Relief"
+                  aria-pressed={relief}
+                  disabled={!reliefUsable}
+                  title={
+                    reliefUsable
+                      ? "Raise zones by their value on a tilted map"
+                      : "Relief needs a level layer (not Change or Lens)"
+                  }
+                  onClick={() => setLayers({ ...layers, relief: !layers.relief })}
                 >
                   <svg viewBox="0 0 14 14" aria-hidden="true">
-                    <path d="M1.5 5V1.5H5M9 1.5h3.5V5M12.5 9v3.5H9M5 12.5H1.5V9" />
-                    <circle cx="7" cy="7" r="1.6" />
+                    <path d="M1 11.5 4.5 6l2.5 3 2-2.5 4 5z" />
                   </svg>
                 </button>
-              )
+                {changedBox && (
+                  <button
+                    type="button"
+                    aria-label="Fit the changed routes"
+                    title="Fit the changed routes"
+                    onClick={() => setFocus({ id: `changes-${Date.now()}`, bbox: changedBox })}
+                  >
+                    <svg viewBox="0 0 14 14" aria-hidden="true">
+                      <path d="M1.5 5V1.5H5M9 1.5h3.5V5M12.5 9v3.5H9M5 12.5H1.5V9" />
+                      <circle cx="7" cy="7" r="1.6" />
+                    </svg>
+                  </button>
+                )}
+              </>
             }
           />
           <p className="map-showing" aria-live="polite">
             <span>Map shows</span> {showing}
           </p>
-          <MapLegend state={layers} view={view} legend={legend} />
+          <MapLegend state={layers} view={view} legend={legend} relief={relief} />
         </section>
         <Dock
           tabs={dockTabs}

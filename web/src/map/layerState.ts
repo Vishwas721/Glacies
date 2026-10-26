@@ -16,6 +16,8 @@ export interface LayerState {
   thresholdMin: number;
   view: View;
   loads: Loads;
+  /** Zones raised by their value on a tilted map (levels only, not changes). */
+  relief: boolean;
 }
 
 export const INITIAL_LAYERS: LayerState = {
@@ -26,6 +28,7 @@ export const INITIAL_LAYERS: LayerState = {
   thresholdMin: 45,
   view: "change",
   loads: "none",
+  relief: false,
 };
 
 export interface Legend {

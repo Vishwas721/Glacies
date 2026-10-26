@@ -28,7 +28,12 @@ interface ZoneOptions {
   /** Top of the colour scale; two layers compared side by side must share it. */
   top?: number;
   clip?: ClipBox;
+  /** Raise each zone by its value, up to RELIEF_TOP_M at the top of the scale. */
+  relief?: boolean;
 }
+
+/** Height of a zone at the top of the colour scale, in metres: a third of the city's width. */
+export const RELIEF_TOP_M = 4000;
 
 export function zoneLayer(id: string, zones: ZoneValue[], options: ZoneOptions = {}): Layer {
   const top = options.top ?? upperBound(zones.map((z) => z.value));
@@ -42,11 +47,12 @@ export function zoneLayer(id: string, zones: ZoneValue[], options: ZoneOptions =
       ...viridis(z.value / top),
       Math.round(255 * Math.min(1, (4 * z.value) / top)),
     ],
-    extruded: false,
+    extruded: options.relief ?? false,
+    getElevation: (z) => Math.min(1, Math.max(0, z.value / top)) * RELIEF_TOP_M,
     stroked: false,
-    opacity: 0.6,
+    opacity: options.relief ? 0.9 : 0.6,
     pickable: true,
-    updateTriggers: { getFillColor: top },
+    updateTriggers: { getFillColor: top, getElevation: top },
     ...clipped(options.clip),
   });
 }

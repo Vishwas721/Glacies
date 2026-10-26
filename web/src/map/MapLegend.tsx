@@ -14,9 +14,11 @@ interface Props {
   /** Which network the layers show; "change" draws the change classes. */
   view: LayerState["view"];
   legend: Legend | null;
+  /** Zones are raised by their value. */
+  relief?: boolean;
 }
 
-export function MapLegend({ state, view, legend }: Props) {
+export function MapLegend({ state, view, legend, relief = false }: Props) {
   const change = view === "change" && state.zones === "accessibility";
   const zones = state.zones !== "none" && (change || legend);
   if (!zones && state.loads === "none") return null;
@@ -36,7 +38,10 @@ export function MapLegend({ state, view, legend }: Props) {
                 ≥ <Field value={legend.top} info={legend.info} />
               </span>
             </div>
-            <p className="note">Colours top out at the 98th percentile; low values are paler.</p>
+            <p className="note">
+              Colours top out at the 98th percentile; low values are paler.
+              {relief && " Height shows the same value as colour, flat at zero."}
+            </p>
           </div>
         )
       )}

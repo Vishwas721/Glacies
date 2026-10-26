@@ -44,6 +44,8 @@ interface MapViewProps {
   controls?: ReactNode;
   /** The What-If Lens: a divider at `fraction` of the width; reports its longitude. */
   lens?: Lens | null;
+  /** Tilt the map to look across raised zones (relief). */
+  tilt?: boolean;
 }
 
 export interface Lens {
@@ -63,7 +65,7 @@ function reportLens(map: MapLibre, lens: Lens | null | undefined) {
 }
 
 export function MapView(props: MapViewProps) {
-  const { bbox, layers, attribution, onClick, getTooltip, focus, controls, lens } = props;
+  const { bbox, layers, attribution, onClick, getTooltip, focus, controls, lens, tilt } = props;
   // Read by the map's move handler, which is bound once.
   const lensRef = useRef(lens);
   useEffect(() => {
@@ -100,7 +102,8 @@ export function MapView(props: MapViewProps) {
       reportLens(map, lensRef.current);
       setTicks(ticksFor(map));
       setZoom(map.getZoom());
-      setScale(scaleBar(map.getZoom(), map.getCenter().lat));
+      // A tilted map has no single scale; the bar would be wrong away from the centre.
+      setScale(map.getPitch() > 0.5 ? null : scaleBar(map.getZoom(), map.getCenter().lat));
     };
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(read);
@@ -163,6 +166,14 @@ export function MapView(props: MapViewProps) {
   useEffect(() => {
     if (mapRef.current) reportLens(mapRef.current, lens);
   }, [lens]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (tilt) map.easeTo({ pitch: 52, bearing: -14, duration: 900 });
+    else if (map.getPitch() || map.getBearing())
+      map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+  }, [tilt]);
 
   const fitCity = () =>
     mapRef.current?.fitBounds(bbox as LngLatBoundsLike, { padding: PADDING, duration: 700 });

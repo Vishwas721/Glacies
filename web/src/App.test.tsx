@@ -13,16 +13,19 @@ vi.mock("./map/MapView", () => ({
     layers,
     attribution,
     onClick,
+    controls,
   }: {
     layers: Layer[];
     attribution: string;
     onClick?: (info: PickingInfo) => void;
+    controls?: React.ReactNode;
   }) => {
     drawn = layers;
     click = onClick;
     return (
       <div data-testid="map" data-attribution={attribution}>
         {layers.map((l) => l.id).join(" ")}
+        {controls}
       </div>
     );
   },
@@ -116,6 +119,19 @@ describe("App", () => {
     expect(card).toHaveTextContent("Estimated jobs within 45 min (p50)");
     fireEvent.click(within(card).getByRole("button", { name: "Clear" }));
     expect(screen.queryByRole("region", { name: "Selected zone" })).not.toBeInTheDocument();
+  });
+
+  it("raises the zones in relief, and never the change map", async () => {
+    fakeApi(CITY);
+    renderWithClient(<App />);
+    await waitFor(() => expect(layerIds()).toContain("zones-accessibility"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Relief" }));
+
+    await waitFor(() => expect(layerIds()).toEqual(["network", "zones-accessibility"]));
+    const zones = drawn.find((l) => l.id === "zones-accessibility")!;
+    expect((zones.props as unknown as { extruded: boolean }).extruded).toBe(true);
+    expect(screen.getByLabelText("Legend")).toHaveTextContent("Height shows the same value");
   });
 
   it("says when the API is not reachable", async () => {
