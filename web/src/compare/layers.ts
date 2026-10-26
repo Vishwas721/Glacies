@@ -7,7 +7,7 @@ import { LineLayer, PathLayer } from "@deck.gl/layers";
 
 import type { ChangeKind, ChangedRoute, LonLat, Pairs } from "../api/types";
 import { CHANGED, NEW, type RGB, viridis } from "../map/colours";
-import type { ZoneValue } from "../map/layers";
+import { type ClipBox, clipped, type ZoneValue } from "../map/layers";
 
 // The same classes and colours as the comparison maps of `glacies scenario compare`
 // (src/glacies/scenario/compare.py): blue gains, red losses, darker for larger changes.
@@ -58,7 +58,7 @@ export interface ChangeLine {
 }
 
 /** Removed routes dashed, added routes solid and wide, modified routes solid (PRD §41). */
-export function changesLayer(routes: ChangedRoute[]): Layer {
+export function changesLayer(routes: ChangedRoute[], clip?: ClipBox): Layer {
   const data: ChangeLine[] = routes.flatMap((r) =>
     r.coordinates.map((path) => ({
       mutationIdx: r.mutation_idx,
@@ -67,6 +67,7 @@ export function changesLayer(routes: ChangedRoute[]): Layer {
       path,
     })),
   );
+  const clip_ = clipped(clip);
   return new PathLayer<ChangeLine, PathStyleExtensionProps<ChangeLine>>({
     id: "changes",
     data,
@@ -76,8 +77,9 @@ export function changesLayer(routes: ChangedRoute[]): Layer {
     widthUnits: "pixels",
     getDashArray: (d) => (d.kind === "removed" ? [3, 2] : [0, 0]),
     dashJustified: true,
-    extensions: [new PathStyleExtension({ dash: true })],
     pickable: true,
+    ...clip_,
+    extensions: [new PathStyleExtension({ dash: true }), ...(clip_.extensions ?? [])],
   });
 }
 
@@ -108,7 +110,7 @@ export function pairValues(
 /** Load factor 1.5 (well past design capacity) is the top of the colour scale. */
 export const LOAD_FACTOR_TOP = 1.5;
 
-export function loadLayer(id: string, data: PairValue[]): Layer {
+export function loadLayer(id: string, data: PairValue[], clip?: ClipBox): Layer {
   return new LineLayer<PairValue>({
     id,
     data,
@@ -119,5 +121,6 @@ export function loadLayer(id: string, data: PairValue[]): Layer {
     widthUnits: "pixels",
     widthMaxPixels: 12,
     pickable: true,
+    ...clipped(clip),
   });
 }

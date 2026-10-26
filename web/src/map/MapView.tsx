@@ -19,6 +19,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { basemapStyle } from "./basemap";
 import { EdgeTicks } from "./EdgeTicks";
 import { type Ticks, ticksFor } from "./ticks";
+import { LensDivider } from "./LensDivider";
 import { type Scale, scaleBar } from "./scale";
 
 setWorkerUrl(workerUrl);
@@ -41,12 +42,33 @@ interface MapViewProps {
   focus?: Focus | null;
   /** Extra map buttons from the screen, e.g. "fit to changes". */
   controls?: ReactNode;
+  /** The What-If Lens: a divider at `fraction` of the width; reports its longitude. */
+  lens?: Lens | null;
+}
+
+export interface Lens {
+  fraction: number;
+  onFraction: (fraction: number) => void;
+  onLng: (lng: number) => void;
+  left: string;
+  right: string;
 }
 
 const PADDING = 48;
 
+function reportLens(map: MapLibre, lens: Lens | null | undefined) {
+  if (!lens) return;
+  const { width, height } = map.getCanvas().getBoundingClientRect();
+  lens.onLng(map.unproject([lens.fraction * width, height / 2]).lng);
+}
+
 export function MapView(props: MapViewProps) {
-  const { bbox, layers, attribution, onClick, getTooltip, focus, controls } = props;
+  const { bbox, layers, attribution, onClick, getTooltip, focus, controls, lens } = props;
+  // Read by the map's move handler, which is bound once.
+  const lensRef = useRef(lens);
+  useEffect(() => {
+    lensRef.current = lens;
+  }, [lens]);
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibre | null>(null);
   const overlay = useRef<MapboxOverlay | null>(null);
@@ -75,6 +97,7 @@ export function MapView(props: MapViewProps) {
     let frame = 0;
     const read = () => {
       frame = 0;
+      reportLens(map, lensRef.current);
       setTicks(ticksFor(map));
       setZoom(map.getZoom());
       setScale(scaleBar(map.getZoom(), map.getCenter().lat));
@@ -122,6 +145,25 @@ export function MapView(props: MapViewProps) {
     });
   }, [focus]);
 
+  // The lens cuts along a meridian, which a screen line only follows on a flat, north-up map:
+  // while it is on, the map cannot be rotated or tilted.
+  const lensOn = Boolean(lens);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (lensOn) {
+      map.dragRotate.disable();
+      map.touchZoomRotate.disableRotation();
+      if (map.getBearing() || map.getPitch()) map.easeTo({ bearing: 0, pitch: 0, duration: 400 });
+    } else {
+      map.dragRotate.enable();
+      map.touchZoomRotate.enableRotation();
+    }
+  }, [lensOn]);
+  useEffect(() => {
+    if (mapRef.current) reportLens(mapRef.current, lens);
+  }, [lens]);
+
   const fitCity = () =>
     mapRef.current?.fitBounds(bbox as LngLatBoundsLike, { padding: PADDING, duration: 700 });
 
@@ -147,6 +189,7 @@ export function MapView(props: MapViewProps) {
         </button>
         {controls}
       </div>
+      {lens && <LensDivider lens={lens} />}
       <p className="map-readout" aria-label="Cursor position">
         {cursor
           ? `${Math.abs(cursor.lat).toFixed(4)}°${cursor.lat >= 0 ? "N" : "S"}  ${Math.abs(cursor.lng).toFixed(4)}°${cursor.lng >= 0 ? "E" : "W"}`

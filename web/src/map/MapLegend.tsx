@@ -52,7 +52,8 @@ export function MapLegend({ state, view, legend }: Props) {
           </div>
           <p className="note">
             Capacities <NatureBadge nature="assumed" />; width is passengers.
-            {view === "change" && " Loads show the scenario."}
+            {(view === "change" || (view === "split" && state.loads === "flows")) &&
+              " Loads show the scenario."}
           </p>
         </div>
       )}

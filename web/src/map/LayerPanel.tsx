@@ -13,6 +13,14 @@ const VIEW_LABELS: Record<View, string> = {
   baseline: "Baseline",
   scenario: "Scenario",
   change: "Change",
+  split: "Lens",
+};
+
+const VIEW_HINTS: Record<View, string> = {
+  baseline: "Today's network",
+  scenario: "The network with the scenario's changes",
+  change: "Scenario minus baseline, in the comparison report's classes",
+  split: "Baseline left of a divider you can drag, scenario right of it",
 };
 
 const LOAD_LABELS: Record<Loads, string> = {
@@ -35,19 +43,22 @@ export function LayerPanel({ hasResult, state, onChange, percentiles, thresholds
     <section aria-label="Layers" className="card">
       <h3>Layers</h3>
       {hasResult && (
-        <fieldset>
+        <fieldset className="segmented-field">
           <legend>Show</legend>
-          {(Object.keys(VIEW_LABELS) as View[]).map((v) => (
-            <label key={v} className="inline">
-              <input
-                type="radio"
-                name="view"
-                checked={state.view === v}
-                onChange={() => set({ view: v })}
-              />{" "}
-              {VIEW_LABELS[v]}
-            </label>
-          ))}
+          <div className="segmented">
+            {(Object.keys(VIEW_LABELS) as View[]).map((v) => (
+              <label key={v} title={VIEW_HINTS[v]}>
+                <input
+                  type="radio"
+                  name="view"
+                  checked={state.view === v}
+                  onChange={() => set({ view: v })}
+                />
+                <span>{VIEW_LABELS[v]}</span>
+              </label>
+            ))}
+          </div>
+          <p className="note">{VIEW_HINTS[state.view]}.</p>
         </fieldset>
       )}
       <label>

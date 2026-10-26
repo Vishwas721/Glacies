@@ -228,3 +228,85 @@
 .maplibregl-canvas {
   filter: saturate(0) brightness(0.72) contrast(1.1);
 }
+
+/* The What-If Lens divider: a hairline the full height of the map with a grip in the middle
+   and the two sides named at the top. */
+.lens {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  margin-left: -12px;
+  z-index: 4;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.lens::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 50%),
+    0 0 12px rgb(0 0 0 / 60%);
+}
+
+.lens:focus-visible {
+  outline: none;
+}
+
+.lens:focus-visible .lens-grip {
+  outline: 2px solid var(--ice);
+  outline-offset: 2px;
+}
+
+.lens-grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.lens-grip svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--ink-0);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lens-label {
+  position: absolute;
+  top: 66px;
+  padding: 3px 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink-0);
+  background: var(--text);
+  border-radius: 2px;
+}
+
+.lens-left {
+  right: calc(50% + 6px);
+}
+
+.lens-right {
+  left: calc(50% + 6px);
+}

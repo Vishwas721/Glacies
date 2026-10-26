@@ -1,6 +1,7 @@
 // deck.gl layers built from API data. Kept free of React so the data-to-layer mapping can be
 // tested without a WebGL context.
 
+import { ClipExtension, type ClipExtensionProps } from "@deck.gl/extensions";
 import { H3HexagonLayer } from "@deck.gl/geo-layers";
 import { LineLayer, PathLayer, ScatterplotLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
@@ -13,9 +14,25 @@ export interface ZoneValue {
   value: number;
 }
 
-export function zoneLayer(id: string, zones: ZoneValue[], opacity = 0.6): Layer {
-  const top = upperBound(zones.map((z) => z.value));
-  return new H3HexagonLayer<ZoneValue>({
+/** West, south, east, north: the part of the map a layer is drawn in. */
+export type ClipBox = [number, number, number, number];
+
+/** Props that draw a layer only inside `clip` (the What-If Lens), cut exactly at its edge. */
+export function clipped(clip: ClipBox | undefined): Partial<ClipExtensionProps> & {
+  extensions?: ClipExtension[];
+} {
+  return clip ? { extensions: [new ClipExtension()], clipBounds: clip, clipByInstance: false } : {};
+}
+
+interface ZoneOptions {
+  /** Top of the colour scale; two layers compared side by side must share it. */
+  top?: number;
+  clip?: ClipBox;
+}
+
+export function zoneLayer(id: string, zones: ZoneValue[], options: ZoneOptions = {}): Layer {
+  const top = options.top ?? upperBound(zones.map((z) => z.value));
+  return new H3HexagonLayer<ZoneValue, ClipExtensionProps>({
     id,
     data: zones,
     getHexagon: (z) => z.h3,
@@ -27,9 +44,10 @@ export function zoneLayer(id: string, zones: ZoneValue[], opacity = 0.6): Layer 
     ],
     extruded: false,
     stroked: false,
-    opacity,
+    opacity: 0.6,
     pickable: true,
     updateTriggers: { getFillColor: top },
+    ...clipped(options.clip),
   });
 }
 

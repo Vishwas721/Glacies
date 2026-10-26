@@ -22,7 +22,7 @@ import {
   useStops,
   useZones,
 } from "./api/queries";
-import type { FieldInfo, SegmentFeature, StopFeature } from "./api/types";
+import type { Crowding, FieldInfo, SegmentFeature, StopFeature } from "./api/types";
 import { ComparePanel } from "./compare/ComparePanel";
 import {
   type ChangeLine,
@@ -41,6 +41,7 @@ import { INITIAL_LAYERS, type LayerState, type Legend } from "./map/layerState";
 import {
   draftLayer,
   networkLayer,
+  type ClipBox,
   routeLayer,
   stopKey,
   stopsLayer,
@@ -48,7 +49,7 @@ import {
   zoneLayer,
 } from "./map/layers";
 import { MapLegend } from "./map/MapLegend";
-import { type Focus, MapView } from "./map/MapView";
+import { type Focus, type Lens, MapView } from "./map/MapView";
 import { upperBound } from "./map/colours";
 import { emptyDraft, type Draft } from "./scenario/draft";
 import {
@@ -69,6 +70,23 @@ import { Masthead, type NetworkSize } from "./shell/Masthead";
 import { initialMode, type Mode, MODES, rememberMode } from "./shell/modes";
 import { Rail } from "./shell/Rail";
 import { format, formatDelta } from "./ui/format";
+
+const VIEW_NAME = {
+  baseline: "Baseline",
+  scenario: "Scenario",
+  change: "Change",
+  split: "Baseline | Scenario",
+} as const;
+
+function crowdPairs(c: Crowding | undefined): PairValue[] | null {
+  if (!c) return null;
+  return pairValues(
+    c.pairs,
+    c.passengers.map((_, i) => i),
+    c.passengers,
+    c.load_factor,
+  );
+}
 
 export function App() {
   const cities = useCities();
@@ -117,6 +135,10 @@ function CityView({ city }: { city: string }) {
   // Without a chosen result everything shows the baseline.
   const view = result ? layers.view : "baseline";
   const resultRef = result && view !== "baseline" ? result.key : "baseline";
+  // The What-If Lens: baseline left of the divider, scenario right of it.
+  const split = view === "split";
+  const [lensFraction, setLensFraction] = useState(0.5);
+  const [lensLng, setLensLng] = useState<number | null>(null);
 
   const showStops = layers.stops || picking;
   const stops = useStops(city);
@@ -130,6 +152,14 @@ function CityView({ city }: { city: string }) {
   );
   const route = useRoute(city, selectedRoute);
   const crowding = useCrowding(city, resultRef, layers.loads === "crowding");
+  const baseAccess = useAccessibility(
+    city,
+    "baseline",
+    layers.percentile,
+    layers.thresholdMin,
+    split && layers.zones === "accessibility",
+  );
+  const baseCrowding = useCrowding(city, "baseline", split && layers.loads === "crowding");
   const flows = useFlows(city, resultRef, layers.loads === "flows");
   const changes = useChanges(city, result?.key ?? null);
   const simulations = useSimulations(city);
@@ -141,6 +171,8 @@ function CityView({ city }: { city: string }) {
     values: ZoneValue[];
     info: FieldInfo | undefined;
     delta?: boolean;
+    /** In the lens, the baseline values drawn left of the divider. */
+    baseline?: ZoneValue[];
   } | null => {
     if (layers.zones === "accessibility" && access.data) {
       const a = access.data;
@@ -152,9 +184,13 @@ function CityView({ city }: { city: string }) {
           delta: true,
         };
       }
+      const b = baseAccess.data;
       return {
         values: a.h3_cell.map((h3, i) => ({ h3, value: a.est_jobs_share[i]! })),
         info: a.fields.est_jobs_share,
+        ...(split && b
+          ? { baseline: b.h3_cell.map((h3, i) => ({ h3, value: b.est_jobs_share[i]! })) }
+          : {}),
       };
     }
     const z = zones.data;
@@ -173,18 +209,15 @@ function CityView({ city }: { city: string }) {
       };
     }
     return null;
-  }, [layers.zones, access.data, zones.data, view]);
+  }, [layers.zones, access.data, baseAccess.data, zones.data, view, split]);
 
-  const crowdValues = useMemo((): PairValue[] | null => {
-    const c = crowding.data;
-    if (!c) return null;
-    return pairValues(
-      c.pairs,
-      c.passengers.map((_, i) => i),
-      c.passengers,
-      c.load_factor,
-    );
-  }, [crowding.data]);
+  const crowdValues = useMemo(() => crowdPairs(crowding.data), [crowding.data]);
+  const baseCrowdValues = useMemo(
+    () => (split ? crowdPairs(baseCrowding.data) : null),
+    [split, baseCrowding.data],
+  );
+  const lensCentre = lensLng ?? (detail.data ? (detail.data.bbox[0] + detail.data.bbox[2]) / 2 : 0);
+
   const flowFrames = useMemo((): PairValue[][] | null => {
     const f = flows.data;
     if (!f) return null;
@@ -199,7 +232,14 @@ function CityView({ city }: { city: string }) {
   const pickedKeys = useMemo(() => new Set(picked.map(stopKey)), [picked]);
   const deckLayers = useMemo(() => {
     const out: Layer[] = [];
-    if (zoneData) {
+    const west: ClipBox = [-180, -90, lensCentre, 90];
+    const east: ClipBox = [lensCentre, -90, 180, 90];
+    if (zoneData?.baseline) {
+      // One colour scale for both sides, or equal colours would not mean equal values.
+      const top = upperBound(zoneData.baseline.map((v) => v.value));
+      out.push(zoneLayer("zones-split-baseline", zoneData.baseline, { top, clip: west }));
+      out.push(zoneLayer("zones-split-scenario", zoneData.values, { top, clip: east }));
+    } else if (zoneData) {
       out.push(
         zoneData.delta
           ? deltaZoneLayer(zoneData.values)
@@ -207,11 +247,18 @@ function CityView({ city }: { city: string }) {
       );
     }
     if (layers.network && network.data) out.push(networkLayer(network.data));
-    if (layers.loads === "crowding" && crowdValues) out.push(loadLayer("crowding", crowdValues));
+    if (layers.loads === "crowding" && baseCrowdValues && crowdValues) {
+      out.push(loadLayer("crowding-baseline", baseCrowdValues, west));
+      out.push(loadLayer("crowding", crowdValues, east));
+    } else if (layers.loads === "crowding" && crowdValues) {
+      out.push(loadLayer("crowding", crowdValues));
+    }
     if (layers.loads === "flows" && flowFrames) {
       out.push(loadLayer("flows", flowFrames[shownFrame] ?? []));
     }
-    if (view !== "baseline" && changes.data) out.push(changesLayer(changes.data.routes));
+    if (view !== "baseline" && changes.data) {
+      out.push(changesLayer(changes.data.routes, split ? east : undefined));
+    }
     if (route.data && selectedRoute !== null) out.push(routeLayer(route.data.features));
     if (showStops && stops.data) out.push(stopsLayer(stops.data.features, pickedKeys));
     if (picked.length) out.push(draftLayer(picked.map((s) => s.geometry.coordinates)));
@@ -220,6 +267,9 @@ function CityView({ city }: { city: string }) {
     zoneData,
     layers,
     crowdValues,
+    baseCrowdValues,
+    split,
+    lensCentre,
     flowFrames,
     shownFrame,
     view,
@@ -277,7 +327,7 @@ function CityView({ city }: { city: string }) {
           : format(z.value, zoneInfo.unit);
         return `${text} (${zoneInfo.nature})`;
       }
-      if (id === "crowding" || id === "flows") {
+      if (id?.startsWith("crowding") || id === "flows") {
         const v = info.object as PairValue;
         return `${format(v.passengers, "count")} passengers, ${format(v.loadFactor, "ratio")}× design capacity (Simulated)`;
       }
@@ -291,6 +341,19 @@ function CityView({ city }: { city: string }) {
   );
 
   const [focus, setFocus] = useState<Focus | null>(null);
+  const lens = useMemo(
+    (): Lens | null =>
+      split
+        ? {
+            fraction: lensFraction,
+            onFraction: setLensFraction,
+            onLng: setLensLng,
+            left: "Baseline",
+            right: "Scenario",
+          }
+        : null,
+    [split, lensFraction],
+  );
   const [searchSeed, setSearchSeed] = useState<{ text: string; n: number } | undefined>();
 
   const zoneFacts = useMemo((): ZoneFacts | null => {
@@ -356,7 +419,6 @@ function CityView({ city }: { city: string }) {
   const c = detail.data;
   const attribution = `Data: ${[...new Set(c.sources.map((s) => `${s.source} (${s.license})`))].join(", ")}`;
   const current = MODES.find((m) => m.id === mode)!;
-  const VIEW_NAME = { baseline: "Baseline", scenario: "Scenario", change: "Change" } as const;
   const showing = result ? `${VIEW_NAME[view]} · ${result.label}` : "Baseline";
 
   const active = (simulations.data ?? []).filter(isActive);
@@ -471,6 +533,7 @@ function CityView({ city }: { city: string }) {
             onClick={onClick}
             getTooltip={getTooltip}
             focus={focus}
+            lens={lens}
             controls={
               changedBox && (
                 <button

@@ -108,6 +108,20 @@ describe("Comparing a result with the baseline", () => {
     await waitFor(() => expect(ids()).toEqual(["zones-accessibility", "network", "changes"]));
   });
 
+  it("draws the lens: baseline and scenario zones on one colour scale, cut at the divider", async () => {
+    await compareWithK1();
+    await waitFor(() => expect(ids()).toContain("zones-change"));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Lens" }));
+
+    await waitFor(() =>
+      expect(ids()).toEqual(["zones-split-baseline", "zones-split-scenario", "network", "changes"]),
+    );
+    const [left, right] = drawn as unknown as { props: { clipBounds: number[] } }[];
+    expect(left!.props.clipBounds[2]).toBe(right!.props.clipBounds[0]);
+    expect(screen.getByText(/Baseline left of a divider/)).toBeInTheDocument();
+  });
+
   it("plays flows frame by frame and marks partial frames", async () => {
     await compareWithK1();
     fireEvent.click(await screen.findByRole("radio", { name: "Flow playback" }));
