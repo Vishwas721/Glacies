@@ -92,6 +92,32 @@ describe("fromScenario", () => {
     expect(draft.added).toEqual([feeder]);
     expect(unsupported).toHaveLength(2);
   });
+
+  it("reads mutations as the API sends them, with absent fields as null", () => {
+    const fromApi = {
+      schema_version: 1,
+      scenario_id: "demo",
+      title: "Demo",
+      mutations: [
+        {
+          type: "modify_headway",
+          route_id: "1066",
+          feed: null,
+          headway_factor: 0.5,
+          headway_secs: null,
+          window: null,
+        },
+        { ...feeder, name: null, return_stops: null, dwell_secs: null },
+      ],
+    } as unknown as Scenario;
+
+    const { draft, unsupported } = fromScenario(fromApi, [route("bmtc_gtfs", "1066")]);
+
+    expect(unsupported).toEqual([]);
+    expect(draft.headway).toEqual({ "bmtc_gtfs:1066": 0.5 });
+    expect(draft.added).toEqual([feeder]);
+    expect(validateScenario(toScenario(draft))).toEqual([]);
+  });
 });
 
 describe("validateScenario", () => {
