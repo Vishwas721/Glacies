@@ -9,6 +9,12 @@ interface Props {
   onChange: (choice: ResultChoice | null) => void;
 }
 
+const option = (c: ResultChoice) => (
+  <option key={c.key} value={c.key}>
+    {c.finishedAt ? `${c.label} · ${c.finishedAt}` : c.label}
+  </option>
+);
+
 export function ResultPicker({ city, value, onChange }: Props) {
   const results = useResults(city);
   const listed = comparableResults(results.data ?? []);
@@ -24,11 +30,14 @@ export function ResultPicker({ city, value, onChange }: Props) {
         onChange={(e) => onChange(choices.find((c) => c.key === e.target.value) ?? null)}
       >
         <option value="">Baseline only</option>
-        {choices.map((c) => (
-          <option key={c.key} value={c.key}>
-            {c.label}
-          </option>
-        ))}
+        <optgroup label="Latest run of each scenario">
+          {choices.filter((c) => c.latest !== false).map(option)}
+        </optgroup>
+        {choices.some((c) => c.latest === false) && (
+          <optgroup label="Earlier runs">
+            {choices.filter((c) => c.latest === false).map(option)}
+          </optgroup>
+        )}
       </select>
       {choices.length === 0 && !results.error && (
         <p className="note">Simulate a scenario to compare it with the baseline.</p>

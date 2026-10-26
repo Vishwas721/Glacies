@@ -1,4 +1,4 @@
-import type { PickingInfo } from "@deck.gl/core";
+import type { Layer, PickingInfo } from "@deck.gl/core";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -6,9 +6,11 @@ import { App } from "../App";
 import { type Call, CITY, fakeApi, renderWithClient } from "../testing";
 
 let click: ((info: PickingInfo) => void) | undefined;
+let drawn: Layer[] = [];
 vi.mock("../map/MapView", () => ({
-  MapView: ({ onClick }: { onClick?: (info: PickingInfo) => void }) => {
+  MapView: ({ onClick, layers }: { onClick?: (info: PickingInfo) => void; layers: Layer[] }) => {
     click = onClick;
+    drawn = layers;
     return <div data-testid="map" />;
   },
 }));
@@ -46,6 +48,7 @@ const RUNNING = {
 
 async function ready() {
   renderWithClient(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Design" }));
   await screen.findByRole("searchbox", { name: "Find a route" });
 }
 
@@ -99,6 +102,70 @@ describe("Scenario builder", () => {
 
     fireEvent.click(within(status).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(posted(calls, "/api/simulations/sim_1/cancel")).toHaveLength(1));
+  });
+
+  it("draws the draft on the map before it is simulated", async () => {
+    fakeApi({
+      ...CITY,
+      "GET /api/cities/toyville/routes/0": {
+        fields: {},
+        route: CITY["GET /api/cities/toyville/routes"].routes[0],
+        features: [
+          {
+            type: "Feature",
+            geometry: {
+              type: "LineString",
+              coordinates: [
+                [0, 0],
+                [0.01, 0.01],
+              ],
+            },
+            properties: {
+              pattern_idx: 0,
+              direction_id: 0,
+              headsign: null,
+              stops: [0, 1],
+              trips: 2,
+              window_trips: 2,
+            },
+          },
+        ],
+      },
+    });
+    await ready();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Find a route" }), {
+      target: { value: "10" },
+    });
+    fireEvent.click(await screen.findByRole("checkbox", { name: "10 in service" }));
+
+    await waitFor(() => expect(drawn.map((l) => l.id)).toContain("proposal"));
+    expect(screen.getByText(/Draft, not simulated/)).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Route changes" })).toHaveTextContent("removed");
+  });
+
+  it("will not queue a scenario that is already queued or running", async () => {
+    const calls = fakeApi({
+      ...CITY,
+      "POST /api/cities/toyville/scenarios": (c: Call) => ({
+        source: "user",
+        editable: true,
+        scenario: c.body,
+      }),
+      "GET /api/simulations": [RUNNING],
+    });
+    await ready();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Find a route" }), {
+      target: { value: "10" },
+    });
+    fireEvent.click(await screen.findByRole("checkbox", { name: "10 in service" }));
+    fill("no_r1", "Without route 10");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(/no_r1 is already queued or running/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Simulate" })).toBeDisabled();
+    expect(posted(calls, "/api/simulations")).toHaveLength(0);
   });
 
   it("checks the schema before saving and shows what is wrong", async () => {

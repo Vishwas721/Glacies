@@ -1,7 +1,7 @@
 // Server state through TanStack Query. Network layers never change while the app runs (a
 // rebuild needs a reload), so they are cached for the session.
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "./client";
 import type {
@@ -50,6 +50,17 @@ export const useRoute = (city: string, routeIdx: number | null) =>
     queryFn: () => api<RouteDetail>(`${base(city)}/routes/${routeIdx}`),
     enabled: routeIdx !== null,
     ...forever,
+  });
+
+/** Several routes' stop patterns at once, e.g. the routes a draft scenario changes. */
+export const useRouteDetails = (city: string, routeIdx: number[]) =>
+  useQueries({
+    queries: routeIdx.map((idx) => ({
+      queryKey: ["route", city, idx],
+      queryFn: () => api<RouteDetail>(`${base(city)}/routes/${idx}`),
+      ...forever,
+    })),
+    combine: (results) => results.map((r) => r.data),
   });
 
 export const useStops = (city: string) =>
@@ -143,12 +154,28 @@ export const useSimulation = (id: string | null) =>
       query.state.data && FINISHED.has(query.state.data.status) ? false : 2000,
   });
 
+/**
+ * The city's simulations, newest first (ADR 0021). Polled every two seconds while one is
+ * queued or running, every fifteen otherwise, so runs started elsewhere show up too.
+ */
+export const useSimulations = (city: string) =>
+  useQuery({
+    queryKey: ["simulations", city],
+    queryFn: () => api<Simulation[]>(`/api/simulations?city=${city}`),
+    refetchInterval: (query) =>
+      query.state.data?.some((s) => !FINISHED.has(s.status)) ? 2000 : 15_000,
+    retry: false,
+  });
+
 export function useCancelSimulation() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
       api<Simulation>(`/api/simulations/${id}/cancel`, { method: "POST" }),
-    onSuccess: (sim) => client.setQueryData(["simulation", sim.id], sim),
+    onSuccess: (sim) => {
+      client.setQueryData(["simulation", sim.id], sim);
+      void client.invalidateQueries({ queryKey: ["simulations"] });
+    },
   });
 }
 

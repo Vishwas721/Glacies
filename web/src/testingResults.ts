@@ -121,6 +121,7 @@ export const RESULT = {
     fields: {
       est_jobs_share: label("simulated", "share", "Share of estimated jobs reachable."),
       est_jobs_share_delta: label("simulated", "share", "Scenario minus baseline."),
+      population_share: label("simulated", "share", "Share of the population reachable."),
     },
     percentile: 50,
     threshold_min: 45,

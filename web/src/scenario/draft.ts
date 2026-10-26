@@ -51,6 +51,11 @@ export function toScenario(draft: Draft): Scenario {
   };
 }
 
+/** The API sends absent optional fields as null; the scenario document omits them. */
+function withoutNulls<T extends object>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== null)) as T;
+}
+
 /**
  * The draft for a saved scenario. Mutations the builder cannot show (a fixed headway, a time
  * window, a route given without its feed) are reported, not dropped silently.
@@ -71,7 +76,7 @@ export function fromScenario(
     const matches = routes.filter((r) => r.route_id === routeId);
     return matches.length === 1 ? routeKey(matches[0]!) : null;
   };
-  for (const m of scenario.mutations) {
+  for (const m of scenario.mutations.map(withoutNulls)) {
     if (m.type === "add_route") {
       draft.added.push(m);
       continue;

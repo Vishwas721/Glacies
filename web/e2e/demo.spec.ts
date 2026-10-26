@@ -22,13 +22,15 @@ test("the demo story", async ({ page }) => {
 
   // 1. Load the baseline network.
   await page.goto("/");
-  await expect(page.getByText("Toyville · timetable of 2026-10-13")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Toyville" })).toBeVisible();
+  await expect(page.getByText(/timetable of 2026-10-13/)).toBeVisible();
   await expect(page.locator("canvas").first()).toBeVisible();
 
   // 2. Current accessibility, labelled.
   await expect(page.getByLabel("Legend")).toContainText("Simulated");
 
   // 3. A scenario: route 10 twice as often.
+  await page.getByRole("button", { name: "Design" }).click();
   await page.getByRole("searchbox", { name: "Find a route" }).fill("10");
   await page.getByRole("combobox", { name: "10 frequency" }).selectOption("0.5");
   await page.getByPlaceholder("my_scenario").fill("e2e_faster_10");
@@ -45,7 +47,7 @@ test("the demo story", async ({ page }) => {
   await status.getByRole("button", { name: "Show results" }).click();
 
   // 5. Before and after, every number labelled.
-  const headline = page.getByRole("table", { name: "Headline metrics" });
+  const headline = page.getByRole("list", { name: "Headline metrics" });
   await expect(headline).toContainText("waiting per transit trip");
   await expect(headline.getByText("Simulated").first()).toBeVisible();
 

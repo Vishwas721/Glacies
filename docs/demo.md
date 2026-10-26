@@ -25,23 +25,34 @@ or, on a machine with only Docker and the built `data/`:
 The baseline must be built (`uv run glacies build-city bengaluru --clean`, then the
 travel-time matrix, accessibility, demand and assignment: see the README).
 
+The screen (ADR 0023): a rail with four modes (Explore, Design, Compare, Data), the mode's panel
+on the left, the map, a dock under it for runs and flow playback, and an inspector on the right
+for what is selected and for the comparison. A label on the map always says which network it
+shows.
+
 ## 1. Load the Bengaluru baseline network
 
-Open the app. The map shows every bus and metro stop-to-stop segment, wider where more vehicles
-run in the 07:30-09:30 window (timetable: **Observed**). Lines are straight between stops: the
-feeds have no shapes, which the API labels **Assumed**.
+Open the app (Explore). The map shows every bus and metro stop-to-stop segment, wider where more
+vehicles run in the 07:30-09:30 window (timetable: **Observed**): buses slate, metro pale. Lines
+are straight between stops: the feeds have no shapes, which the API labels **Assumed**. The
+masthead gives the network's size, and the inspector, with nothing selected, says what the map
+shows.
 
 ## 2. Show current accessibility
 
 Zones: *Accessibility to estimated jobs*, within 45 min at p50. Explain the measure: the share of
 the city's **estimated** jobs (a building and job-POI proxy, never a job count) reachable from each
 zone by transit and walking. Switch to *Population* and *Estimated employment* to show where people
-live and where the proxy puts jobs.
+live and where the proxy puts jobs. Click a zone: the inspector lists its residents, its share of
+estimated employment and what it reaches. *Relief* (map controls) raises the zones by the same
+value on a tilted map. *Data* lists every source with its licence and what the four labels mean.
 
 ## 3. Create the scenario
 
-*Open* → **East Bengaluru package** (`bengaluru_demo_east_corridor`, a repository scenario: it
-runs as it is, and any edit becomes your own copy). It combines the three Phase 4 scenarios:
+*Design* → *Open* → **East Bengaluru package** (`bengaluru_demo_east_corridor`, a repository
+scenario: it runs as it is, and any edit becomes your own copy). The map draws the draft before
+anything runs: removed routes dashed red, routes that run more or less often amber, added routes
+ice. It combines the three Phase 4 scenarios:
 
 - **Modify frequencies**: 500-D on the Outer Ring Road runs twice as often (route 1066).
 - **Remove overlapping service**: 304-K (routes 2255, 2256), which duplicates the Purple Line
@@ -56,16 +67,21 @@ and the server checks every route and stop id.
 ## 4. Run demand, routing and assignment
 
 *Simulate*. If this scenario has run before with the same code and data, the result is reused
-and the run finishes in seconds. Otherwise the status shows each stage (applying the changes, the travel-time matrix for the
-affected origins, accessibility, assignment with crowding, the comparison) and can be cancelled.
+and the run finishes in seconds. Otherwise *Runs* in the dock shows each stage as a track
+(applying the changes, the travel-time matrix for the affected origins, accessibility, assignment
+with crowding, the comparison) with the worker's own chunk counts, and the run can be cancelled.
+The same list shows every earlier run, and Simulate stays off while the scenario is queued or
+running.
 Demand is the baseline AM-peak OD, assigned onto the changed network (ADR 0019): the comparison
 shows route choice, waiting and crowding effects, not new riders.
 
 ## 5. Before vs after
 
-*Show results* (or pick the result under *Results*). The panel lists baseline → scenario and the
-change for travel time, waiting and transfers per transit trip, accessibility within 45 minutes,
-crowding and metro entries, each with its badge. *All metrics* has the rest.
+*Show results* in *Runs* (or *Compare* → *Results*). The impact ledger in the inspector lists
+baseline → scenario and the change for travel time, waiting and transfers per transit trip,
+accessibility within 45 minutes, crowding and metro entries, each with its badge, whether the
+change is better or worse (metro entries are not judged either way) and what the metric measures.
+*All metrics* has the rest.
 
 Figures from the run on 2026-10-23 (result `eda5f026…`, 300 s on mains power: 3,030 of 10,661
 origins recomputed, zone walks rebuilt for the new code), all **Simulated**:
@@ -86,9 +102,10 @@ other buses (removing 304-K alone: +0.006 min), which outweighs the shorter wait
 
 ## 6. Where did accessibility improve?
 
-*Show: Change*. Blue zones gained, red lost, in the classes of `glacies scenario compare`;
-unchanged zones are not drawn. The changed routes are drawn on top: removed dashed red, added wide
-blue, modified orange. In the run, 22 zones gain at the headline (45 min, p50): 18 of them lie
+*Show* → *Change*, then *Fit the changed routes* (map controls). Blue zones gained, red lost, in
+the classes of `glacies scenario compare`; unchanged zones are not drawn. The changed routes are
+drawn on top: removed dashed red, added wide ice, modified amber. *Lens* puts baseline and
+scenario accessibility side by side on one colour scale; drag the divider across a zone. In the run, 22 zones gain at the headline (45 min, p50): 18 of them lie
 closest to 500-D, 3 to the feeder. 15 lose: 9 lie closest to the removed 304-K, the rest nearer
 500-D or the feeder, because a journey can lose a leg anywhere along it; changed zones are up to
 6 km from a changed route.
@@ -99,9 +116,9 @@ closest to 500-D, 3 to the feeder. 15 lose: 9 lie closest to the removed 304-K, 
 moved* shows the routes whose boardings changed most. In the run: 500-D +2,946 boardings, the feeder
 +2,783, 304-K −1,471, and the parallel V-500CK (−689) and V-500CA (−493) lose riders to 500-D
 and the feeder. Then *Passenger loads*: peak-hour crowding,
-and *Flow playback* in 15-minute frames from 08:00. Frames outside 08:30-09:30 are marked partial:
+and *Flow playback* in the dock in 15-minute frames from 08:00. Frames outside 08:30-09:30 are marked partial:
 nobody in the model leaves home outside 08:00-10:00, so the network fills and drains.
 
-Close with *How far to trust the loads*: metro entries against observed gate counts (training
+Close with *How far to trust the loads* in the inspector: metro entries against observed gate counts (training
 and held-out stations) and the share of bus passengers on segments loaded past what could board.
 Capacity is soft, so those corridors show where demand piles up, not real loads.

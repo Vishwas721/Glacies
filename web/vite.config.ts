@@ -16,5 +16,8 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/setupTests.ts"],
     include: ["src/**/*.test.{ts,tsx}"], // e2e/ runs under Playwright
+    // The full-app tests take under half a second, but ten times that on a busy machine (a
+    // Vite rebuild alongside reproduced a timeout at the default 5 s).
+    testTimeout: 15_000,
   },
 });

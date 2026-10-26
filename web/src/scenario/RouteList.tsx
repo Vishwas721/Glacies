@@ -19,12 +19,20 @@ interface Props {
   onChange: (draft: Draft) => void;
   selected: number | null;
   onSelect: (routeIdx: number | null) => void;
+  /** Text to search for, e.g. a route picked on the map; `n` changes to search again. */
+  seed?: { text: string; n: number };
 }
 
 const routeName = (r: RouteSummary) => r.short_name ?? r.route_id;
 
-export function RouteList({ data, draft, onChange, selected, onSelect }: Props) {
+export function RouteList({ data, draft, onChange, selected, onSelect, seed }: Props) {
   const [search, setSearch] = useState("");
+  // A new seed replaces the search once (React's "adjust state on a prop change" pattern).
+  const [seenSeed, setSeenSeed] = useState(seed);
+  if (seed !== seenSeed) {
+    setSeenSeed(seed);
+    if (seed) setSearch(seed.text);
+  }
   const changed = useMemo(() => {
     const keys = new Set([...draft.removed, ...Object.keys(draft.headway)]);
     return data.routes.filter((r) => keys.has(routeKey(r)));

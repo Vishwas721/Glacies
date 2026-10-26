@@ -1,0 +1,169 @@
+/* Inspector cards: an eyebrow naming the kind of thing, its name, then a list of facts. */
+
+.inspect-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ice);
+}
+
+.inspect-close {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-3);
+}
+
+.inspect h3 .mono {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.facts {
+  margin: 8px 0 4px;
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+
+.facts > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: baseline;
+  padding: 6px 8px;
+  background: var(--ink-2);
+}
+
+.facts dt {
+  flex: 1 1 120px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.facts dd {
+  margin: 0 0 0 auto;
+  text-align: right;
+}
+
+.facts .delta {
+  font-family: var(--mono);
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+
+.inspect > button {
+  margin-top: 8px;
+}
+
+/* Data mode: sources, built outputs and the key to the four labels. */
+
+.sources,
+.outputs {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sources li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.sources li:last-child {
+  border-bottom: none;
+}
+
+.source-kind {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.sources a {
+  text-decoration: none;
+  font-weight: 550;
+}
+
+.sources a:hover {
+  text-decoration: underline;
+}
+
+.source-meta {
+  margin: 2px 0 0;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.outputs li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  gap: 6px;
+  padding: 4px 0;
+  align-items: baseline;
+}
+
+.output-mark {
+  color: #6fd3a0;
+  font-size: 10px;
+}
+
+.outputs li[data-available="false"] .output-mark {
+  color: var(--danger);
+}
+
+.nature-key {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.nature-key dt {
+  margin-bottom: 3px;
+}
+
+.nature-key dd {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.reading dl {
+  margin: 8px 0 0;
+}
+
+.reading dt {
+  font-weight: 550;
+  margin-top: 8px;
+}
+
+.reading dd {
+  margin: 3px 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.reading-next {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}

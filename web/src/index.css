@@ -1,93 +1,273 @@
+/* Glacies visual language (ADR 0023): ink-dark surfaces, hairlines, one glacial accent. Data
+   colours (viridis levels, blue/red change classes) live in map/colours.ts and compare/layers.ts
+   and are never reused for decoration. */
+
 :root {
-  color-scheme: light dark;
-  font-family: system-ui, sans-serif;
-  font-size: 14px;
-  --border: #8884;
-  --muted: #8a8a8a;
-  --accent: #e6550d;
-  --observed: #2b6cb0;
-  --estimated: #8a5a00;
-  --simulated: #6b46c1;
-  --assumed: #4a5568;
+  color-scheme: dark;
+
+  /* Surfaces, darkest first. */
+  --ink-0: #06090d;
+  --ink-1: #0a1016;
+  --ink-2: #0f171f;
+  --ink-3: #152029;
+  --ink-4: #1c2a35;
+  --line: #1f2d38;
+  --line-strong: #2d404d;
+
+  --text: #e3ebf1;
+  --text-2: #94a6b3;
+  --text-3: #627683;
+
+  /* Interface accents: ice for what is selected or new, amber for what is changed. */
+  --ice: #7fdcf2;
+  --ice-dim: #3d8ea3;
+  --amber: #ffb454;
+  --danger: #ff7a73;
+
+  /* Map change classes, the same hues as `glacies scenario compare`. */
+  --gain: #3987e5;
+  --loss: #e34948;
+
+  /* Data natures (CLAUDE.md rule 4). */
+  --observed: #8fd0ff;
+  --estimated: #f1c66e;
+  --simulated: #c6a8ff;
+  --assumed: #a9b6c0;
+
+  --sans: "Archivo Variable", "Archivo", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
+
+  --radius: 3px;
+  --gap: 12px;
+  --shadow: 0 8px 24px rgb(0 0 0 / 45%), 0 1px 0 rgb(255 255 255 / 3%) inset;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  font-variation-settings: "wdth" 92;
+  color: var(--text);
+  background: var(--ink-1);
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  background: var(--ink-1);
+  -webkit-font-smoothing: antialiased;
 }
 
-.shell {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 600;
+  margin: 0;
 }
 
-.topbar {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border);
+h2 {
+  font-size: 11px;
+  font-family: var(--mono);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
 
-.layout {
-  display: grid;
-  grid-template-columns: 320px 1fr 340px;
-  flex: 1;
-  min-height: 0;
+h3 {
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  margin-bottom: 8px;
 }
 
-.panel {
-  padding: 0 12px 12px;
-  overflow: auto;
+h4 {
+  font-size: 10.5px;
+  font-family: var(--mono);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 12px 0 6px;
 }
 
-.map {
-  position: relative;
-  border-inline: 1px solid var(--border);
+a {
+  color: var(--ice);
 }
 
-.map-canvas {
-  position: absolute;
-  inset: 0;
+.mono,
+code,
+pre {
+  font-family: var(--mono);
 }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
+
+/* ---------- Controls ---------- */
+
+button {
+  font: inherit;
+  font-weight: 550;
+  color: var(--text);
+  background: var(--ink-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 5px 10px;
+  cursor: pointer;
+  transition:
+    background 120ms var(--ease),
+    border-color 120ms var(--ease);
+}
+
+button:hover:not(:disabled) {
+  background: var(--ink-4);
+  border-color: var(--text-3);
+}
+
+button:disabled {
+  color: var(--text-3);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+button.primary {
+  background: var(--ice);
+  border-color: var(--ice);
+  color: var(--ink-0);
+}
+
+button.primary:hover:not(:disabled) {
+  background: #a6e9f8;
+  border-color: #a6e9f8;
+}
+
+button[aria-pressed="true"] {
+  border-color: var(--ice);
+  color: var(--ice);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ice);
+  outline-offset: 1px;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--ink-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 4px 6px;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--ice-dim);
+  outline: none;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--ice);
+  margin: 0 6px 0 0;
+  vertical-align: -2px;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--ice);
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 3.2em;
+}
+
+select option,
+select optgroup {
+  background: var(--ink-2);
+}
+
+progress {
+  width: 100%;
+  height: 4px;
+  appearance: none;
+  border: none;
+  background: var(--ink-4);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+progress::-webkit-progress-bar {
+  background: var(--ink-4);
+}
+
+progress::-webkit-progress-value {
+  background: var(--ice);
+}
+
+progress::-moz-progress-bar {
+  background: var(--ice);
+}
+
+/* ---------- Building blocks ---------- */
 
 .message {
-  padding: 16px;
+  padding: 24px;
+  color: var(--text-2);
 }
 
 .card {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--ink-2);
+  padding: 12px;
   margin-bottom: 10px;
-}
-
-.card h3 {
-  margin: 0 0 6px;
-  font-size: 1rem;
-}
-
-.card h4 {
-  margin: 6px 0 2px;
-  font-size: 0.85rem;
 }
 
 .card label {
   display: block;
-  margin: 3px 0;
+  margin: 4px 0;
+  color: var(--text-2);
 }
 
 .card fieldset {
   border: none;
   padding: 0;
-  margin: 6px 0;
+  margin: 8px 0;
+}
+
+.card legend {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 0;
+  margin-bottom: 4px;
 }
 
 .card input:not([type]),
 .card input[type="search"],
 .card textarea {
   width: 100%;
-  box-sizing: border-box;
+  display: block;
+  margin-top: 2px;
 }
 
 .card select {
@@ -109,58 +289,94 @@ body {
 }
 
 .route {
-  padding: 4px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.route:last-child {
+  border-bottom: none;
 }
 
 .route.selected {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--ice);
+  padding-left: 8px;
+  background: color-mix(in srgb, var(--ice) 6%, transparent);
+}
+
+.route-name {
+  color: var(--text) !important;
 }
 
 .route-detail {
-  font-size: 0.85rem;
-  margin: 2px 0;
+  font-size: 12px;
+  margin: 2px 0 4px;
+  color: var(--text-2);
 }
 
 .picked {
   margin: 6px 0;
   padding-left: 20px;
+  font-size: 12px;
 }
 
 .link {
   background: none;
   border: none;
   padding: 0;
-  color: var(--accent);
+  color: var(--ice);
   cursor: pointer;
   font: inherit;
-  text-decoration: underline;
+  font-weight: 550;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+  border-radius: 0;
+}
+
+.link:hover:not(:disabled) {
+  background: none;
+  color: #b4eefb;
 }
 
 .muted,
 .note {
-  color: var(--muted);
+  color: var(--text-2);
 }
 
 .note {
-  font-size: 0.85rem;
-  margin: 4px 0;
+  font-size: 12px;
+  margin: 6px 0;
 }
 
 .error {
-  color: #c53030;
+  color: var(--danger);
   white-space: pre-wrap;
-  font-size: 0.85rem;
+  font-size: 12px;
+  padding-left: 16px;
 }
 
+pre.error {
+  padding: 8px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--ink-1));
+  border-left: 2px solid var(--danger);
+  overflow: auto;
+  max-height: 12em;
+}
+
+/* Data-nature tag: a coloured rule and the word, always spelled out. */
 .badge {
   display: inline-block;
-  font-size: 0.7rem;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
   line-height: 1;
-  padding: 2px 5px;
-  border-radius: 8px;
-  border: 1px solid currentColor;
-  vertical-align: middle;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 5px 2px;
+  border-radius: 1px;
+  border-left: 2px solid currentColor;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  vertical-align: 1px;
+  white-space: nowrap;
 }
 
 .badge-observed {
@@ -179,67 +395,133 @@ body {
   color: var(--assumed);
 }
 
+.quantity .value {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
 .legend .ramp {
-  height: 10px;
-  border-radius: 3px;
+  height: 8px;
+  border-radius: 1px;
 }
 
 .legend .ramp-labels {
   display: flex;
   justify-content: space-between;
-  margin-top: 4px;
-}
-
-progress {
-  width: 100%;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --observed: #90cdf4;
-    --estimated: #f6c560;
-    --simulated: #c3a6f5;
-    --assumed: #cbd5e0;
-  }
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
 }
 
 .inline {
   display: inline !important;
-  margin-right: 8px;
+  margin-right: 10px;
 }
 
 .swatch {
   display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  vertical-align: middle;
+  width: 10px;
+  height: 10px;
+  border-radius: 1px;
+  vertical-align: -1px;
 }
 
 .metrics {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.85rem;
+  font-size: 12px;
   margin: 4px 0 8px;
 }
 
 .metrics th,
 .metrics td {
   text-align: left;
-  padding: 3px 4px;
-  border-bottom: 1px solid var(--border);
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line);
   vertical-align: top;
 }
 
+.metrics td {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
 .metrics th {
-  font-weight: normal;
+  font-weight: 450;
+  color: var(--text-2);
 }
 
 .delta-legend td {
-  padding: 1px 6px 1px 0;
-  font-size: 0.85rem;
+  padding: 2px 8px 2px 0;
+  font-size: 12px;
 }
 
-input[type="range"] {
-  width: 100%;
+details > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 12px;
+  margin: 6px 0;
+}
+
+details > summary:hover {
+  color: var(--text);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A row of radio buttons drawn as one segmented switch. */
+.segmented {
+  display: flex;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.segmented label {
+  flex: 1;
+  margin: 0 !important;
+  position: relative;
+}
+
+.segmented label + label {
+  border-left: 1px solid var(--line-strong);
+}
+
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.segmented span {
+  display: block;
+  padding: 5px 4px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text-2);
+}
+
+.segmented input:checked + span {
+  background: color-mix(in srgb, var(--ice) 16%, transparent);
+  color: var(--ice);
+}
+
+.segmented input:focus-visible + span {
+  outline: 2px solid var(--ice);
+  outline-offset: -2px;
+}
+
+.segmented label:hover span {
+  color: var(--text);
 }

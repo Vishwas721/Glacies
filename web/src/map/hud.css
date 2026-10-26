@@ -1,0 +1,381 @@
+/* Instruments drawn over the map: near-opaque ink panels and hairlines. No backdrop blur:
+   Chrome composites it wrongly over the WebGL canvas while the map animates. */
+
+.map-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--ink-1) 94%, transparent);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.map-controls button {
+  border: none;
+  border-radius: 0;
+  background: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+}
+
+.map-controls button + button {
+  border-top: 1px solid var(--line);
+}
+
+.map-controls button:hover:not(:disabled) {
+  background: var(--ink-3);
+  color: var(--text);
+}
+
+.map-controls svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.map-showing {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 5px 12px 6px;
+  max-width: min(60%, 520px);
+  font-size: 12.5px;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--ink-1) 94%, transparent);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+.map-showing span {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ice);
+  margin-right: 6px;
+}
+
+.map-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  width: 268px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--ink-1) 92%, transparent);
+  box-shadow: var(--shadow);
+}
+
+.map-legend .legend + .legend {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.legend-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.map-legend .note {
+  margin-bottom: 0;
+  font-size: 11px;
+}
+
+.map-readout {
+  position: absolute;
+  right: 48px;
+  bottom: 16px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+  white-space: pre;
+  text-shadow: 0 1px 2px var(--ink-0);
+  pointer-events: none;
+}
+
+.map-readout span {
+  margin-left: 12px;
+  color: var(--text-3);
+}
+
+.map-readout .scale-bar {
+  display: inline-block;
+  margin-left: 14px;
+  padding: 0 0 1px 3px;
+  border: 1px solid var(--text-2);
+  border-top: none;
+  color: var(--text-2);
+  font-size: 9.5px;
+  line-height: 1.2;
+}
+
+/* Lat/lon ticks along the top and left edges. */
+.edge-ticks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.tick {
+  position: absolute;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-3);
+  text-shadow: 0 1px 2px var(--ink-0);
+}
+
+.tick-x {
+  top: 0;
+  transform: translateX(-50%);
+  padding-top: 7px;
+}
+
+.tick-x::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: 5px;
+  background: var(--text-3);
+}
+
+.tick-y {
+  left: 0;
+  transform: translateY(-50%);
+  padding-left: 8px;
+}
+
+.tick-y::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 5px;
+  height: 1px;
+  background: var(--text-3);
+}
+
+/* MapLibre's own controls, in the same ink. */
+.maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--ink-1) 92%, transparent) !important;
+  color: var(--text-2) !important;
+  font-size: 10.5px;
+  max-width: min(560px, 70%);
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--text) !important;
+}
+
+.maplibregl-ctrl-attrib.maplibregl-compact {
+  border: 1px solid var(--line-strong);
+}
+
+.maplibregl-ctrl-attrib-button {
+  filter: invert(1) brightness(0.85);
+}
+
+/* deck.gl's hover tooltip. */
+.deck-tooltip {
+  font-family: var(--sans) !important;
+  font-size: 12px !important;
+  background: var(--ink-0) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 6px 9px !important;
+  box-shadow: var(--shadow);
+}
+
+/* Above MapLibre's own control corners (z-index 2): without an explicit level, Chrome drew the
+   map canvas over these panels after a camera animation. */
+.map-controls,
+.map-showing,
+.map-legend,
+.map-readout,
+.edge-ticks {
+  z-index: 3;
+}
+
+/* The basemap is backdrop: greyed and dimmed so roads never read as bus lines. deck.gl draws
+   the data on its own canvas, which this does not touch. */
+.maplibregl-canvas {
+  filter: saturate(0) brightness(0.72) contrast(1.1);
+}
+
+/* The What-If Lens divider: a hairline the full height of the map with a grip in the middle
+   and the two sides named at the top. */
+.lens {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  margin-left: -12px;
+  z-index: 4;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.lens::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 50%),
+    0 0 12px rgb(0 0 0 / 60%);
+}
+
+.lens:focus-visible {
+  outline: none;
+}
+
+.lens:focus-visible .lens-grip {
+  outline: 2px solid var(--ice);
+  outline-offset: 2px;
+}
+
+.lens-grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.lens-grip svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--ink-0);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lens-label {
+  position: absolute;
+  top: 66px;
+  padding: 3px 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink-0);
+  background: var(--text);
+  border-radius: 2px;
+}
+
+.lens-left {
+  right: calc(50% + 6px);
+}
+
+.lens-right {
+  left: calc(50% + 6px);
+}
+
+.route-key {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.route-key + .legend {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.route-key .line {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  margin-right: 6px;
+  vertical-align: 3px;
+  border-top: 3px solid currentColor;
+}
+
+.route-key .line-removed {
+  border-top-style: dashed;
+}
+
+.route-key .line-added {
+  border-top-width: 4px;
+}
+
+@media (max-width: 700px) {
+  .map-legend {
+    left: 8px;
+    bottom: 8px;
+    width: min(230px, 62vw);
+    padding: 8px 10px;
+  }
+
+  /* The title says what the colours measure, so it stays; the notes go. */
+  .map-legend .note {
+    display: none;
+  }
+
+  .legend-title {
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+
+  .map-showing {
+    top: 10px;
+    max-width: calc(100% - 70px);
+    left: 10px;
+    transform: none;
+  }
+
+  .map-readout,
+  .edge-ticks {
+    display: none;
+  }
+
+  .map-controls {
+    top: 10px;
+    right: 8px;
+  }
+}

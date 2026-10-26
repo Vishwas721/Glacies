@@ -35,6 +35,8 @@ export function fakeApi(routes: Record<string, unknown | Handler>): Call[] {
 }
 
 export function renderWithClient(ui: ReactNode) {
+  // The mode lives in the address bar; start every test from a plain URL.
+  window.history.replaceState(null, "", "/");
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 }
@@ -182,7 +184,10 @@ export const CITY = {
     est_employment_share: [0.75, 0.25],
   },
   "GET /api/cities/toyville/results/baseline/accessibility": {
-    fields: { est_jobs_share: label("simulated", "share", "Share of estimated jobs reachable.") },
+    fields: {
+      est_jobs_share: label("simulated", "share", "Share of estimated jobs reachable."),
+      population_share: label("simulated", "share", "Share of the population reachable."),
+    },
     percentile: 50,
     threshold_min: 45,
     zone_idx: [0, 1],

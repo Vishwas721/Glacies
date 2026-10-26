@@ -11,11 +11,9 @@ import type {
   ScenarioRecord,
   StopFeature,
 } from "../api/types";
-import type { ResultChoice } from "../compare/results";
 import { AddRouteForm } from "./AddRouteForm";
 import { type Draft, emptyDraft, fromScenario, toScenario } from "./draft";
 import { RouteList } from "./RouteList";
-import { SimulationStatus } from "./SimulationStatus";
 import { validateScenario } from "./validate";
 
 interface Props {
@@ -29,7 +27,12 @@ interface Props {
   onPickingChange: (picking: boolean) => void;
   picked: StopFeature[];
   onPickedChange: (stops: StopFeature[]) => void;
-  onShowResult?: (choice: ResultChoice) => void;
+  /** Search the route list for this, e.g. a route chosen on the map. */
+  searchSeed?: { text: string; n: number };
+  /** Scenarios queued or running now: simulating one again would only queue a duplicate. */
+  activeScenarios?: ReadonlySet<string>;
+  /** A simulation was queued; its progress shows in the dock. */
+  onSimulation: (id: string) => void;
 }
 
 export function ScenarioBuilder(props: Props) {
@@ -41,7 +44,6 @@ export function ScenarioBuilder(props: Props) {
   const [problems, setProblems] = useState<string[]>([]);
   const [notes, setNotes] = useState<string[]>([]);
   const [savedAs, setSavedAs] = useState<string | null>(null); // id of the unchanged saved draft
-  const [simulation, setSimulation] = useState<string | null>(null);
 
   const change = (next: Draft) => {
     setSavedAs(null);
@@ -51,7 +53,6 @@ export function ScenarioBuilder(props: Props) {
   // Opening fetches the scenario and applies it; repository scenarios become an editable copy.
   const open = async (id: string) => {
     setProblems([]);
-    setSimulation(null);
     try {
       const record = await client.fetchQuery({
         queryKey: ["scenario", city, id],
@@ -91,10 +92,11 @@ export function ScenarioBuilder(props: Props) {
       },
     );
   };
+  const alreadyRunning = savedAs !== null && (props.activeScenarios?.has(savedAs) ?? false);
   const onSimulate = () => {
-    if (!savedAs) return;
+    if (!savedAs || alreadyRunning) return;
     start.mutate(savedAs, {
-      onSuccess: (r) => setSimulation(r.job_id),
+      onSuccess: (r) => props.onSimulation(r.job_id),
       onError: (e) => setProblems([e.message]),
     });
   };
@@ -157,6 +159,7 @@ export function ScenarioBuilder(props: Props) {
         onChange={change}
         selected={props.selectedRoute}
         onSelect={props.onSelectRoute}
+        seed={props.searchSeed}
       />
       <AddRouteForm
         picking={props.picking}
@@ -166,11 +169,14 @@ export function ScenarioBuilder(props: Props) {
         added={draft.added}
         onAddedChange={setAdded}
       />
-      <section aria-label="Run" className="card">
+      <section aria-label="Run" className="card run-bar">
         <p className="note">
           {changes} change{changes === 1 ? "" : "s"}
           {savedAs ? `, saved as ${savedAs}` : ", not saved"}
         </p>
+        {alreadyRunning && (
+          <p className="note">{savedAs} is already queued or running: follow it under Runs.</p>
+        )}
         {problems.length > 0 && (
           <ul className="error" aria-label="Problems">
             {problems.map((p) => (
@@ -181,11 +187,15 @@ export function ScenarioBuilder(props: Props) {
         <button type="button" onClick={onSave} disabled={save.isPending}>
           Save
         </button>{" "}
-        <button type="button" onClick={onSimulate} disabled={!savedAs || start.isPending}>
+        <button
+          type="button"
+          className="primary"
+          onClick={onSimulate}
+          disabled={!savedAs || start.isPending || alreadyRunning}
+        >
           Simulate
         </button>
       </section>
-      {simulation && <SimulationStatus id={simulation} onShowResult={props.onShowResult} />}
     </div>
   );
 }
