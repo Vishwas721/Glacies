@@ -65,6 +65,21 @@ describe("App", () => {
     expect(window.location.search).toBe("?mode=design");
   });
 
+  it("lists every source with its licence and explains the four labels in Data", async () => {
+    fakeApi(CITY);
+    renderWithClient(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Data" }));
+
+    const sources = screen.getByRole("region", { name: "Sources" });
+    expect(sources).toHaveTextContent("OpenStreetMap");
+    expect(sources).toHaveTextContent("ODbL-1.0");
+    const key = screen.getByRole("region", { name: "Data labels" });
+    for (const label of ["Observed", "Estimated", "Simulated", "Assumed"]) {
+      expect(within(key).getByText(label)).toBeInTheDocument();
+    }
+  });
+
   it("labels the legend with the layer's data nature", async () => {
     fakeApi(CITY);
     renderWithClient(<App />);

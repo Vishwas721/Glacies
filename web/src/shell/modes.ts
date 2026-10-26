@@ -1,7 +1,7 @@
 // The four working modes of the screen. Each decides what the side panel and the inspector
 // show; the map, the scenario being edited and the chosen result are shared by all of them.
 
-export type Mode = "explore" | "design" | "compare";
+export type Mode = "explore" | "design" | "compare" | "data";
 
 export const MODES: { id: Mode; label: string; title: string; summary: string }[] = [
   {
@@ -22,6 +22,12 @@ export const MODES: { id: Mode; label: string; title: string; summary: string }[
     label: "Compare",
     title: "Compare with the baseline",
     summary: "A finished run against today: what moved, where, and for whom.",
+  },
+  {
+    id: "data",
+    label: "Data",
+    title: "Data and provenance",
+    summary: "Where every input comes from, its licence, and what the four labels mean.",
   },
 ];
 

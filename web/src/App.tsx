@@ -63,6 +63,7 @@ import {
   type ZoneFacts,
 } from "./inspect/Inspector";
 import { ScenarioBuilder } from "./scenario/ScenarioBuilder";
+import { ModelSettings, NatureKey, Outputs, Sources } from "./data/DataPanel";
 import { RunConsole } from "./runs/RunConsole";
 import { isActive } from "./runs/runs";
 import { Dock, type DockTab } from "./shell/Dock";
@@ -490,7 +491,13 @@ function CityView({ city }: { city: string }) {
         <div hidden={mode !== "compare"}>
           <ResultPicker city={city} value={result} onChange={setResult} />
         </div>
-        <div hidden={mode === "design"}>
+        {mode === "data" && (
+          <>
+            <Sources city={c} />
+            <Outputs city={c} />
+          </>
+        )}
+        <div hidden={mode === "design" || mode === "data"}>
           <LayerPanel
             hasResult={result !== null}
             state={layers}
@@ -592,6 +599,12 @@ function CityView({ city }: { city: string }) {
         />
       </main>
       <aside className="inspector" aria-label="Inspector" hidden={!inspectorOpen}>
+        {mode === "data" && (
+          <>
+            <NatureKey />
+            <ModelSettings city={c} />
+          </>
+        )}
         {selection?.kind === "zone" && zoneFacts && (
           <ZoneCard zone={zoneFacts} onClose={() => setSelection(null)} />
         )}
@@ -645,11 +658,14 @@ function CityView({ city }: { city: string }) {
           <ComparePanel city={city} result={result.key} title={result.label} />
         )}
         {layers.loads !== "none" && checks.data && <ModelChecks checks={checks.data} />}
-        {!selection && selectedRoute === null && !(mode === "compare" && result) && (
-          <p className="note inspector-empty">
-            Click a zone, stop or segment on the map to see its values here.
-          </p>
-        )}
+        {!selection &&
+          selectedRoute === null &&
+          mode !== "data" &&
+          !(mode === "compare" && result) && (
+            <p className="note inspector-empty">
+              Click a zone, stop or segment on the map to see its values here.
+            </p>
+          )}
       </aside>
     </div>
   );

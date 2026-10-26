@@ -29,6 +29,13 @@ const ICON: Record<Mode, ReactNode> = {
       <path d="M6.5 15l3-4M14.5 15l3-6" />
     </>
   ),
+  // Stacked layers of sources.
+  data: (
+    <>
+      <path d="M12 3.5 20.5 8 12 12.5 3.5 8z" />
+      <path d="M3.5 12 12 16.5 20.5 12M3.5 16 12 20.5 20.5 16" />
+    </>
+  ),
 };
 
 interface Props {
