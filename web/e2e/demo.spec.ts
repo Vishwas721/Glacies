@@ -22,7 +22,8 @@ test("the demo story", async ({ page }) => {
 
   // 1. Load the baseline network.
   await page.goto("/");
-  await expect(page.getByText("Toyville · timetable of 2026-10-13")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Toyville" })).toBeVisible();
+  await expect(page.getByText(/timetable of 2026-10-13/)).toBeVisible();
   await expect(page.locator("canvas").first()).toBeVisible();
 
   // 2. Current accessibility, labelled.
