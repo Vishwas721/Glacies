@@ -72,6 +72,7 @@ import { isActive } from "./runs/runs";
 import { Dock, type DockTab } from "./shell/Dock";
 import { Masthead, type NetworkSize } from "./shell/Masthead";
 import { initialMode, type Mode, MODES, rememberMode } from "./shell/modes";
+import { matches, NARROW, PHONE, useMedia } from "./shell/media";
 import { Rail } from "./shell/Rail";
 import { format, formatDelta } from "./ui/format";
 
@@ -124,14 +125,29 @@ function CityView({ city }: { city: string }) {
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [mode, setModeState] = useState<Mode>(initialMode);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  // Below 1280 px the inspector opens over the map, so it starts closed there.
+  const [inspectorOpen, setInspectorOpen] = useState(() => !matches(NARROW));
+  // On a phone the map comes first; the panel opens from the tab bar.
+  const [sideOpen, setSideOpen] = useState(() => !matches(PHONE));
+  const phone = useMedia(PHONE);
   const [dockOpen, setDockOpen] = useState(false);
   const [dockTab, setDockTab] = useState<string | null>(null);
   const [simulation, setSimulation] = useState<string | null>(null);
   const setMode = (next: Mode) => {
     setModeState(next);
     rememberMode(next);
+    setSideOpen(true);
+    // On a phone the two panels share the bottom of the screen: one at a time.
+    if (matches(PHONE)) setInspectorOpen(false);
   };
+  /** Selecting something on the map opens the inspector to show it. */
+  const select = useCallback((next: Selection | null) => {
+    setSelection(next);
+    if (next) {
+      setInspectorOpen(true);
+      if (matches(PHONE)) setSideOpen(false);
+    }
+  }, []);
   const openDock = (tab: string) => {
     setDockTab(tab);
     setDockOpen(true);
@@ -328,18 +344,18 @@ function CityView({ city }: { city: string }) {
       if (id === "stops") {
         const stop = info.object as StopFeature;
         if (picking) setPicked((p) => [...p, stop]);
-        else setSelection({ kind: "stop", stop });
+        else select({ kind: "stop", stop });
       } else if (id === "network") {
-        setSelection({ kind: "segment", segment: info.object as SegmentFeature });
+        select({ kind: "segment", segment: info.object as SegmentFeature });
       } else if (id?.startsWith("zones-")) {
-        setSelection({ kind: "zone", h3: (info.object as ZoneValue).h3 });
+        select({ kind: "zone", h3: (info.object as ZoneValue).h3 });
       } else if (id === "changes") {
-        setSelection({ kind: "change", mutationIdx: (info.object as ChangeLine).mutationIdx });
+        select({ kind: "change", mutationIdx: (info.object as ChangeLine).mutationIdx });
       } else {
         setSelection(null);
       }
     },
-    [picking],
+    [picking, select],
   );
 
   const zoneInfo = zoneData?.info;
@@ -507,16 +523,29 @@ function CityView({ city }: { city: string }) {
   }
 
   return (
-    <div className="app" data-mode={mode} data-inspector={inspectorOpen ? "open" : "closed"}>
+    <div
+      className="app"
+      data-mode={mode}
+      data-inspector={inspectorOpen ? "open" : "closed"}
+      data-side={sideOpen ? "open" : "closed"}
+    >
       <Rail
         mode={mode}
-        onMode={setMode}
+        onMode={(next) => (next === mode ? setSideOpen(!sideOpen) : setMode(next))}
         status={[{ label: "API", state: "ok", detail: `serving ${c.name}` }, queue]}
       />
       <aside className="side" aria-label={current.title}>
         <header className="side-head">
           <h2>{current.label}</h2>
           <p>{current.summary}</p>
+          <button
+            type="button"
+            className="panel-close"
+            aria-label="Close the panel"
+            onClick={() => setSideOpen(false)}
+          >
+            ×
+          </button>
         </header>
         <div hidden={mode !== "compare"}>
           <ResultPicker city={city} value={result} onChange={setResult} />
@@ -539,7 +568,13 @@ function CityView({ city }: { city: string }) {
             thresholds={c.accessibility.thresholds_min}
           />
         </div>
-        <div hidden={mode !== "design"}>
+        {mode === "design" && phone && (
+          <p className="card note">
+            Building a scenario needs a wider screen, at least 700 px: picking stops and editing
+            routes do not fit a phone. Here you can explore, compare results and follow runs.
+          </p>
+        )}
+        <div hidden={mode !== "design" || phone}>
           {routes.data ? (
             <ScenarioBuilder
               city={city}
@@ -635,6 +670,14 @@ function CityView({ city }: { city: string }) {
         />
       </main>
       <aside className="inspector" aria-label="Inspector" hidden={!inspectorOpen}>
+        <button
+          type="button"
+          className="panel-close"
+          aria-label="Close the inspector"
+          onClick={() => setInspectorOpen(false)}
+        >
+          ×
+        </button>
         {mode === "data" && (
           <>
             <NatureKey />

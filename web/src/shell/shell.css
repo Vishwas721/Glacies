@@ -395,3 +395,189 @@
   text-transform: uppercase;
   color: var(--ice);
 }
+
+/* ---------- Panels that close ---------- */
+
+.panel-close {
+  display: none;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  background: var(--ink-3);
+}
+
+.side,
+.inspector {
+  position: relative;
+}
+
+/* The active mode's rail button folds the panel away to give the map the room. */
+.app[data-side="closed"] {
+  --side-w: 0px;
+}
+
+.app[data-side="closed"] .side {
+  display: none;
+}
+
+/* ---------- Narrower screens: the inspector opens over the map ---------- */
+
+@media (max-width: 1280px) {
+  .app,
+  .app[data-inspector="closed"] {
+    grid-template-columns: var(--rail-w) var(--side-w) minmax(0, 1fr);
+  }
+
+  .inspector {
+    position: fixed;
+    top: 59px;
+    right: 0;
+    bottom: 0;
+    width: min(360px, 92vw);
+    z-index: 20;
+    box-shadow: -16px 0 32px rgb(0 0 0 / 55%);
+    padding-top: 44px;
+  }
+
+  .inspector > .panel-close {
+    display: block;
+  }
+
+  /* Fewer figures in the masthead rather than one cut in half. */
+  .masthead-stats > div:nth-child(3) {
+    display: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .masthead-stats > div:nth-child(2) {
+    display: none;
+  }
+}
+
+/* ---------- Tablets: the mode panel opens over the map too ---------- */
+
+@media (max-width: 900px) {
+  .app,
+  .app[data-inspector="closed"] {
+    grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  }
+
+  .side {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: var(--rail-w);
+    width: min(340px, calc(100vw - var(--rail-w)));
+    z-index: 18;
+    box-shadow: 16px 0 32px rgb(0 0 0 / 55%);
+  }
+
+  .side-head .panel-close {
+    display: block;
+  }
+
+  .side-head {
+    padding-right: 40px;
+  }
+
+  .masthead-stats {
+    display: none;
+  }
+}
+
+/* ---------- Phones: tab bar at the foot, panels as bottom sheets ---------- */
+
+@media (max-width: 700px) {
+  .app,
+  .app[data-inspector="closed"] {
+    --tabbar-h: 58px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) var(--tabbar-h);
+  }
+
+  .stage {
+    grid-row: 1;
+  }
+
+  .rail {
+    grid-row: 2;
+    flex-direction: row;
+    align-items: stretch;
+    padding: 0;
+    border-right: none;
+    border-top: 1px solid var(--line);
+  }
+
+  .mark,
+  .rail-status {
+    display: none !important;
+  }
+
+  .rail > ul:first-of-type {
+    display: flex;
+    flex: 1;
+  }
+
+  .rail > ul:first-of-type li {
+    flex: 1;
+  }
+
+  .rail-mode {
+    height: 100%;
+    padding: 8px 0 6px;
+  }
+
+  .rail-mode[aria-current="page"]::before {
+    left: 20%;
+    right: 20%;
+    top: 0;
+    bottom: auto;
+    width: auto;
+    height: 2px;
+  }
+
+  .side,
+  .inspector {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: var(--tabbar-h);
+    width: auto;
+    max-height: 58dvh;
+    border: none;
+    border-top: 1px solid var(--line-strong);
+    border-radius: 10px 10px 0 0;
+    box-shadow: 0 -16px 32px rgb(0 0 0 / 55%);
+  }
+
+  .side {
+    z-index: 18;
+  }
+
+  .masthead {
+    min-height: 0;
+    padding: 8px 12px;
+    gap: 12px;
+  }
+
+  .masthead-city h1 {
+    font-size: 16px;
+  }
+
+  .masthead-city {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .masthead-meta {
+    white-space: normal;
+  }
+}
