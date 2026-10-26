@@ -147,6 +147,14 @@ function CityView({ city }: { city: string }) {
     // On a phone the two panels share the bottom of the screen: one at a time.
     if (matches(PHONE)) setInspectorOpen(false);
   };
+  /** A chosen result opens the inspector, where its ledger is: closed, it would hide it. */
+  const showResult = (choice: ResultChoice | null) => {
+    setResult(choice);
+    if (choice) {
+      setInspectorOpen(true);
+      if (matches(PHONE)) setSideOpen(false);
+    }
+  };
   /** Selecting something on the map opens the inspector to show it. */
   const select = useCallback((next: Selection | null) => {
     setSelection(next);
@@ -504,9 +512,10 @@ function CityView({ city }: { city: string }) {
           onShowResult={(choice) => {
             // Name the result by its scenario's title once the results list has it.
             const listed = comparableResults(results.data ?? []).find((r) => r.key === choice.key);
-            setResult(listed ?? choice);
-            setLayers({ ...layers, view: "change" });
+            // Mode first: on a phone switching mode closes the inspector showResult opens.
             setMode("compare");
+            setLayers({ ...layers, view: "change" });
+            showResult(listed ?? choice);
           }}
         />
       ),
@@ -555,7 +564,7 @@ function CityView({ city }: { city: string }) {
           </button>
         </header>
         <div hidden={mode !== "compare"}>
-          <ResultPicker city={city} value={result} onChange={setResult} />
+          <ResultPicker city={city} value={result} onChange={showResult} />
         </div>
         {mode === "data" && (
           <>
