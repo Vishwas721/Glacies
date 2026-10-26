@@ -6,7 +6,7 @@ import { H3HexagonLayer } from "@deck.gl/geo-layers";
 import { LineLayer, PathLayer } from "@deck.gl/layers";
 
 import type { ChangeKind, ChangedRoute, LonLat, Pairs } from "../api/types";
-import { type RGB, viridis } from "../map/colours";
+import { CHANGED, NEW, type RGB, viridis } from "../map/colours";
 import type { ZoneValue } from "../map/layers";
 
 // The same classes and colours as the comparison maps of `glacies scenario compare`
@@ -43,10 +43,11 @@ export function deltaZoneLayer(zones: ZoneValue[]): Layer {
   });
 }
 
+// Removed in the loss red, added in the interface's "new" ice, modified in its "changed" amber.
 export const KIND_COLOUR: Record<ChangeKind, RGB> = {
-  removed: [163, 41, 42],
-  added: [24, 79, 149],
-  modified: [230, 85, 13],
+  removed: [227, 73, 72],
+  added: NEW,
+  modified: CHANGED,
 };
 
 interface ChangeLine {

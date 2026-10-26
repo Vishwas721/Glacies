@@ -6,7 +6,7 @@ import { LineLayer, PathLayer, ScatterplotLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
 
 import type { LonLat, Network, PatternFeature, SegmentFeature, StopFeature } from "../api/types";
-import { HIGHLIGHT, MODE_COLOUR, OTHER_MODE, type RGB, upperBound, viridis } from "./colours";
+import { HIGHLIGHT, MODE_COLOUR, NEW, OTHER_MODE, type RGB, upperBound, viridis } from "./colours";
 
 export interface ZoneValue {
   h3: string;
@@ -64,7 +64,7 @@ export function stopsLayer(stops: StopFeature[], selected: ReadonlySet<string> =
     radiusMinPixels: 1.5,
     radiusMaxPixels: 8,
     getFillColor: (s) =>
-      selected.has(stopKey(s)) ? [...HIGHLIGHT, 255] : [...modeColour(s.properties.modes), 220],
+      selected.has(stopKey(s)) ? [...NEW, 255] : [...modeColour(s.properties.modes), 220],
     pickable: true,
     updateTriggers: { getFillColor: [...selected].join(",") },
   });
@@ -90,7 +90,7 @@ export function draftLayer(path: LonLat[]): Layer {
     id: "draft-route",
     data: path.length > 1 ? [{ path }] : [],
     getPath: (d) => d.path,
-    getColor: [...HIGHLIGHT, 255],
+    getColor: [...NEW, 255],
     getWidth: 4,
     widthUnits: "pixels",
   });

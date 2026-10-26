@@ -39,9 +39,16 @@ export function upperBound(values: readonly number[], q = 0.98): number {
   return positive[Math.min(positive.length - 1, Math.floor(q * positive.length))]!;
 }
 
+// On the dark basemap (ADR 0023) the network is quiet slate for buses and pale for metro, so
+// zones and loads drawn with it stay readable; interface colours never encode data values.
 export const MODE_COLOUR: Record<string, RGB> = {
-  metro: [123, 50, 148],
-  bus: [70, 110, 160],
+  metro: [214, 226, 236],
+  bus: [92, 124, 150],
 };
-export const OTHER_MODE: RGB = [120, 120, 120];
-export const HIGHLIGHT: RGB = [230, 85, 13];
+export const OTHER_MODE: RGB = [120, 132, 140];
+/** The route, stop or segment selected. */
+export const HIGHLIGHT: RGB = [245, 250, 255];
+/** Something new: a route being drawn or added by a scenario (CSS --ice). */
+export const NEW: RGB = [127, 220, 242];
+/** Something changed by a scenario (CSS --amber). */
+export const CHANGED: RGB = [255, 180, 84];
