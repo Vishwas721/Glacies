@@ -35,6 +35,8 @@ export function fakeApi(routes: Record<string, unknown | Handler>): Call[] {
 }
 
 export function renderWithClient(ui: ReactNode) {
+  // The mode lives in the address bar; start every test from a plain URL.
+  window.history.replaceState(null, "", "/");
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 }

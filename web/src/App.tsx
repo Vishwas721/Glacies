@@ -1,5 +1,7 @@
-// The Glacies screen (PRD §39): scenario on the left, map in the middle, layers and details on
-// the right. The city comes from ?city=, else the first configured one.
+// The Glacies screen (PRD §39, ADR 0023): a mode rail, the mode's panel on the left (layers, the
+// scenario builder, results), the map in the middle with a dock under it for runs and playback,
+// and an inspector on the right for what is selected and the comparison. The city comes from
+// ?city=, else the first configured one.
 
 import type { Layer, PickingInfo } from "@deck.gl/core";
 import { useCallback, useMemo, useState } from "react";
@@ -46,6 +48,11 @@ import { MapView } from "./map/MapView";
 import { upperBound } from "./map/colours";
 import { emptyDraft, type Draft } from "./scenario/draft";
 import { ScenarioBuilder } from "./scenario/ScenarioBuilder";
+import { SimulationStatus } from "./scenario/SimulationStatus";
+import { Dock, type DockTab } from "./shell/Dock";
+import { Masthead, type NetworkSize } from "./shell/Masthead";
+import { initialMode, type Mode, MODES, rememberMode } from "./shell/modes";
+import { Rail } from "./shell/Rail";
 import { Field } from "./ui/Quantity";
 import { format, formatDelta } from "./ui/format";
 
@@ -60,10 +67,8 @@ export function App() {
 
 function Message({ text }: { text: string }) {
   return (
-    <div className="shell">
-      <header className="topbar">
-        <h1>Glacies</h1>
-      </header>
+    <div className="splash">
+      <p className="splash-mark">Glacies</p>
       <p className="message">{text}</p>
     </div>
   );
@@ -87,6 +92,19 @@ function CityView({ city }: { city: string }) {
   const [result, setResult] = useState<ResultChoice | null>(null);
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [mode, setModeState] = useState<Mode>(initialMode);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [dockOpen, setDockOpen] = useState(false);
+  const [dockTab, setDockTab] = useState<string | null>(null);
+  const [simulation, setSimulation] = useState<string | null>(null);
+  const setMode = (next: Mode) => {
+    setModeState(next);
+    rememberMode(next);
+  };
+  const openDock = (tab: string) => {
+    setDockTab(tab);
+    setDockOpen(true);
+  };
   // Without a chosen result everything shows the baseline.
   const view = result ? layers.view : "baseline";
   const resultRef = result && view !== "baseline" ? result.key : "baseline";
@@ -259,22 +277,90 @@ function CityView({ city }: { city: string }) {
     [zoneInfo, zoneData?.delta],
   );
 
+  const size = useMemo((): NetworkSize | null => {
+    if (!routes.data) return null;
+    return {
+      routes: routes.data.routes.length,
+      stops: stops.data ? stops.data.features.filter((f) => !f.properties.station).length : null,
+      windowTrips: routes.data.routes.reduce((sum, r) => sum + r.window_trips, 0),
+      windowTripsInfo: routes.data.fields.window_trips,
+    };
+  }, [routes.data, stops.data]);
+
   if (detail.error) return <Message text={detail.error.message} />;
   if (!detail.data) return <Message text="Loading…" />;
   const c = detail.data;
   const attribution = `Data: ${[...new Set(c.sources.map((s) => `${s.source} (${s.license})`))].join(", ")}`;
+  const current = MODES.find((m) => m.id === mode)!;
+  const VIEW_NAME = { baseline: "Baseline", scenario: "Scenario", change: "Change" } as const;
+  const showing = result ? `${VIEW_NAME[view]} · ${result.label}` : "Baseline";
+
+  const dockTabs: DockTab[] = [
+    {
+      id: "runs",
+      label: "Runs",
+      content: simulation ? (
+        <SimulationStatus
+          id={simulation}
+          onShowResult={(choice) => {
+            setResult(choice);
+            setMode("compare");
+          }}
+        />
+      ) : (
+        <p className="note">
+          No simulation started yet. Save a scenario in Design and press Simulate; its progress
+          shows here.
+        </p>
+      ),
+    },
+  ];
+  if (layers.loads === "flows" && flows.data) {
+    dockTabs.push({
+      id: "flows",
+      label: "Flow playback",
+      hint: flows.data.frames[shownFrame]?.start,
+      content: (
+        <Playback
+          flows={flows.data}
+          frame={shownFrame}
+          onFrame={setFrame}
+          playing={playing}
+          onPlaying={setPlaying}
+        />
+      ),
+    });
+  }
 
   return (
-    <div className="shell">
-      <header className="topbar">
-        <h1>Glacies</h1>
-        <span className="city">
-          {c.name} · timetable of {c.service_date ?? "?"}
-        </span>
-      </header>
-      <main className="layout">
-        <aside className="panel" aria-label="Scenario">
-          <h2>Scenario</h2>
+    <div className="app" data-mode={mode} data-inspector={inspectorOpen ? "open" : "closed"}>
+      <Rail
+        mode={mode}
+        onMode={setMode}
+        status={[{ label: "API", state: "ok", detail: `serving ${c.name}` }]}
+      />
+      <aside className="side" aria-label={current.title}>
+        <header className="side-head">
+          <h2>{current.label}</h2>
+          <p>{current.summary}</p>
+        </header>
+        <div hidden={mode !== "compare"}>
+          <ResultPicker city={city} value={result} onChange={setResult} />
+        </div>
+        <div hidden={mode === "design"}>
+          <LayerPanel
+            hasResult={result !== null}
+            state={layers}
+            onChange={(next) => {
+              if (next.loads === "flows" && layers.loads !== "flows") openDock("flows");
+              setLayers(next);
+            }}
+            percentiles={c.accessibility.percentiles}
+            thresholds={c.accessibility.thresholds_min}
+            legend={legend}
+          />
+        </div>
+        <div hidden={mode !== "design"}>
           {routes.data ? (
             <ScenarioBuilder
               city={city}
@@ -287,12 +373,24 @@ function CityView({ city }: { city: string }) {
               onPickingChange={setPicking}
               picked={picked}
               onPickedChange={setPicked}
-              onShowResult={setResult}
+              onSimulation={(id) => {
+                setSimulation(id);
+                openDock("runs");
+              }}
             />
           ) : (
             <p className="note">Loading routes…</p>
           )}
-        </aside>
+        </div>
+      </aside>
+      <main className="stage">
+        <Masthead
+          city={c}
+          size={size}
+          showing={showing}
+          inspectorOpen={inspectorOpen}
+          onInspector={setInspectorOpen}
+        />
         <section className="map" aria-label="Map">
           <MapView
             bbox={c.bbox}
@@ -302,47 +400,40 @@ function CityView({ city }: { city: string }) {
             getTooltip={getTooltip}
           />
         </section>
-        <aside className="panel" aria-label="Metrics">
-          <ResultPicker city={city} value={result} onChange={setResult} />
-          <h2>Layers</h2>
-          <LayerPanel
-            hasResult={result !== null}
-            state={layers}
-            onChange={setLayers}
-            percentiles={c.accessibility.percentiles}
-            thresholds={c.accessibility.thresholds_min}
-            legend={legend}
-          />
-          {layers.loads === "flows" && flows.data && (
-            <Playback
-              flows={flows.data}
-              frame={shownFrame}
-              onFrame={setFrame}
-              playing={playing}
-              onPlaying={setPlaying}
-            />
-          )}
-          {layers.loads !== "none" && checks.data && <ModelChecks checks={checks.data} />}
-          {result && <ComparePanel city={city} result={result.key} />}
-          {selection && (
-            <SelectionCard selection={selection} info={zoneInfo} fields={network.data?.fields} />
-          )}
-          {route.data && selectedRoute !== null && (
-            <section className="card" aria-label="Selected route">
-              <h3>
-                {route.data.route.short_name ?? route.data.route.route_id}{" "}
-                <span className="muted">{route.data.route.long_name}</span>
-              </h3>
-              <p>
-                <Field value={route.data.route.trips} info={route.data.fields.trips} /> on the day
-              </p>
-              <button type="button" className="link" onClick={() => setSelectedRoute(null)}>
-                clear
-              </button>
-            </section>
-          )}
-        </aside>
+        <Dock
+          tabs={dockTabs}
+          active={dockTab}
+          open={dockOpen}
+          onActive={setDockTab}
+          onOpen={setDockOpen}
+        />
       </main>
+      <aside className="inspector" aria-label="Inspector" hidden={!inspectorOpen}>
+        {selection && (
+          <SelectionCard selection={selection} info={zoneInfo} fields={network.data?.fields} />
+        )}
+        {route.data && selectedRoute !== null && (
+          <section className="card" aria-label="Selected route">
+            <h3>
+              {route.data.route.short_name ?? route.data.route.route_id}{" "}
+              <span className="muted">{route.data.route.long_name}</span>
+            </h3>
+            <p>
+              <Field value={route.data.route.trips} info={route.data.fields.trips} /> on the day
+            </p>
+            <button type="button" className="link" onClick={() => setSelectedRoute(null)}>
+              clear
+            </button>
+          </section>
+        )}
+        {mode === "compare" && result && <ComparePanel city={city} result={result.key} />}
+        {layers.loads !== "none" && checks.data && <ModelChecks checks={checks.data} />}
+        {!selection && selectedRoute === null && !(mode === "compare" && result) && (
+          <p className="note inspector-empty">
+            Click a zone, stop or segment on the map to see its values here.
+          </p>
+        )}
+      </aside>
     </div>
   );
 }

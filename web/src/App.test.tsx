@@ -26,16 +26,30 @@ afterEach(() => vi.unstubAllGlobals());
 const layerIds = () => drawn.map((l) => l.id);
 
 describe("App", () => {
-  it("lays out the three panels and draws the network and accessibility", async () => {
+  it("lays out the panels and draws the network and accessibility", async () => {
     fakeApi(CITY);
 
     renderWithClient(<App />);
 
-    expect(await screen.findByText(/Toyville · timetable of 2026-10-13/)).toBeInTheDocument();
-    expect(screen.getByRole("complementary", { name: "Scenario" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Toyville" })).toBeInTheDocument();
+    expect(screen.getByText(/timetable of 2026-10-13/)).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Modes" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Explore the network" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Inspector" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Map" })).toBeInTheDocument();
     await waitFor(() => expect(layerIds()).toEqual(["zones-accessibility", "network"]));
     expect(screen.getByTestId("map").dataset.attribution).toContain("OpenStreetMap (ODbL-1.0)");
+  });
+
+  it("switches modes and keeps the mode in the address bar", async () => {
+    fakeApi(CITY);
+    renderWithClient(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Design" }));
+
+    expect(screen.getByRole("complementary", { name: "Design a scenario" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Design" })).toHaveAttribute("aria-current", "page");
+    expect(window.location.search).toBe("?mode=design");
   });
 
   it("labels the legend with the layer's data nature", async () => {

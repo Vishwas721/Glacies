@@ -46,6 +46,7 @@ const RUNNING = {
 
 async function ready() {
   renderWithClient(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Design" }));
   await screen.findByRole("searchbox", { name: "Find a route" });
 }
 

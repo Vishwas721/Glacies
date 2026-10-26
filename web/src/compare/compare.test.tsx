@@ -25,6 +25,7 @@ const ids = () => drawn.map((l) => l.id);
 async function compareWithK1() {
   fakeApi({ ...CITY, ...RESULT });
   renderWithClient(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Compare" }));
   const picker = await screen.findByRole("combobox", { name: "Compare with" });
   await within(picker).findByRole("option", { name: /Route 10 twice as often/ });
   fireEvent.change(picker, { target: { value: "k1" } });

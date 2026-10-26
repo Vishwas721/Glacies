@@ -8,6 +8,7 @@ import "@fontsource/ibm-plex-mono/500.css";
 
 import { App } from "./App";
 import "./index.css";
+import "./shell/shell.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root element missing");

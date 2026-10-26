@@ -29,6 +29,7 @@ test("the demo story", async ({ page }) => {
   await expect(page.getByLabel("Legend")).toContainText("Simulated");
 
   // 3. A scenario: route 10 twice as often.
+  await page.getByRole("button", { name: "Design" }).click();
   await page.getByRole("searchbox", { name: "Find a route" }).fill("10");
   await page.getByRole("combobox", { name: "10 frequency" }).selectOption("0.5");
   await page.getByPlaceholder("my_scenario").fill("e2e_faster_10");
