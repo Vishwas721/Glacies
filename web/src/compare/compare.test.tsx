@@ -26,7 +26,7 @@ async function compareWithK1() {
   fakeApi({ ...CITY, ...RESULT });
   renderWithClient(<App />);
   const picker = await screen.findByRole("combobox", { name: "Compare with" });
-  await within(picker).findByRole("option", { name: /faster_10/ });
+  await within(picker).findByRole("option", { name: /Route 10 twice as often/ });
   fireEvent.change(picker, { target: { value: "k1" } });
 }
 
@@ -34,7 +34,34 @@ describe("comparableResults", () => {
   it("offers only results compared with the baseline", () => {
     const choices = comparableResults(RESULT["GET /api/cities/toyville/results"]);
 
-    expect(choices).toEqual([{ key: "k1", label: "faster_10 (2026-10-22 10:15 UTC)" }]);
+    expect(choices).toEqual([
+      {
+        key: "k1",
+        label: "Route 10 twice as often",
+        finishedAt: "2026-10-22 10:15 UTC",
+        latest: true,
+      },
+    ]);
+  });
+
+  it("lists newest first and marks earlier runs of the same scenario", () => {
+    const run = (key: string, finished_at: string) => ({
+      key,
+      scenario_id: "s",
+      title: "S",
+      finished_at,
+      assignment: true,
+      compared: true,
+    });
+    const choices = comparableResults([
+      run("old", "2026-10-20T08:00:00+00:00"),
+      run("new", "2026-10-23T08:00:00+00:00"),
+    ]);
+
+    expect(choices.map((c) => [c.key, c.latest])).toEqual([
+      ["new", true],
+      ["old", false],
+    ]);
   });
 });
 
