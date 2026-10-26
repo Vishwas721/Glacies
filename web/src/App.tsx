@@ -17,6 +17,7 @@ import {
   useNetwork,
   useResults,
   useRoute,
+  useRouteDetails,
   useRoutes,
   useSimulations,
   useStops,
@@ -26,6 +27,7 @@ import type { Crowding, FieldInfo, SegmentFeature, StopFeature } from "./api/typ
 import { ComparePanel } from "./compare/ComparePanel";
 import {
   type ChangeLine,
+  changeLinesLayer,
   changesLayer,
   deltaZoneLayer,
   loadLayer,
@@ -52,6 +54,7 @@ import { MapLegend } from "./map/MapLegend";
 import { type Focus, type Lens, MapView } from "./map/MapView";
 import { upperBound } from "./map/colours";
 import { emptyDraft, type Draft } from "./scenario/draft";
+import { draftLines, draftRouteIdx } from "./scenario/proposal";
 import {
   ChangeCard,
   RouteCard,
@@ -133,8 +136,8 @@ function CityView({ city }: { city: string }) {
     setDockTab(tab);
     setDockOpen(true);
   };
-  // Without a chosen result everything shows the baseline.
-  const view = result ? layers.view : "baseline";
+  // A result is only drawn in Compare: Explore is the baseline, Design the baseline and draft.
+  const view = result && mode === "compare" ? layers.view : "baseline";
   const resultRef = result && view !== "baseline" ? result.key : "baseline";
   // The What-If Lens: baseline left of the divider, scenario right of it.
   const split = view === "split";
@@ -231,6 +234,26 @@ function CityView({ city }: { city: string }) {
   const shownFrame = flowFrames ? Math.min(frame, flowFrames.length - 1) : 0;
 
   const pickedKeys = useMemo(() => new Set(picked.map(stopKey)), [picked]);
+  // The draft scenario on the map while it is being designed, before any simulation.
+  const draftIdx = useMemo(
+    () => draftRouteIdx(draft, routes.data?.routes ?? []),
+    [draft, routes.data],
+  );
+  const draftDetails = useRouteDetails(city, draftIdx);
+  const stopCoords = useMemo(
+    () =>
+      new Map(
+        (stops.data?.features ?? []).map((f) => [
+          `${f.properties.feed}:${f.properties.stop_id}`,
+          f.geometry.coordinates,
+        ]),
+      ),
+    [stops.data],
+  );
+  const proposal = useMemo(
+    () => (mode === "design" ? draftLines(draft, draftDetails, stopCoords) : []),
+    [mode, draft, draftDetails, stopCoords],
+  );
   // Relief raises levels only: a raised change map or lens would mislead or break the cut.
   const reliefUsable =
     layers.zones !== "none" && !split && !(view === "change" && layers.zones === "accessibility");
@@ -268,6 +291,7 @@ function CityView({ city }: { city: string }) {
     if (view !== "baseline" && changes.data) {
       out.push(changesLayer(changes.data.routes, split ? east : undefined));
     }
+    if (proposal.length) out.push(changeLinesLayer("proposal", proposal));
     if (route.data && selectedRoute !== null) out.push(routeLayer(route.data.features));
     if (showStops && stops.data) out.push(stopsLayer(stops.data.features, pickedKeys));
     if (picked.length) out.push(draftLayer(picked.map((s) => s.geometry.coordinates)));
@@ -280,6 +304,7 @@ function CityView({ city }: { city: string }) {
     split,
     lensCentre,
     relief,
+    proposal,
     flowFrames,
     shownFrame,
     view,
@@ -341,7 +366,7 @@ function CityView({ city }: { city: string }) {
         const v = info.object as PairValue;
         return `${format(v.passengers, "count")} passengers, ${format(v.loadFactor, "ratio")}× design capacity (Simulated)`;
       }
-      if (id === "changes") {
+      if (id === "changes" || id === "proposal") {
         const c = info.object as ChangeLine;
         return `${c.name}: ${c.kind}`;
       }
@@ -429,7 +454,12 @@ function CityView({ city }: { city: string }) {
   const c = detail.data;
   const attribution = `Data: ${[...new Set(c.sources.map((s) => `${s.source} (${s.license})`))].join(", ")}`;
   const current = MODES.find((m) => m.id === mode)!;
-  const showing = result ? `${VIEW_NAME[view]} · ${result.label}` : "Baseline";
+  const showing =
+    mode === "design" && proposal.length
+      ? `Draft, not simulated · ${draft.title || draft.scenarioId || "untitled"}`
+      : result
+        ? `${VIEW_NAME[view]} · ${result.label}`
+        : "Baseline";
 
   const active = (simulations.data ?? []).filter(isActive);
   const queue = simulations.error
@@ -499,7 +529,7 @@ function CityView({ city }: { city: string }) {
         )}
         <div hidden={mode === "design" || mode === "data"}>
           <LayerPanel
-            hasResult={result !== null}
+            hasResult={result !== null && mode === "compare"}
             state={layers}
             onChange={(next) => {
               if (next.loads === "flows" && layers.loads !== "flows") openDock("flows");
@@ -588,7 +618,13 @@ function CityView({ city }: { city: string }) {
           <p className="map-showing" aria-live="polite">
             <span>Map shows</span> {showing}
           </p>
-          <MapLegend state={layers} view={view} legend={legend} relief={relief} />
+          <MapLegend
+            state={layers}
+            view={view}
+            legend={legend}
+            relief={relief}
+            routeChanges={proposal.length > 0 || (view !== "baseline" && Boolean(changes.data))}
+          />
         </section>
         <Dock
           tabs={dockTabs}

@@ -2,7 +2,7 @@
 // (viridis levels or the change classes) and passenger loads.
 
 import { DeltaLegend } from "../compare/DeltaLegend";
-import { LOAD_FACTOR_TOP } from "../compare/layers";
+import { KIND_COLOUR, LOAD_FACTOR_TOP } from "../compare/layers";
 import { Field, NatureBadge } from "../ui/Quantity";
 import { toCss, viridis } from "./colours";
 import type { LayerState, Legend } from "./layerState";
@@ -16,14 +16,32 @@ interface Props {
   legend: Legend | null;
   /** Zones are raised by their value. */
   relief?: boolean;
+  /** Routes a scenario or a draft changes are drawn. */
+  routeChanges?: boolean;
 }
 
-export function MapLegend({ state, view, legend, relief = false }: Props) {
+export function MapLegend({ state, view, legend, relief = false, routeChanges = false }: Props) {
   const change = view === "change" && state.zones === "accessibility";
   const zones = state.zones !== "none" && (change || legend);
-  if (!zones && state.loads === "none") return null;
+  if (!zones && state.loads === "none" && !routeChanges) return null;
   return (
     <div className="map-legend">
+      {routeChanges && (
+        <ul className="route-key" aria-label="Route changes">
+          <li>
+            <span className="line line-removed" style={{ color: toCss(KIND_COLOUR.removed) }} />
+            removed
+          </li>
+          <li>
+            <span className="line" style={{ color: toCss(KIND_COLOUR.modified) }} />
+            runs more or less often
+          </li>
+          <li>
+            <span className="line line-added" style={{ color: toCss(KIND_COLOUR.added) }} />
+            added
+          </li>
+        </ul>
+      )}
       {change ? (
         <DeltaLegend info={legend?.info} />
       ) : (

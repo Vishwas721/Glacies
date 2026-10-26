@@ -1,4 +1,4 @@
-import type { PickingInfo } from "@deck.gl/core";
+import type { Layer, PickingInfo } from "@deck.gl/core";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -6,9 +6,11 @@ import { App } from "../App";
 import { type Call, CITY, fakeApi, renderWithClient } from "../testing";
 
 let click: ((info: PickingInfo) => void) | undefined;
+let drawn: Layer[] = [];
 vi.mock("../map/MapView", () => ({
-  MapView: ({ onClick }: { onClick?: (info: PickingInfo) => void }) => {
+  MapView: ({ onClick, layers }: { onClick?: (info: PickingInfo) => void; layers: Layer[] }) => {
     click = onClick;
+    drawn = layers;
     return <div data-testid="map" />;
   },
 }));
@@ -100,6 +102,46 @@ describe("Scenario builder", () => {
 
     fireEvent.click(within(status).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(posted(calls, "/api/simulations/sim_1/cancel")).toHaveLength(1));
+  });
+
+  it("draws the draft on the map before it is simulated", async () => {
+    fakeApi({
+      ...CITY,
+      "GET /api/cities/toyville/routes/0": {
+        fields: {},
+        route: CITY["GET /api/cities/toyville/routes"].routes[0],
+        features: [
+          {
+            type: "Feature",
+            geometry: {
+              type: "LineString",
+              coordinates: [
+                [0, 0],
+                [0.01, 0.01],
+              ],
+            },
+            properties: {
+              pattern_idx: 0,
+              direction_id: 0,
+              headsign: null,
+              stops: [0, 1],
+              trips: 2,
+              window_trips: 2,
+            },
+          },
+        ],
+      },
+    });
+    await ready();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Find a route" }), {
+      target: { value: "10" },
+    });
+    fireEvent.click(await screen.findByRole("checkbox", { name: "10 in service" }));
+
+    await waitFor(() => expect(drawn.map((l) => l.id)).toContain("proposal"));
+    expect(screen.getByText(/Draft, not simulated/)).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Route changes" })).toHaveTextContent("removed");
   });
 
   it("will not queue a scenario that is already queued or running", async () => {

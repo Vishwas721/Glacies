@@ -1,7 +1,7 @@
 // Server state through TanStack Query. Network layers never change while the app runs (a
 // rebuild needs a reload), so they are cached for the session.
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "./client";
 import type {
@@ -50,6 +50,17 @@ export const useRoute = (city: string, routeIdx: number | null) =>
     queryFn: () => api<RouteDetail>(`${base(city)}/routes/${routeIdx}`),
     enabled: routeIdx !== null,
     ...forever,
+  });
+
+/** Several routes' stop patterns at once, e.g. the routes a draft scenario changes. */
+export const useRouteDetails = (city: string, routeIdx: number[]) =>
+  useQueries({
+    queries: routeIdx.map((idx) => ({
+      queryKey: ["route", city, idx],
+      queryFn: () => api<RouteDetail>(`${base(city)}/routes/${idx}`),
+      ...forever,
+    })),
+    combine: (results) => results.map((r) => r.data),
   });
 
 export const useStops = (city: string) =>

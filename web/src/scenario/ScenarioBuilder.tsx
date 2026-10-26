@@ -169,7 +169,7 @@ export function ScenarioBuilder(props: Props) {
         added={draft.added}
         onAddedChange={setAdded}
       />
-      <section aria-label="Run" className="card">
+      <section aria-label="Run" className="card run-bar">
         <p className="note">
           {changes} change{changes === 1 ? "" : "s"}
           {savedAs ? `, saved as ${savedAs}` : ", not saved"}

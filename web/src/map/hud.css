@@ -310,3 +310,36 @@
 .lens-right {
   left: calc(50% + 6px);
 }
+
+.route-key {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.route-key + .legend {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.route-key .line {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  margin-right: 6px;
+  vertical-align: 3px;
+  border-top: 3px solid currentColor;
+}
+
+.route-key .line-removed {
+  border-top-style: dashed;
+}
+
+.route-key .line-added {
+  border-top-width: 4px;
+}

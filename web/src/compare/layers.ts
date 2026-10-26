@@ -67,9 +67,14 @@ export function changesLayer(routes: ChangedRoute[], clip?: ClipBox): Layer {
       path,
     })),
   );
+  return changeLinesLayer("changes", data, clip);
+}
+
+/** The same drawing for any change lines, e.g. a draft scenario not yet simulated. */
+export function changeLinesLayer(id: string, data: ChangeLine[], clip?: ClipBox): Layer {
   const clip_ = clipped(clip);
   return new PathLayer<ChangeLine, PathStyleExtensionProps<ChangeLine>>({
-    id: "changes",
+    id,
     data,
     getPath: (d) => d.path,
     getColor: (d) => [...KIND_COLOUR[d.kind], 240],
