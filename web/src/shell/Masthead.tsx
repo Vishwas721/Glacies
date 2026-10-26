@@ -24,7 +24,7 @@ export function Masthead({ city, size, inspectorOpen, onInspector }: Props) {
         <h1>{city.name}</h1>
         <p className="masthead-meta">
           timetable of {city.service_date ?? "unknown date"} · AM window {city.window[0]}–
-          {city.window[1]} · {city.timezone}
+          {city.window[1]}
         </p>
       </div>
       {size && (
@@ -44,9 +44,7 @@ export function Masthead({ city, size, inspectorOpen, onInspector }: Props) {
             </div>
           )}
           <div>
-            <dt>
-              trips {city.window[0]}–{city.window[1]}
-            </dt>
+            <dt title={`Trips starting ${city.window[0]}–${city.window[1]}`}>trips in window</dt>
             <dd>
               <Field value={size.windowTrips} info={size.windowTripsInfo} />
             </dd>

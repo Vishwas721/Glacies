@@ -146,3 +146,24 @@
   color: var(--text-2);
   font-size: 12px;
 }
+
+.reading dl {
+  margin: 8px 0 0;
+}
+
+.reading dt {
+  font-weight: 550;
+  margin-top: 8px;
+}
+
+.reading dd {
+  margin: 3px 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.reading-next {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}

@@ -223,10 +223,16 @@
   white-space: nowrap;
 }
 
+/* Figures that do not fit wrap onto a hidden second row and disappear whole: a number is never
+   cut away from its data-nature badge. */
 .masthead-stats {
   display: flex;
-  gap: 18px;
+  flex-wrap: wrap;
+  column-gap: 18px;
+  row-gap: 40px;
+  max-height: 38px;
   min-width: 0;
+  flex: 1;
   overflow: hidden;
   margin: 0;
   padding-left: 20px;
@@ -363,13 +369,6 @@
   scrollbar-color: var(--line-strong) transparent;
 }
 
-.inspector-empty {
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius);
-  padding: 14px;
-  text-align: center;
-}
-
 /* ---------- Splash ---------- */
 
 .splash {
@@ -447,17 +446,6 @@
 
   .inspector > .panel-close {
     display: block;
-  }
-
-  /* Fewer figures in the masthead rather than one cut in half. */
-  .masthead-stats > div:nth-child(3) {
-    display: none;
-  }
-}
-
-@media (max-width: 1100px) {
-  .masthead-stats > div:nth-child(2) {
-    display: none;
   }
 }
 

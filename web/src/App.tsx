@@ -65,6 +65,7 @@ import {
   type ZoneFact,
   type ZoneFacts,
 } from "./inspect/Inspector";
+import { Reading } from "./inspect/Reading";
 import { ScenarioBuilder } from "./scenario/ScenarioBuilder";
 import { ModelSettings, NatureKey, Outputs, Sources } from "./data/DataPanel";
 import { RunConsole } from "./runs/RunConsole";
@@ -75,6 +76,12 @@ import { initialMode, type Mode, MODES, rememberMode } from "./shell/modes";
 import { matches, NARROW, PHONE, useMedia } from "./shell/media";
 import { Rail } from "./shell/Rail";
 import { format, formatDelta } from "./ui/format";
+
+const ZONE_NAME = {
+  population: "residents",
+  employment: "estimated employment",
+  accessibility: "estimated jobs within reach",
+} as const;
 
 const VIEW_NAME = {
   baseline: "Baseline",
@@ -741,9 +748,13 @@ function CityView({ city }: { city: string }) {
           selectedRoute === null &&
           mode !== "data" &&
           !(mode === "compare" && result) && (
-            <p className="note inspector-empty">
-              Click a zone, stop or segment on the map to see its values here.
-            </p>
+            <Reading
+              mode={mode}
+              zoneLayer={layers.zones === "none" ? null : ZONE_NAME[layers.zones]}
+              zoneInfo={zoneInfo}
+              window={c.window}
+              network={layers.network}
+            />
           )}
       </aside>
     </div>

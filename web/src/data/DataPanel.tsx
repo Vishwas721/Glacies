@@ -110,6 +110,10 @@ export function ModelSettings({ city }: { city: CityDetail }) {
           <dd className="mono">{city.service_date ?? "unknown"}</dd>
         </div>
         <div>
+          <dt>Time zone</dt>
+          <dd className="mono">{city.timezone}</dd>
+        </div>
+        <div>
           <dt>Departure window</dt>
           <dd className="mono">
             {city.window[0]}–{city.window[1]}
