@@ -1,0 +1,230 @@
+/* Instruments drawn over the map: near-opaque ink panels and hairlines. No backdrop blur:
+   Chrome composites it wrongly over the WebGL canvas while the map animates. */
+
+.map-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--ink-1) 94%, transparent);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.map-controls button {
+  border: none;
+  border-radius: 0;
+  background: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+}
+
+.map-controls button + button {
+  border-top: 1px solid var(--line);
+}
+
+.map-controls button:hover:not(:disabled) {
+  background: var(--ink-3);
+  color: var(--text);
+}
+
+.map-controls svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.map-showing {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 5px 12px 6px;
+  max-width: min(60%, 520px);
+  font-size: 12.5px;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--ink-1) 94%, transparent);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+.map-showing span {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ice);
+  margin-right: 6px;
+}
+
+.map-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  width: 268px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--ink-1) 92%, transparent);
+  box-shadow: var(--shadow);
+}
+
+.map-legend .legend + .legend {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.legend-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.map-legend .note {
+  margin-bottom: 0;
+  font-size: 11px;
+}
+
+.map-readout {
+  position: absolute;
+  right: 48px;
+  bottom: 16px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+  white-space: pre;
+  text-shadow: 0 1px 2px var(--ink-0);
+  pointer-events: none;
+}
+
+.map-readout span {
+  margin-left: 12px;
+  color: var(--text-3);
+}
+
+.map-readout .scale-bar {
+  display: inline-block;
+  margin-left: 14px;
+  padding: 0 0 1px 3px;
+  border: 1px solid var(--text-2);
+  border-top: none;
+  color: var(--text-2);
+  font-size: 9.5px;
+  line-height: 1.2;
+}
+
+/* Lat/lon ticks along the top and left edges. */
+.edge-ticks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.tick {
+  position: absolute;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-3);
+  text-shadow: 0 1px 2px var(--ink-0);
+}
+
+.tick-x {
+  top: 0;
+  transform: translateX(-50%);
+  padding-top: 7px;
+}
+
+.tick-x::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: 5px;
+  background: var(--text-3);
+}
+
+.tick-y {
+  left: 0;
+  transform: translateY(-50%);
+  padding-left: 8px;
+}
+
+.tick-y::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 5px;
+  height: 1px;
+  background: var(--text-3);
+}
+
+/* MapLibre's own controls, in the same ink. */
+.maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--ink-1) 92%, transparent) !important;
+  color: var(--text-2) !important;
+  font-size: 10.5px;
+  max-width: min(560px, 70%);
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--text) !important;
+}
+
+.maplibregl-ctrl-attrib.maplibregl-compact {
+  border: 1px solid var(--line-strong);
+}
+
+.maplibregl-ctrl-attrib-button {
+  filter: invert(1) brightness(0.85);
+}
+
+/* deck.gl's hover tooltip. */
+.deck-tooltip {
+  font-family: var(--sans) !important;
+  font-size: 12px !important;
+  background: var(--ink-0) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 6px 9px !important;
+  box-shadow: var(--shadow);
+}
+
+/* Above MapLibre's own control corners (z-index 2): without an explicit level, Chrome drew the
+   map canvas over these panels after a camera animation. */
+.map-controls,
+.map-showing,
+.map-legend,
+.map-readout,
+.edge-ticks {
+  z-index: 3;
+}
+
+/* The basemap is backdrop: greyed and dimmed so roads never read as bus lines. deck.gl draws
+   the data on its own canvas, which this does not touch. */
+.maplibregl-canvas {
+  filter: saturate(0) brightness(0.72) contrast(1.1);
+}

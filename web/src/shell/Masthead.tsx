@@ -1,5 +1,4 @@
-// The strip above the map: which city and timetable, how big the network is, and which network
-// the map is showing right now (baseline, a scenario, or the change between them).
+// The strip above the map: which city and timetable, and how big its network is.
 
 import type { CityDetail, FieldInfo } from "../api/types";
 import { Field, Quantity } from "../ui/Quantity";
@@ -14,13 +13,11 @@ export interface NetworkSize {
 interface Props {
   city: CityDetail;
   size: NetworkSize | null;
-  /** What the map shows, e.g. "Baseline" or "Change · East Bengaluru package". */
-  showing: string;
   inspectorOpen: boolean;
   onInspector: (open: boolean) => void;
 }
 
-export function Masthead({ city, size, showing, inspectorOpen, onInspector }: Props) {
+export function Masthead({ city, size, inspectorOpen, onInspector }: Props) {
   return (
     <header className="masthead">
       <div className="masthead-city">
@@ -56,9 +53,6 @@ export function Masthead({ city, size, showing, inspectorOpen, onInspector }: Pr
           </div>
         </dl>
       )}
-      <p className="masthead-showing" aria-live="polite">
-        <span>Map shows</span> {showing}
-      </p>
       <button
         type="button"
         className="masthead-inspector"

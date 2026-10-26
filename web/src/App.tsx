@@ -44,7 +44,8 @@ import {
   type ZoneValue,
   zoneLayer,
 } from "./map/layers";
-import { MapView } from "./map/MapView";
+import { MapLegend } from "./map/MapLegend";
+import { type Focus, MapView } from "./map/MapView";
 import { upperBound } from "./map/colours";
 import { emptyDraft, type Draft } from "./scenario/draft";
 import { ScenarioBuilder } from "./scenario/ScenarioBuilder";
@@ -277,6 +278,16 @@ function CityView({ city }: { city: string }) {
     [zoneInfo, zoneData?.delta],
   );
 
+  const [focus, setFocus] = useState<Focus | null>(null);
+  // Everything a scenario changed, to fly to: the story is local (docs/demo.md step 5).
+  const changedBox = useMemo((): Focus["bbox"] | null => {
+    const points = (changes.data?.routes ?? []).flatMap((r) => r.coordinates.flat());
+    if (view === "baseline" || points.length === 0) return null;
+    const lng = points.map((p) => p[0]);
+    const lat = points.map((p) => p[1]);
+    return [Math.min(...lng), Math.min(...lat), Math.max(...lng), Math.max(...lat)];
+  }, [changes.data, view]);
+
   const size = useMemo((): NetworkSize | null => {
     if (!routes.data) return null;
     return {
@@ -357,7 +368,6 @@ function CityView({ city }: { city: string }) {
             }}
             percentiles={c.accessibility.percentiles}
             thresholds={c.accessibility.thresholds_min}
-            legend={legend}
           />
         </div>
         <div hidden={mode !== "design"}>
@@ -387,7 +397,6 @@ function CityView({ city }: { city: string }) {
         <Masthead
           city={c}
           size={size}
-          showing={showing}
           inspectorOpen={inspectorOpen}
           onInspector={setInspectorOpen}
         />
@@ -398,7 +407,27 @@ function CityView({ city }: { city: string }) {
             attribution={attribution}
             onClick={onClick}
             getTooltip={getTooltip}
+            focus={focus}
+            controls={
+              changedBox && (
+                <button
+                  type="button"
+                  aria-label="Fit the changed routes"
+                  title="Fit the changed routes"
+                  onClick={() => setFocus({ id: `changes-${Date.now()}`, bbox: changedBox })}
+                >
+                  <svg viewBox="0 0 14 14" aria-hidden="true">
+                    <path d="M1.5 5V1.5H5M9 1.5h3.5V5M12.5 9v3.5H9M5 12.5H1.5V9" />
+                    <circle cx="7" cy="7" r="1.6" />
+                  </svg>
+                </button>
+              )
+            }
           />
+          <p className="map-showing" aria-live="polite">
+            <span>Map shows</span> {showing}
+          </p>
+          <MapLegend state={layers} view={view} legend={legend} />
         </section>
         <Dock
           tabs={dockTabs}
