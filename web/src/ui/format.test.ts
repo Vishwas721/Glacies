@@ -31,5 +31,6 @@ describe("formatPair", () => {
   it("leaves equal values and already distinct values alone", () => {
     expect(formatPair(13.7, 13.7, "minutes")).toEqual(["13.7 min", "13.7 min"]);
     expect(formatPair(12.5, 14.25, "minutes")).toEqual(["12.5 min", "14.3 min"]);
+    expect(formatPair(0.0494, 0.05, "share")).toEqual(["4.94 %", "5.00 %"]);
   });
 });
