@@ -4,6 +4,7 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import type { Layer, PickingInfo } from "@deck.gl/core";
+import type { ClipExtensionProps } from "@deck.gl/extensions";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import {
   AttributionControl,
@@ -17,6 +18,7 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { basemapStyle } from "./basemap";
+import { type ClipBox, LENS_SIDE } from "./layers";
 import { EdgeTicks } from "./EdgeTicks";
 import { type Ticks, ticksFor } from "./ticks";
 import { LensDivider } from "./LensDivider";
@@ -42,35 +44,43 @@ interface MapViewProps {
   focus?: Focus | null;
   /** Extra map buttons from the screen, e.g. "fit to changes". */
   controls?: ReactNode;
-  /** The What-If Lens: a divider at `fraction` of the width; reports its longitude. */
+  /** The What-If Lens: layers tagged with onLensSide are cut at a draggable divider. */
   lens?: Lens | null;
   /** Tilt the map to look across raised zones (relief). */
   tilt?: boolean;
 }
 
 export interface Lens {
-  fraction: number;
-  onFraction: (fraction: number) => void;
-  onLng: (lng: number) => void;
   left: string;
   right: string;
 }
 
 const PADDING = 48;
 
-function reportLens(map: MapLibre, lens: Lens | null | undefined) {
-  if (!lens) return;
+/** The layers as deck.gl draws them: lens layers cut at the divider's longitude. */
+function cut(map: MapLibre, layers: Layer[], fraction: number): Layer[] {
+  if (!layers.some((l) => LENS_SIDE.has(l))) return layers;
   const { width, height } = map.getCanvas().getBoundingClientRect();
-  lens.onLng(map.unproject([lens.fraction * width, height / 2]).lng);
+  const lng = map.unproject([fraction * width, height / 2]).lng;
+  return layers.map((l) => {
+    const side = LENS_SIDE.get(l);
+    if (!side) return l;
+    const clipBounds: ClipBox = side === "west" ? [-180, -90, lng, 90] : [lng, -90, 180, 90];
+    // The clip extension's prop, which Layer's own props type does not list.
+    return l.clone({ clipBounds } as Partial<ClipExtensionProps> as Partial<Layer["props"]>);
+  });
 }
 
 export function MapView(props: MapViewProps) {
   const { bbox, layers, attribution, onClick, getTooltip, focus, controls, lens, tilt } = props;
+  // The divider lives here, not in the screen's state: moving it or the map re-cuts the lens
+  // layers without re-rendering anything else.
+  const [fraction, setFraction] = useState(0.5);
   // Read by the map's move handler, which is bound once.
-  const lensRef = useRef(lens);
+  const latest = useRef({ layers, fraction });
   useEffect(() => {
-    lensRef.current = lens;
-  }, [lens]);
+    latest.current = { layers, fraction };
+  }, [layers, fraction]);
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibre | null>(null);
   const overlay = useRef<MapboxOverlay | null>(null);
@@ -99,7 +109,6 @@ export function MapView(props: MapViewProps) {
     let frame = 0;
     const read = () => {
       frame = 0;
-      reportLens(map, lensRef.current);
       setTicks(ticksFor(map));
       setZoom(map.getZoom());
       // A tilted map has no single scale; the bar would be wrong away from the centre.
@@ -109,6 +118,11 @@ export function MapView(props: MapViewProps) {
       if (!frame) frame = requestAnimationFrame(read);
     };
     map.on("move", schedule);
+    // Every move, in the same frame: a cut that lagged the map would slide across it.
+    map.on("move", () => {
+      const { layers: now, fraction: f } = latest.current;
+      if (now.some((l) => LENS_SIDE.has(l))) deck.setProps({ layers: cut(map, now, f) });
+    });
     map.on("resize", schedule);
     map.on("load", () => {
       read();
@@ -131,12 +145,13 @@ export function MapView(props: MapViewProps) {
   }, [bbox.join(","), attribution]);
 
   useEffect(() => {
+    const map = mapRef.current;
     overlay.current?.setProps({
-      layers,
+      layers: map ? cut(map, layers, fraction) : layers,
       onClick: onClick ? (info) => onClick(info) : undefined,
       getTooltip: getTooltip ? (info) => getTooltip(info) : undefined,
     });
-  }, [layers, onClick, getTooltip]);
+  }, [layers, fraction, onClick, getTooltip]);
 
   useEffect(() => {
     if (!focus) return;
@@ -163,9 +178,6 @@ export function MapView(props: MapViewProps) {
       map.touchZoomRotate.enableRotation();
     }
   }, [lensOn]);
-  useEffect(() => {
-    if (mapRef.current) reportLens(mapRef.current, lens);
-  }, [lens]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -200,7 +212,7 @@ export function MapView(props: MapViewProps) {
         </button>
         {controls}
       </div>
-      {lens && <LensDivider lens={lens} />}
+      {lens && <LensDivider lens={lens} fraction={fraction} onFraction={setFraction} />}
       <p className="map-readout" aria-label="Cursor position">
         {cursor
           ? `${Math.abs(cursor.lat).toFixed(4)}°${cursor.lat >= 0 ? "N" : "S"}  ${Math.abs(cursor.lng).toFixed(4)}°${cursor.lng >= 0 ? "E" : "W"}`

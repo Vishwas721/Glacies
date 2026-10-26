@@ -9,24 +9,30 @@ const MIN = 0.04;
 const MAX = 0.96;
 const clamp = (f: number) => Math.min(MAX, Math.max(MIN, f));
 
-export function LensDivider({ lens }: { lens: Lens }) {
+interface Props {
+  lens: Lens;
+  fraction: number;
+  onFraction: (fraction: number) => void;
+}
+
+export function LensDivider({ lens, fraction, onFraction }: Props) {
   const dragging = useRef(false);
   const move = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragging.current) return;
     const box = e.currentTarget.parentElement!.getBoundingClientRect();
-    lens.onFraction(clamp((e.clientX - box.left) / box.width));
+    onFraction(clamp((e.clientX - box.left) / box.width));
   };
   return (
     <div
       className="lens"
-      style={{ left: `${lens.fraction * 100}%` }}
+      style={{ left: `${fraction * 100}%` }}
       role="slider"
       tabIndex={0}
       aria-label="Lens divider: baseline to the left, scenario to the right"
       aria-valuemin={Math.round(MIN * 100)}
       aria-valuemax={Math.round(MAX * 100)}
-      aria-valuenow={Math.round(lens.fraction * 100)}
-      aria-valuetext={`${Math.round(lens.fraction * 100)} % from the left`}
+      aria-valuenow={Math.round(fraction * 100)}
+      aria-valuetext={`${Math.round(fraction * 100)} % from the left`}
       onPointerDown={(e) => {
         dragging.current = true;
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -36,8 +42,8 @@ export function LensDivider({ lens }: { lens: Lens }) {
       onPointerCancel={() => (dragging.current = false)}
       onKeyDown={(e) => {
         const step = e.shiftKey ? 0.1 : 0.02;
-        if (e.key === "ArrowLeft") lens.onFraction(clamp(lens.fraction - step));
-        if (e.key === "ArrowRight") lens.onFraction(clamp(lens.fraction + step));
+        if (e.key === "ArrowLeft") onFraction(clamp(fraction - step));
+        if (e.key === "ArrowRight") onFraction(clamp(fraction + step));
       }}
     >
       <span className="lens-label lens-left">{lens.left}</span>

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { CITY, fakeApi, renderWithClient } from "../testing";
 import { RESULT } from "../testingResults";
+import { LENS_SIDE } from "../map/layers";
 import { deltaColour } from "./layers";
 import { comparableResults } from "./results";
 
@@ -117,8 +118,8 @@ describe("Comparing a result with the baseline", () => {
     await waitFor(() =>
       expect(ids()).toEqual(["zones-split-baseline", "zones-split-scenario", "network", "changes"]),
     );
-    const [left, right] = drawn as unknown as { props: { clipBounds: number[] } }[];
-    expect(left!.props.clipBounds[2]).toBe(right!.props.clipBounds[0]);
+    // The map view cuts these at the divider; the screen only says which side each is on.
+    expect(drawn.map((l) => LENS_SIDE.get(l) ?? null)).toEqual(["west", "east", null, "east"]);
     expect(screen.getByText(/Baseline left of a divider/)).toBeInTheDocument();
   });
 

@@ -70,6 +70,9 @@ export function changesLayer(routes: ChangedRoute[], clip?: ClipBox): Layer {
   return changeLinesLayer("changes", data, clip);
 }
 
+// Shared, like the clip extension: a new instance per render would rebuild the shaders.
+const DASH = new PathStyleExtension({ dash: true });
+
 /** The same drawing for any change lines, e.g. a draft scenario not yet simulated. */
 export function changeLinesLayer(id: string, data: ChangeLine[], clip?: ClipBox): Layer {
   const clip_ = clipped(clip);
@@ -84,7 +87,7 @@ export function changeLinesLayer(id: string, data: ChangeLine[], clip?: ClipBox)
     dashJustified: true,
     pickable: true,
     ...clip_,
-    extensions: [new PathStyleExtension({ dash: true }), ...(clip_.extensions ?? [])],
+    extensions: [DASH, ...(clip_.extensions ?? [])],
   });
 }
 

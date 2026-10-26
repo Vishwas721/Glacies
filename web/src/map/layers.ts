@@ -17,11 +17,29 @@ export interface ZoneValue {
 /** West, south, east, north: the part of the map a layer is drawn in. */
 export type ClipBox = [number, number, number, number];
 
+// One instance for every layer: a new extension object per render makes deck.gl rebuild the
+// layer's shaders, and the lens re-renders on every frame of a pan (18 fps measured).
+const CLIP = new ClipExtension();
+
+/**
+ * Which side of the What-If Lens a layer belongs to. The map view cuts these layers at the
+ * divider itself on every move, so panning never goes through React (20-30 fps when it did).
+ */
+export const LENS_SIDE = new WeakMap<Layer, "west" | "east">();
+
+/** The whole world: a lens layer's clip until the map view sets the divider's longitude. */
+export const WORLD: ClipBox = [-180, -90, 180, 90];
+
+export function onLensSide<L extends Layer>(layer: L, side: "west" | "east"): L {
+  LENS_SIDE.set(layer, side);
+  return layer;
+}
+
 /** Props that draw a layer only inside `clip` (the What-If Lens), cut exactly at its edge. */
 export function clipped(clip: ClipBox | undefined): Partial<ClipExtensionProps> & {
   extensions?: ClipExtension[];
 } {
-  return clip ? { extensions: [new ClipExtension()], clipBounds: clip, clipByInstance: false } : {};
+  return clip ? { extensions: [CLIP], clipBounds: clip, clipByInstance: false } : {};
 }
 
 interface ZoneOptions {

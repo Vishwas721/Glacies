@@ -43,10 +43,11 @@ import { INITIAL_LAYERS, type LayerState, type Legend } from "./map/layerState";
 import {
   draftLayer,
   networkLayer,
-  type ClipBox,
+  onLensSide,
   routeLayer,
   stopKey,
   stopsLayer,
+  WORLD,
   type ZoneValue,
   zoneLayer,
 } from "./map/layers";
@@ -172,8 +173,6 @@ function CityView({ city }: { city: string }) {
   const resultRef = result && view !== "baseline" ? result.key : "baseline";
   // The What-If Lens: baseline left of the divider, scenario right of it.
   const split = view === "split";
-  const [lensFraction, setLensFraction] = useState(0.5);
-  const [lensLng, setLensLng] = useState<number | null>(null);
 
   const showStops = layers.stops || picking;
   const stops = useStops(city);
@@ -251,7 +250,6 @@ function CityView({ city }: { city: string }) {
     () => (split ? crowdPairs(baseCrowding.data) : null),
     [split, baseCrowding.data],
   );
-  const lensCentre = lensLng ?? (detail.data ? (detail.data.bbox[0] + detail.data.bbox[2]) / 2 : 0);
 
   const flowFrames = useMemo((): PairValue[][] | null => {
     const f = flows.data;
@@ -291,8 +289,6 @@ function CityView({ city }: { city: string }) {
   const relief = layers.relief && reliefUsable;
   const deckLayers = useMemo(() => {
     const out: Layer[] = [];
-    const west: ClipBox = [-180, -90, lensCentre, 90];
-    const east: ClipBox = [lensCentre, -90, 180, 90];
     // In relief the network goes first: the zones' near-clear low hexagons still fill the depth
     // buffer, and lines drawn after them at ground level would vanish.
     const network_ = layers.network && network.data ? networkLayer(network.data) : null;
@@ -300,8 +296,9 @@ function CityView({ city }: { city: string }) {
     if (zoneData?.baseline) {
       // One colour scale for both sides, or equal colours would not mean equal values.
       const top = upperBound(zoneData.baseline.map((v) => v.value));
-      out.push(zoneLayer("zones-split-baseline", zoneData.baseline, { top, clip: west }));
-      out.push(zoneLayer("zones-split-scenario", zoneData.values, { top, clip: east }));
+      const base = zoneLayer("zones-split-baseline", zoneData.baseline, { top, clip: WORLD });
+      const scen = zoneLayer("zones-split-scenario", zoneData.values, { top, clip: WORLD });
+      out.push(onLensSide(base, "west"), onLensSide(scen, "east"));
     } else if (zoneData) {
       out.push(
         zoneData.delta
@@ -311,8 +308,8 @@ function CityView({ city }: { city: string }) {
     }
     if (!relief && network_) out.push(network_);
     if (layers.loads === "crowding" && baseCrowdValues && crowdValues) {
-      out.push(loadLayer("crowding-baseline", baseCrowdValues, west));
-      out.push(loadLayer("crowding", crowdValues, east));
+      out.push(onLensSide(loadLayer("crowding-baseline", baseCrowdValues, WORLD), "west"));
+      out.push(onLensSide(loadLayer("crowding", crowdValues, WORLD), "east"));
     } else if (layers.loads === "crowding" && crowdValues) {
       out.push(loadLayer("crowding", crowdValues));
     }
@@ -320,7 +317,8 @@ function CityView({ city }: { city: string }) {
       out.push(loadLayer("flows", flowFrames[shownFrame] ?? []));
     }
     if (view !== "baseline" && changes.data) {
-      out.push(changesLayer(changes.data.routes, split ? east : undefined));
+      const lines = changesLayer(changes.data.routes, split ? WORLD : undefined);
+      out.push(split ? onLensSide(lines, "east") : lines);
     }
     if (proposal.length) out.push(changeLinesLayer("proposal", proposal));
     if (route.data && selectedRoute !== null) out.push(routeLayer(route.data.features));
@@ -333,7 +331,6 @@ function CityView({ city }: { city: string }) {
     crowdValues,
     baseCrowdValues,
     split,
-    lensCentre,
     relief,
     proposal,
     flowFrames,
@@ -408,17 +405,8 @@ function CityView({ city }: { city: string }) {
 
   const [focus, setFocus] = useState<Focus | null>(null);
   const lens = useMemo(
-    (): Lens | null =>
-      split
-        ? {
-            fraction: lensFraction,
-            onFraction: setLensFraction,
-            onLng: setLensLng,
-            left: "Baseline",
-            right: "Scenario",
-          }
-        : null,
-    [split, lensFraction],
+    (): Lens | null => (split ? { left: "Baseline", right: "Scenario" } : null),
+    [split],
   );
   const [searchSeed, setSearchSeed] = useState<{ text: string; n: number } | undefined>();
 
