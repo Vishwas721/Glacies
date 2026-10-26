@@ -11,6 +11,7 @@ import "./index.css";
 import "./shell/shell.css";
 import "./map/hud.css";
 import "./inspect/inspect.css";
+import "./compare/compare.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root element missing");

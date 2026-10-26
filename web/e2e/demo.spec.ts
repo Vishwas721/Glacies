@@ -46,7 +46,7 @@ test("the demo story", async ({ page }) => {
   await status.getByRole("button", { name: "Show results" }).click();
 
   // 5. Before and after, every number labelled.
-  const headline = page.getByRole("table", { name: "Headline metrics" });
+  const headline = page.getByRole("list", { name: "Headline metrics" });
   await expect(headline).toContainText("waiting per transit trip");
   await expect(headline.getByText("Simulated").first()).toBeVisible();
 

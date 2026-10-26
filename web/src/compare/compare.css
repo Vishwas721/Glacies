@@ -1,0 +1,133 @@
+/* The impact ledger: one entry per metric, the change coloured by whether it is an improvement
+   (blue, as gains on the map) or not (red); metrics with no better side stay neutral. */
+
+.ledger-card h3 {
+  margin-top: 4px;
+}
+
+.ledger {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.ledger-row {
+  --reading: var(--text-2);
+  padding: 9px 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ledger-row[data-reading="better"] {
+  --reading: #6aa8f2;
+}
+
+.ledger-row[data-reading="worse"] {
+  --reading: #f07b78;
+}
+
+.ledger-name {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.ledger-name > span:first-child::first-letter {
+  text-transform: uppercase;
+}
+
+.ledger-values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 12px;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-pair {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.ledger-delta {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--reading);
+}
+
+.ledger-reading {
+  margin-left: auto;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--reading);
+}
+
+.ledger-row[data-reading="neutral"] .ledger-reading {
+  color: var(--text-3);
+}
+
+.ledger-def {
+  margin: 5px 0 0;
+  font-size: 11.5px;
+  color: var(--text-3);
+  line-height: 1.4;
+}
+
+.ledger-compact .ledger-row {
+  padding: 6px 0;
+}
+
+.ledger-compact .ledger-name {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.ledger-compact .ledger-pair,
+.ledger-compact .ledger-delta {
+  font-size: 11.5px;
+}
+
+/* Where riders moved: a bar either side of the middle, ice for riders gained, slate for lost.
+   Boardings are not good or bad in themselves, so the map's blue/red is not used. */
+.moved th {
+  width: 40%;
+}
+
+.moved-bar {
+  width: 34%;
+  position: relative;
+  padding: 0 !important;
+}
+
+.moved-bar::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--line-strong);
+}
+
+.moved-bar span {
+  position: absolute;
+  top: 50%;
+  height: 6px;
+  margin-top: -3px;
+}
+
+.moved-bar span[data-sign="+"] {
+  left: 50%;
+  background: var(--ice);
+}
+
+.moved-bar span[data-sign="−"] {
+  right: 50%;
+  background: var(--text-3);
+}

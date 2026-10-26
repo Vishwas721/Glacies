@@ -536,7 +536,9 @@ function CityView({ city }: { city: string }) {
             }
           />
         )}
-        {mode === "compare" && result && <ComparePanel city={city} result={result.key} />}
+        {mode === "compare" && result && (
+          <ComparePanel city={city} result={result.key} title={result.label} />
+        )}
         {layers.loads !== "none" && checks.data && <ModelChecks checks={checks.data} />}
         {!selection && selectedRoute === null && !(mode === "compare" && result) && (
           <p className="note inspector-empty">
