@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { PageLink } from "../ui/chrome";
 import { type Mode, MODES } from "./modes";
 
 const ICON: Record<Mode, ReactNode> = {
@@ -48,12 +49,12 @@ interface Props {
 export function Rail({ mode, onMode, status }: Props) {
   return (
     <nav className="rail" aria-label="Modes">
-      <div className="mark" aria-label="Glacies">
+      <PageLink to="landing" className="mark" aria-label="Glacies, home">
         <svg viewBox="0 0 32 32" aria-hidden="true">
           <polygon points="16,2.5 28,9.5 28,22.5 16,29.5 4,22.5 4,9.5" />
           <polygon points="16,9 22,12.5 22,19.5 16,23 10,19.5 10,12.5" />
         </svg>
-      </div>
+      </PageLink>
       <ul>
         {MODES.map((m) => (
           <li key={m.id}>

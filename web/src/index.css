@@ -1,6 +1,6 @@
-/* Glacies visual language (ADR 0023): ink-dark surfaces, hairlines, one glacial accent. Data
-   colours (viridis levels, blue/red change classes) live in map/colours.ts and compare/layers.ts
-   and are never reused for decoration. */
+/* Glacies visual language (ADR 0023, 0024): ink surfaces, hairlines, one glacial accent, in a
+   dark and a light theme chosen on <html data-theme>. Data colours (viridis levels, blue/red
+   change classes) live in map/colours.ts and compare/layers.ts and are never decoration. */
 
 :root {
   color-scheme: dark;
@@ -21,8 +21,12 @@
   /* Interface accents: ice for what is selected or new, amber for what is changed. */
   --ice: #7fdcf2;
   --ice-dim: #3d8ea3;
+  --ice-hover: #a6e9f8;
+  --ice-text: #b4eefb;
   --amber: #ffb454;
   --danger: #ff7a73;
+  --ok: #6fd3a0;
+  --scrim: rgb(0 0 0 / 55%);
 
   /* Map change classes, the same hues as `glacies scenario compare`. */
   --gain: #3987e5;
@@ -41,6 +45,7 @@
   --gap: 12px;
   --shadow: 0 8px 24px rgb(0 0 0 / 45%), 0 1px 0 rgb(255 255 255 / 3%) inset;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
   font-family: var(--sans);
   font-size: 13px;
@@ -48,6 +53,39 @@
   font-variation-settings: "wdth" 92;
   color: var(--text);
   background: var(--ink-1);
+}
+
+/* The light theme: paper surfaces and the same hues, darkened to keep their contrast. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --ink-0: #ffffff;
+  --ink-1: #f3f5f6;
+  --ink-2: #fafbfb;
+  --ink-3: #edf1f3;
+  --ink-4: #e1e7eb;
+  --line: #dde3e7;
+  --line-strong: #c2cbd2;
+
+  --text: #0e1a22;
+  --text-2: #4b5c68;
+  --text-3: #75848f;
+
+  --ice: #08779a;
+  --ice-dim: #7bbfd3;
+  --ice-hover: #0a6584;
+  --ice-text: #0a6584;
+  --amber: #a85f00;
+  --danger: #c2322c;
+  --ok: #1c8a55;
+  --scrim: rgb(14 26 34 / 22%);
+
+  --observed: #1d6aaa;
+  --estimated: #8a6100;
+  --simulated: #6a45bf;
+  --assumed: #5a6872;
+
+  --shadow: 0 8px 24px rgb(14 26 34 / 12%), 0 1px 0 rgb(255 255 255 / 60%) inset;
 }
 
 * {
@@ -146,8 +184,8 @@ button.primary {
 }
 
 button.primary:hover:not(:disabled) {
-  background: #a6e9f8;
-  border-color: #a6e9f8;
+  background: var(--ice-hover);
+  border-color: var(--ice-hover);
 }
 
 button[aria-pressed="true"] {
@@ -334,7 +372,7 @@ progress::-moz-progress-bar {
 
 .link:hover:not(:disabled) {
   background: none;
-  color: #b4eefb;
+  color: var(--ice-text);
 }
 
 .muted,

@@ -21,7 +21,7 @@ test("the demo story", async ({ page }) => {
   page.on("console", (m) => m.type() === "error" && problems.push(m.text()));
 
   // 1. Load the baseline network.
-  await page.goto("/");
+  await page.goto("/pro");
   await expect(page.getByRole("heading", { name: "Toyville" })).toBeVisible();
   await expect(page.getByText(/timetable of 2026-10-13/)).toBeVisible();
   await expect(page.locator("canvas").first()).toBeVisible();

@@ -132,8 +132,8 @@
 }
 
 .dot-ok {
-  background: #6fd3a0;
-  box-shadow: 0 0 6px #6fd3a080;
+  background: var(--ok);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--ok) 50%, transparent);
 }
 
 .dot-busy {
@@ -253,8 +253,24 @@
   white-space: nowrap;
 }
 
-.masthead-inspector {
+.masthead-pages {
+  display: flex;
+  align-items: center;
+  gap: 14px;
   margin-left: auto;
+  font-size: 12.5px;
+}
+
+.masthead-pages a {
+  color: var(--text-2);
+  text-decoration: none;
+}
+
+.masthead-pages a:hover {
+  color: var(--ice);
+}
+
+.masthead-inspector {
   padding: 6px;
   line-height: 0;
 }
@@ -440,7 +456,7 @@
     bottom: 0;
     width: min(360px, 92vw);
     z-index: 20;
-    box-shadow: -16px 0 32px rgb(0 0 0 / 55%);
+    box-shadow: -16px 0 32px var(--scrim);
     padding-top: 44px;
   }
 
@@ -464,7 +480,7 @@
     left: var(--rail-w);
     width: min(340px, calc(100vw - var(--rail-w)));
     z-index: 18;
-    box-shadow: 16px 0 32px rgb(0 0 0 / 55%);
+    box-shadow: 16px 0 32px var(--scrim);
   }
 
   .side-head .panel-close {
@@ -543,7 +559,7 @@
     border: none;
     border-top: 1px solid var(--line-strong);
     border-radius: 10px 10px 0 0;
-    box-shadow: 0 -16px 32px rgb(0 0 0 / 55%);
+    box-shadow: 0 -16px 32px var(--scrim);
   }
 
   .side {

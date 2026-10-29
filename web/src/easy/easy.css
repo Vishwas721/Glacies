@@ -1,0 +1,745 @@
+/* The Easy view (ADR 0024): the map fills the screen; one panel tells the story step by step. */
+
+.easy {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--ink-1);
+  font-size: 14px;
+}
+
+.easy-map {
+  position: absolute;
+  inset: 0;
+}
+
+.easy-map .map-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+/* ---------- Top bar ---------- */
+
+.easy-bar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.easy-bar > * {
+  pointer-events: auto;
+}
+
+.easy-bar .wordmark,
+.easy-nav,
+.step-track {
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink-1) 94%, transparent);
+  box-shadow: var(--shadow);
+}
+
+.easy-nav {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-right: 6px;
+}
+
+.easy-nav a {
+  color: var(--text-2);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.easy-nav a:hover {
+  color: var(--text);
+}
+
+/* The steps as three stations on a line. */
+.step-track {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 6px;
+  list-style: none;
+}
+
+.step-track li {
+  display: flex;
+  align-items: center;
+}
+
+.step-track li + li::before {
+  content: "";
+  width: 26px;
+  height: 2px;
+  background: var(--line-strong);
+}
+
+.step-track li[data-state="done"] + li::before,
+.step-track li[data-state="now"]::before {
+  background: var(--ice);
+}
+
+.step-track button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.step-track button:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.step-track button:hover:not(:disabled) {
+  background: var(--ink-3);
+  color: var(--text);
+}
+
+.step-track [data-state="now"] button {
+  color: var(--text);
+}
+
+.step-track [data-state="done"] button {
+  color: var(--text-2);
+}
+
+.track-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  background: var(--ink-1);
+  transition:
+    background 300ms var(--ease),
+    border-color 300ms var(--ease),
+    box-shadow 300ms var(--ease);
+}
+
+[data-state="done"] .track-dot {
+  border-color: var(--ice);
+  background: var(--ice);
+}
+
+[data-state="now"] .track-dot {
+  border-color: var(--ice);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ice) 25%, transparent);
+}
+
+/* ---------- The story panel ---------- */
+
+.easy-panel {
+  position: absolute;
+  z-index: 4;
+  top: 76px;
+  left: 16px;
+  width: 440px;
+  max-height: calc(100% - 92px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ink-1) 96%, transparent);
+  box-shadow: var(--shadow);
+}
+
+.easy-step {
+  padding: 30px 30px 26px;
+  animation: rise 600ms var(--ease-out) both;
+}
+
+.easy-title {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 750;
+  font-variation-settings: "wdth" 106;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  color: var(--text);
+  text-transform: none;
+  font-family: var(--sans);
+}
+
+.easy-lede {
+  margin: 12px 0 22px;
+  font-size: 15px;
+  color: var(--text-2);
+}
+
+.easy .note {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.plain {
+  margin: 10px 0 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.plain .value {
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
+/* Search with suggestions. */
+.search {
+  position: relative;
+}
+
+.easy input[type="search"] {
+  width: 100%;
+  padding: 13px 16px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--ink-0);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  outline: none;
+  transition:
+    border-color 150ms var(--ease),
+    box-shadow 150ms var(--ease);
+}
+
+.easy input[type="search"]:focus {
+  border-color: var(--ice);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ice) 18%, transparent);
+}
+
+.search-list {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--ink-0);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.search-list.inline {
+  position: static;
+  margin-top: 6px;
+}
+
+.search-list button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  text-align: left;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font-weight: 500;
+}
+
+.search-list button:hover {
+  background: var(--ink-3);
+}
+
+.search-list .muted {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ice);
+  border: 1px solid color-mix(in srgb, var(--ice) 45%, transparent);
+}
+
+/* What you can reach. */
+.reach-card {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.reach-from {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  color: var(--text-2);
+}
+
+.reach-from strong {
+  color: var(--text);
+}
+
+.big-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 14px 0 4px;
+}
+
+.figure {
+  font-family: var(--mono);
+  font-size: 56px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--text);
+}
+
+.figure .arrow {
+  color: var(--text-3);
+  font-size: 0.6em;
+  vertical-align: 0.15em;
+}
+
+.figure-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+}
+
+/* Actions. */
+.easy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: 26px;
+}
+
+.easy button.big {
+  padding: 12px 20px;
+  font-size: 14px;
+  border-radius: 999px;
+}
+
+/* Questions already answered. */
+.questions {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.question {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  width: 100%;
+  padding: 16px 18px;
+  text-align: left;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  transition:
+    border-color 200ms var(--ease),
+    transform 300ms var(--ease-out),
+    background 200ms var(--ease);
+}
+
+.question:hover:not(:disabled) {
+  border-color: var(--ice);
+  background: var(--ink-2);
+  transform: translateX(3px);
+}
+
+.q-title {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.q-meta {
+  grid-column: 1;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.q-go {
+  grid-row: 1 / 3;
+  grid-column: 2;
+  align-self: center;
+  font-size: 18px;
+  color: var(--ice);
+}
+
+.own {
+  border: 1px dashed var(--line-strong);
+  border-radius: 14px;
+  padding: 0 18px;
+}
+
+.own summary {
+  padding: 15px 0;
+  font-weight: 650;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.own[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.own-body {
+  display: grid;
+  gap: 14px;
+  padding: 16px 0 18px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field > span:first-child,
+.choices legend {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.chosen {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text-2);
+}
+
+.chosen strong {
+  color: var(--text);
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.choices legend {
+  margin-bottom: 6px;
+}
+
+.choice {
+  position: relative;
+}
+
+.choice input {
+  position: absolute;
+  opacity: 0;
+}
+
+.choice span {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 550;
+  color: var(--text-2);
+}
+
+.choice input:checked + span {
+  border-color: var(--ice);
+  color: var(--ice);
+  background: color-mix(in srgb, var(--ice) 10%, transparent);
+}
+
+.choice input:focus-visible + span {
+  outline: 2px solid var(--ice);
+  outline-offset: 2px;
+}
+
+.progress .bar {
+  height: 6px;
+  margin: 12px 0 8px;
+  border-radius: 3px;
+  background: var(--ink-3);
+  overflow: hidden;
+}
+
+.progress .bar span {
+  display: block;
+  height: 100%;
+  background: var(--ice);
+  transition: width 800ms var(--ease-out);
+}
+
+/* The answer. */
+.changed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.changed li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.changed i {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.changed strong {
+  color: var(--text);
+}
+
+.answer-block {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.answer-head {
+  margin: 0 0 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.answer-sub {
+  margin: 22px 0 8px;
+  font-size: 14px;
+}
+
+.gain {
+  color: var(--gain);
+}
+
+.loss {
+  color: var(--loss);
+}
+
+.plain-metrics {
+  margin: 16px 0 0;
+}
+
+.plain-metrics > div {
+  --reading: var(--text-3);
+  display: grid;
+  gap: 4px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.plain-metrics > div[data-reading="better"] {
+  --reading: var(--gain);
+}
+
+.plain-metrics > div[data-reading="worse"] {
+  --reading: var(--loss);
+}
+
+.plain-metrics dt {
+  font-weight: 650;
+}
+
+.plain-metrics .hint {
+  display: block;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.plain-metrics dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.pair {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.verdict {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--reading);
+}
+
+.riders {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.riders li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  color: var(--text-2);
+}
+
+.riders strong {
+  color: var(--text);
+}
+
+.trust .plain {
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+
+/* ---------- Map key ---------- */
+
+.easy-key {
+  position: absolute;
+  z-index: 3;
+  right: 16px;
+  bottom: 34px;
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ink-1) 94%, transparent);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+  color: var(--text-2);
+  animation: rise 500ms var(--ease-out) both;
+}
+
+.easy-key p {
+  margin: 0 0 2px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.easy-key span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.easy-key i {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.easy-key i.faint {
+  opacity: 0.45;
+}
+
+.easy .maplibregl-ctrl-bottom-right {
+  z-index: 2;
+}
+
+/* ---------- Narrow screens: the panel becomes a sheet ---------- */
+
+@media (max-width: 900px) {
+  .step-track button {
+    font-size: 0;
+    gap: 0;
+    padding: 6px;
+  }
+
+  .step-track li + li::before {
+    width: 16px;
+  }
+}
+
+@media (max-width: 700px) {
+  .easy-bar {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+  }
+
+  .easy-bar .wordmark span {
+    display: none;
+  }
+
+  .easy-nav a {
+    display: none;
+  }
+
+  .easy-panel {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 56vh;
+    border-radius: 18px 18px 0 0;
+    border-bottom: none;
+  }
+
+  .easy-step {
+    padding: 22px 20px 20px;
+  }
+
+  .easy-title {
+    font-size: 24px;
+  }
+
+  .figure {
+    font-size: 42px;
+  }
+
+  .easy-key {
+    top: 66px;
+    bottom: auto;
+    right: 10px;
+  }
+}

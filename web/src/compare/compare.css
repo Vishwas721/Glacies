@@ -26,6 +26,14 @@
   --reading: #f07b78;
 }
 
+:root[data-theme="light"] .ledger-row[data-reading="better"] {
+  --reading: var(--gain);
+}
+
+:root[data-theme="light"] .ledger-row[data-reading="worse"] {
+  --reading: var(--loss);
+}
+
 .ledger-name {
   display: flex;
   justify-content: space-between;

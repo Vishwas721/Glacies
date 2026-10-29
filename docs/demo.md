@@ -25,7 +25,12 @@ or, on a machine with only Docker and the built `data/`:
 The baseline must be built (`uv run glacies build-city bengaluru --clean`, then the
 travel-time matrix, accessibility, demand and assignment: see the README).
 
-The screen (ADR 0023): a rail with four modes (Explore, Design, Compare, Data), the mode's panel
+http://localhost:5173 opens the landing page (ADR 0024): the simulated morning rush moving over
+the city, and two ways in. For a general audience, start with **Easy** (below, at the end); this
+walkthrough uses **Pro**, http://localhost:5173/pro. The sun or moon button switches between
+the light and dark themes.
+
+The Pro screen (ADR 0023): a rail with four modes (Explore, Design, Compare, Data), the mode's panel
 on the left, the map, a dock under it for runs and flow playback, and an inspector on the right
 for what is selected and for the comparison. A label on the map always says which network it
 shows.
@@ -122,3 +127,18 @@ nobody in the model leaves home outside 08:00-10:00, so the network fills and dr
 Close with *How far to trust the loads* in the inspector: metro entries against observed gate counts (training
 and held-out stations) and the share of bus passengers on segments loaded past what could board.
 Capacity is soft, so those corridors show where demand piles up, not real loads.
+
+## The same story in the Easy view
+
+For an audience that has never seen a transport model (about three minutes), from the landing
+page choose **Easy**:
+
+1. *Where does your morning start?* Type a stop or metro station, or tap the map. The map shows
+   only the areas reached within 45 minutes, in three bands of door-to-door time, and the panel
+   gives how many areas that is and their share of estimated jobs and residents (**Simulated**).
+2. *What would you like to test?* Pick a question already answered, e.g. the East Bengaluru
+   package, or change one bus route and run the model.
+3. *The answer.* For your place: areas that come within reach (blue) or drop out (red). For the
+   city: how many areas reach more or fewer jobs, waiting and journey times before and after,
+   crowding, where riders moved, and how far to trust it. The address bar now holds the place
+   and the question: copy it to share the answer.

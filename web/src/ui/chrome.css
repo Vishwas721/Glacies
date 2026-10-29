@@ -1,0 +1,94 @@
+/* Shared page chrome: the wordmark, the theme switch and the display type (ADR 0024). */
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 13px;
+  font-variation-settings: "wdth" 125;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+}
+
+.glyph {
+  fill: none;
+  stroke-width: 1.6;
+}
+
+.glyph polygon:first-child {
+  stroke: var(--ice);
+}
+
+.glyph polygon + polygon {
+  stroke: var(--text-3);
+}
+
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  border-color: var(--line-strong);
+  color: var(--text-2);
+}
+
+.theme-toggle:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--ink-3);
+}
+
+.theme-toggle svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.kicker {
+  margin: 0 0 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ice);
+}
+
+.display {
+  margin: 0;
+  font-weight: 800;
+  font-variation-settings: "wdth" 112;
+  letter-spacing: -0.025em;
+  line-height: 0.95;
+  color: var(--text);
+}
+
+.display em {
+  font-style: normal;
+  color: var(--ice);
+}
+
+/* Elements that arrive: a short rise and fade, staggered by --i. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise {
+  animation: rise 700ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 90ms);
+}

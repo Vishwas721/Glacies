@@ -123,7 +123,7 @@
 }
 
 .output-mark {
-  color: #6fd3a0;
+  color: var(--ok);
   font-size: 10px;
 }
 

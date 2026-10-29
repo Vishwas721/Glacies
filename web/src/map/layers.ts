@@ -7,7 +7,8 @@ import { LineLayer, PathLayer, ScatterplotLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
 
 import type { LonLat, Network, PatternFeature, SegmentFeature, StopFeature } from "../api/types";
-import { HIGHLIGHT, MODE_COLOUR, NEW, OTHER_MODE, type RGB, upperBound, viridis } from "./colours";
+import type { Theme } from "../ui/theme";
+import { INK, type RGB, upperBound, viridis } from "./colours";
 
 export interface ZoneValue {
   h3: string;
@@ -75,20 +76,32 @@ export function zoneLayer(id: string, zones: ZoneValue[], options: ZoneOptions =
   });
 }
 
-const modeColour = (modes: string[]): RGB =>
-  modes.includes("metro") ? MODE_COLOUR.metro! : (MODE_COLOUR[modes[0] ?? ""] ?? OTHER_MODE);
+function modeColour(modes: string[], theme: Theme): RGB {
+  const ink = INK[theme];
+  if (modes.includes("metro")) return ink.metro;
+  return modes[0] === "bus" ? ink.bus : ink.other;
+}
+
+interface NetworkOptions {
+  theme?: Theme;
+  /** Draw the network faint, as orientation under zones (one thing at a time). */
+  quiet?: boolean;
+}
 
 /** Stop-to-stop segments, wider where more vehicles run in the AM window. */
-export function networkLayer(network: Network): Layer {
+export function networkLayer(network: Network, options: NetworkOptions = {}): Layer {
+  const theme = options.theme ?? "dark";
+  const [metro, bus] = options.quiet ? [120, 45] : [230, 110];
   return new LineLayer<SegmentFeature>({
     id: "network",
     data: network.features,
     getSourcePosition: (f) => f.geometry.coordinates[0],
     getTargetPosition: (f) => f.geometry.coordinates[1],
     getColor: (f) => [
-      ...modeColour(f.properties.modes),
-      f.properties.modes.includes("metro") ? 230 : 110,
+      ...modeColour(f.properties.modes, theme),
+      f.properties.modes.includes("metro") ? metro : bus,
     ],
+    updateTriggers: { getColor: [theme, options.quiet] },
     getWidth: (f) => 0.5 + Math.sqrt(f.properties.window_trips) / 3,
     widthUnits: "pixels",
     widthMaxPixels: 8,
@@ -96,7 +109,11 @@ export function networkLayer(network: Network): Layer {
   });
 }
 
-export function stopsLayer(stops: StopFeature[], selected: ReadonlySet<string> = new Set()): Layer {
+export function stopsLayer(
+  stops: StopFeature[],
+  selected: ReadonlySet<string> = new Set(),
+  theme: Theme = "dark",
+): Layer {
   return new ScatterplotLayer<StopFeature>({
     id: "stops",
     // Stations are drawn by their platforms; showing both would double every metro stop.
@@ -106,20 +123,22 @@ export function stopsLayer(stops: StopFeature[], selected: ReadonlySet<string> =
     radiusMinPixels: 1.5,
     radiusMaxPixels: 8,
     getFillColor: (s) =>
-      selected.has(stopKey(s)) ? [...NEW, 255] : [...modeColour(s.properties.modes), 220],
+      selected.has(stopKey(s))
+        ? [...INK[theme].fresh, 255]
+        : [...modeColour(s.properties.modes, theme), 220],
     pickable: true,
-    updateTriggers: { getFillColor: [...selected].join(",") },
+    updateTriggers: { getFillColor: [[...selected].join(","), theme] },
   });
 }
 
 export const stopKey = (s: StopFeature) => `${s.properties.feed}:${s.properties.stop_id}`;
 
-export function routeLayer(patterns: PatternFeature[]): Layer {
+export function routeLayer(patterns: PatternFeature[], theme: Theme = "dark"): Layer {
   return new PathLayer<PatternFeature>({
     id: "selected-route",
     data: patterns,
     getPath: (p) => p.geometry.coordinates,
-    getColor: [...HIGHLIGHT, 230],
+    getColor: [...INK[theme].highlight, 230],
     getWidth: 5,
     widthUnits: "pixels",
     pickable: false,
@@ -127,12 +146,12 @@ export function routeLayer(patterns: PatternFeature[]): Layer {
 }
 
 /** The stops picked for a new route, joined in order. */
-export function draftLayer(path: LonLat[]): Layer {
+export function draftLayer(path: LonLat[], theme: Theme = "dark"): Layer {
   return new PathLayer<{ path: LonLat[] }>({
     id: "draft-route",
     data: path.length > 1 ? [{ path }] : [],
     getPath: (d) => d.path,
-    getColor: [...NEW, 255],
+    getColor: [...INK[theme].fresh, 255],
     getWidth: 4,
     widthUnits: "pixels",
   });

@@ -2,7 +2,7 @@
 // (viridis levels or the change classes) and passenger loads.
 
 import { DeltaLegend } from "../compare/DeltaLegend";
-import { KIND_COLOUR, LOAD_FACTOR_TOP } from "../compare/layers";
+import { KIND_CSS, LOAD_FACTOR_TOP } from "../compare/layers";
 import { Field, NatureBadge } from "../ui/Quantity";
 import { toCss, viridis } from "./colours";
 import type { LayerState, Legend } from "./layerState";
@@ -29,15 +29,15 @@ export function MapLegend({ state, view, legend, relief = false, routeChanges = 
       {routeChanges && (
         <ul className="route-key" aria-label="Route changes">
           <li>
-            <span className="line line-removed" style={{ color: toCss(KIND_COLOUR.removed) }} />
+            <span className="line line-removed" style={{ color: KIND_CSS.removed }} />
             removed
           </li>
           <li>
-            <span className="line" style={{ color: toCss(KIND_COLOUR.modified) }} />
+            <span className="line" style={{ color: KIND_CSS.modified }} />
             runs more or less often
           </li>
           <li>
-            <span className="line line-added" style={{ color: toCss(KIND_COLOUR.added) }} />
+            <span className="line line-added" style={{ color: KIND_CSS.added }} />
             added
           </li>
         </ul>

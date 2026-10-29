@@ -77,6 +77,7 @@ import { initialMode, type Mode, MODES, rememberMode } from "./shell/modes";
 import { matches, NARROW, PHONE, useMedia } from "./shell/media";
 import { Rail } from "./shell/Rail";
 import { format, formatDelta } from "./ui/format";
+import { useTheme } from "./ui/theme";
 
 const ZONE_NAME = {
   population: "residents",
@@ -123,6 +124,7 @@ function CityView({ city }: { city: string }) {
   const detail = useCity(city);
   const routes = useRoutes(city);
   const network = useNetwork(city);
+  const theme = useTheme();
   const [layers, setLayers] = useState<LayerState>(INITIAL_LAYERS);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [selectedRoute, setSelectedRoute] = useState<number | null>(null);
@@ -291,7 +293,10 @@ function CityView({ city }: { city: string }) {
     const out: Layer[] = [];
     // In relief the network goes first: the zones' near-clear low hexagons still fill the depth
     // buffer, and lines drawn after them at ground level would vanish.
-    const network_ = layers.network && network.data ? networkLayer(network.data) : null;
+    // One thing at a time: under zones or loads the network is only orientation, drawn faint.
+    const quiet = Boolean(zoneData) || layers.loads !== "none";
+    const network_ =
+      layers.network && network.data ? networkLayer(network.data, { theme, quiet }) : null;
     if (relief && network_) out.push(network_);
     if (zoneData?.baseline) {
       // One colour scale for both sides, or equal colours would not mean equal values.
@@ -317,15 +322,22 @@ function CityView({ city }: { city: string }) {
       out.push(loadLayer("flows", flowFrames[shownFrame] ?? []));
     }
     if (view !== "baseline" && changes.data) {
-      const lines = changesLayer(changes.data.routes, split ? WORLD : undefined);
+      const lines = changesLayer(changes.data.routes, split ? WORLD : undefined, theme);
       out.push(split ? onLensSide(lines, "east") : lines);
     }
-    if (proposal.length) out.push(changeLinesLayer("proposal", proposal));
-    if (route.data && selectedRoute !== null) out.push(routeLayer(route.data.features));
-    if (showStops && stops.data) out.push(stopsLayer(stops.data.features, pickedKeys));
-    if (picked.length) out.push(draftLayer(picked.map((s) => s.geometry.coordinates)));
+    if (proposal.length) out.push(changeLinesLayer("proposal", proposal, undefined, theme));
+    if (route.data && selectedRoute !== null) out.push(routeLayer(route.data.features, theme));
+    if (showStops && stops.data) out.push(stopsLayer(stops.data.features, pickedKeys, theme));
+    if (picked.length)
+      out.push(
+        draftLayer(
+          picked.map((s) => s.geometry.coordinates),
+          theme,
+        ),
+      );
     return out;
   }, [
+    theme,
     zoneData,
     layers,
     crowdValues,
