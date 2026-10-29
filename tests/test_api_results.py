@@ -116,3 +116,47 @@ def test_results_need_an_assignment_and_a_known_ref(city_dir: Path) -> None:
     assert client.get("/api/cities/toyville/results/0123/flows").status_code == 404
     assert client.get("/api/cities/toyville/results/..%5Cbaseline/flows").status_code == 404
     assert client.get(f"{URL}/metrics").status_code == 404  # the baseline compares with nothing
+
+
+def write_reach(city_dir: Path) -> None:
+    """Three zones; zone 0 reaches itself, zone 2 at 10 min (p50) and zone 1 only at p75."""
+    (city_dir / "zones").mkdir(exist_ok=True)
+    pl.DataFrame(
+        {
+            "zone_idx": pl.Series([0, 1, 2], dtype=pl.UInt32),
+            "h3_cell": ["cell-a", "cell-b", "cell-c"],
+        }
+    ).write_parquet(city_dir / "zones" / "zones.parquet")
+    folder = city_dir / "tt_matrix" / "baseline"
+    folder.mkdir(parents=True)
+    pl.DataFrame(
+        {
+            "origin_zone": pl.Series([0, 0, 0, 1], dtype=pl.UInt32),
+            "dest_zone": pl.Series([0, 1, 2, 0], dtype=pl.UInt32),
+            "p25_s": pl.Series([0, 3000, 540, 60], dtype=pl.UInt16),
+            "p50_s": pl.Series([0, 7300, 600, 60], dtype=pl.UInt16),
+            "p75_s": pl.Series([0, None, 660, 60], dtype=pl.UInt16),
+        }
+    ).write_parquet(folder / "part-00000.parquet")
+    (folder / "manifest.json").write_text("{}", encoding="utf-8")
+
+
+def test_reach_lists_one_zones_destinations_nearest_first(city_dir: Path) -> None:
+    write_reach(city_dir)
+    client = TestClient(create_app(Settings()))
+
+    body = client.get(f"{URL}/reach", params={"zone": "cell-a"}).json()
+    p75 = client.get(f"{URL}/reach", params={"zone": "cell-a", "percentile": 75}).json()
+
+    assert (body["zone"], body["percentile"]) == ("cell-a", 50)
+    assert list(zip(body["h3_cell"], body["minutes"], strict=True)) == [
+        ("cell-a", 0.0),
+        ("cell-c", 10.0),
+        ("cell-b", 121.7),
+    ]
+    assert p75["h3_cell"] == ["cell-a", "cell-c"]  # over the limit at p75: not stored
+    assert_labelled(body)
+    assert client.get(f"{URL}/reach", params={"zone": "nowhere"}).status_code == 404
+    assert (
+        client.get(f"{URL}/reach", params={"zone": "cell-a", "percentile": 60}).status_code == 422
+    )

@@ -127,6 +127,18 @@ def simulation_accessibility(
     return results.accessibility(city, result, percentile, threshold_min)
 
 
+@router.get("/{sim_id}/reach", response_model=results.Reach)
+def simulation_reach(
+    sim_id: str,
+    settings: SettingsDep,
+    redis: RedisDep,
+    zone: Annotated[str, Query(description="The origin zone's H3 cell.")],
+    percentile: results.PercentileQuery = None,
+) -> results.Reach:
+    city, result = _result(settings, redis, sim_id)
+    return results.reach(city, result, zone, percentile)
+
+
 @router.get("/{sim_id}/crowding", response_model=results.Crowding)
 def simulation_crowding(sim_id: str, settings: SettingsDep, redis: RedisDep) -> results.Crowding:
     city, result = _result(settings, redis, sim_id)

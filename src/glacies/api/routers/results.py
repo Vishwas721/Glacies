@@ -47,6 +47,7 @@ class Result:
     ref: str
     accessibility: Path
     transit: Path
+    tt_matrix: Path
     assignment: Path | None
     comparison: Path | None
 
@@ -58,6 +59,7 @@ def resolve(city: City, ref: str) -> Result:
             ref,
             city.data / "accessibility" / BASELINE,
             city.data / "transit",
+            city.data / "tt_matrix" / BASELINE,
             assigned if (assigned / "manifest.json").is_file() else None,
             None,
         )
@@ -68,6 +70,7 @@ def resolve(city: City, ref: str) -> Result:
         ref,
         folder / "accessibility",
         folder / "transit",
+        folder / "tt_matrix",
         folder / "assignment" if (folder / "assignment" / "manifest.json").is_file() else None,
         folder / COMPARISON if (folder / COMPARISON / "comparison.json").is_file() else None,
     )
@@ -191,6 +194,63 @@ def accessibility(
         est_jobs_share=table["est_jobs_share"].to_list(),
         population_share=table["population_share"].to_list(),
         est_jobs_share_delta=delta,
+    )
+
+
+# --- reach from one zone ------------------------------------------------------------------
+
+
+class Reach(Labelled):
+    """Where one zone gets to: every destination within the matrix's limit, nearest first."""
+
+    zone: str = Field(description="The origin's H3 cell.")
+    percentile: int
+    h3_cell: list[str]
+    minutes: list[float]
+
+
+def reach(city: City, result: Result, zone: str, percentile: int | None) -> Reach:
+    s = city.config.accessibility
+    p = s.headline_percentile if percentile is None else percentile
+    if p not in s.percentiles:
+        raise HTTPException(422, f"percentile in {s.percentiles}")
+    if not (result.tt_matrix / "manifest.json").is_file():
+        raise HTTPException(404, f"{result.ref} has no travel-time matrix")
+    zones = city.data / "zones" / "zones.parquet"
+    origin = query(
+        "SELECT zone_idx FROM read_parquet($zones) WHERE h3_cell = $zone",
+        {"zones": str(zones), "zone": zone},
+    )
+    if origin.is_empty():
+        raise HTTPException(404, f"no zone {zone!r}")
+    # The percentile picks a column, never a value spliced in from the request.
+    column = f"p{int(p)}_s"
+    table = query(
+        f"""
+        SELECT z.h3_cell, m.{column} AS secs
+        FROM read_parquet($matrix) m JOIN read_parquet($zones) z ON z.zone_idx = m.dest_zone
+        WHERE m.origin_zone = $origin AND m.{column} IS NOT NULL
+        ORDER BY m.{column}, z.zone_idx
+        """,
+        {
+            "matrix": str(result.tt_matrix / "*.parquet"),
+            "zones": str(zones),
+            "origin": origin["zone_idx"][0],
+        },
+    )
+    return Reach(
+        fields={
+            "minutes": field(
+                SIM,
+                f"Door-to-door time by transit and walking, p{p} over the AM window's departures.",
+                "minutes",
+            ),
+            "percentile": field(ASSUMED, "Percentile over departure times.", "%"),
+        },
+        zone=zone,
+        percentile=p,
+        h3_cell=table["h3_cell"].to_list(),
+        minutes=(table["secs"] / 60).round(1).to_list(),
     )
 
 
@@ -605,6 +665,17 @@ def get_accessibility(
     threshold_min: ThresholdQuery = None,
 ) -> Accessibility:
     return accessibility(city, resolve(city, result), percentile, threshold_min)
+
+
+@router.get("/reach", response_model=Reach)
+def get_reach(
+    city: CityDep,
+    result: str,
+    zone: Annotated[str, Query(description="The origin zone's H3 cell.")],
+    percentile: PercentileQuery = None,
+) -> Reach:
+    """Destinations reached from one zone, within the travel-time matrix's 120 min limit."""
+    return reach(city, resolve(city, result), zone, percentile)
 
 
 @router.get("/crowding", response_model=Crowding)
