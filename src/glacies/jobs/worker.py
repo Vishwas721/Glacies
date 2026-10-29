@@ -29,6 +29,10 @@ from glacies.jobs.state import STAGES, Progress, Simulation, Status, Store, now
 QUEUE = "glacies"
 POLL_S = 0.5  # how often a running job checks for a cancel request
 LOG_NAME = "log.txt"
+INTERRUPTED = (
+    "interrupted: the worker stopped while this ran (for example, the computer ran low on "
+    "memory); start the simulation again"
+)
 log = logging.getLogger(__name__)
 
 
@@ -157,8 +161,24 @@ def _tail(path: Path, lines: int = 20) -> str:
     return "\n".join(text.splitlines()[-lines:])
 
 
+def interrupt_orphans(store: Store) -> list[str]:
+    """Fail the simulations a stopped worker left as running; their ids.
+
+    A worker killed mid-run (out of memory, a closed window) never writes a final status, so
+    the record would say "running" forever. Only one worker runs (see the module docstring),
+    so when one starts, nothing can still be running.
+    """
+    orphans = [sim for sim in store.list() if sim.status is Status.RUNNING]
+    for sim in orphans:
+        sim.status, sim.finished_at, sim.error = Status.FAILED, now(), INTERRUPTED
+        store.save(sim)
+    return [sim.id for sim in orphans]
+
+
 def serve(settings: Settings, *, burst: bool = False) -> None:
     """Run the worker until stopped (or, with ``burst``, until the queue is empty)."""
     redis = Redis.from_url(settings.redis_url)
     redis.ping()
+    for sim_id in interrupt_orphans(Store(redis)):
+        log.warning("%s was left running by a stopped worker; marked failed", sim_id)
     _Worker([Queue(QUEUE, connection=redis)], connection=redis).work(burst=burst)

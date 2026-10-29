@@ -11,7 +11,7 @@ import pytest
 from fakeredis import FakeStrictRedis
 
 from glacies.jobs.state import Simulation, Status, Store, now
-from glacies.jobs.worker import execute
+from glacies.jobs.worker import INTERRUPTED, execute, interrupt_orphans
 
 
 @pytest.fixture
@@ -171,3 +171,27 @@ def test_store_lists_newest_first_and_by_city(store: Store) -> None:
     assert [s.id for s in store.list()] == ["s2", "s1", "s0"]
     assert [s.id for s in store.list("a")] == ["s2", "s0"]
     assert store.get("missing") is None
+
+
+def test_runs_left_by_a_stopped_worker_are_marked_interrupted(store: Store, tmp_path: Path) -> None:
+    running = simulation(store, tmp_path)
+    running.status, running.started_at = Status.RUNNING, now()
+    store.save(running)
+    queued = running.model_copy(update={"id": "sim_2", "status": Status.QUEUED})
+    done = running.model_copy(update={"id": "sim_3", "status": Status.COMPLETED})
+    store.create(queued)
+    store.create(done)
+
+    assert interrupt_orphans(store) == ["sim_1"]
+
+    after = store.get("sim_1")
+    assert after is not None
+    assert (after.status, after.error) == (Status.FAILED, INTERRUPTED)
+    assert after.finished_at is not None
+    # A queued run will still be picked up; a finished one keeps its result.
+    assert {sim.id: sim.status for sim in store.list()} == {
+        "sim_1": Status.FAILED,
+        "sim_2": Status.QUEUED,
+        "sim_3": Status.COMPLETED,
+    }
+    assert interrupt_orphans(store) == []
