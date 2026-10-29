@@ -6,8 +6,9 @@ import polars as pl
 import pytest
 from typer.testing import CliRunner
 
-from glacies.cities import Routing, load_city
+from glacies.cities import Routing, ScenarioDefaults, load_city
 from glacies.cli import app
+from glacies.model.transit.schema import TABLES
 from glacies.routing.network import (
     Router,
     RouterError,
@@ -17,6 +18,8 @@ from glacies.routing.network import (
     station_entries,
     walk_seconds,
 )
+from glacies.scenario.mutations import apply
+from glacies.scenario.schema import Scenario
 
 FIXTURES = Path(__file__).parent / "fixtures"
 runner = CliRunner()
@@ -46,6 +49,35 @@ def test_station_entry_applies_to_stops_of_the_configured_mode(city_dir: Path) -
 
     # The metro route M1 (trip T4) serves platform P1 and Stop D; bus stops need no time.
     assert {stop_ids[i]: int(seconds[i]) for i in seconds.nonzero()[0]} == {"P1": 240, "D": 240}
+
+
+def test_a_scenario_network_keeps_the_baseline_station_entries(
+    city_dir: Path, tmp_path: Path
+) -> None:
+    # Closing M1 leaves P1 and Stop D unserved; they are still the station they were, so walks
+    # past them keep the same cost and boarding elsewhere is unaffected (ADR 0025).
+    baseline = {n: pl.read_parquet(city_dir / "transit" / f"{n}.parquet") for n in TABLES}
+    closed = Scenario.model_validate(
+        {
+            "schema_version": 1,
+            "scenario_id": "m1_closed",
+            "title": "M1 closed",
+            "mutations": [{"type": "remove_route", "route_id": "R3"}],
+        }
+    )
+    scenario_dir = tmp_path / "scenario_transit"
+    scenario_dir.mkdir()
+    for name, frame in apply(baseline, closed, ScenarioDefaults()).tables.items():
+        frame.write_parquet(scenario_dir / f"{name}.parquet")
+    routing = Routing(station_entry_s={"metro": 240})
+
+    on_baseline = load_router(city_dir, routing, "EPSG:32643")
+    on_scenario = load_router(city_dir, routing, "EPSG:32643", transit_dir=scenario_dir)
+
+    assert on_scenario.timetable.entry_times().tolist() == (
+        on_baseline.timetable.entry_times().tolist()
+    )
+    assert sorted(on_scenario.timetable.entry_times().tolist())[-2:] == [240, 240]
 
 
 def test_platforms_share_their_parent_station(city_dir: Path) -> None:

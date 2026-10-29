@@ -233,6 +233,9 @@ def load_router(
     """Build the router from ``data/processed/<city>``.
 
     ``transit_dir`` swaps in another timetable (a scenario network) over the same walk network.
+    Station entry times still come from the baseline: they belong to the place (the metro
+    station's gates and stairs), so a scenario that closes a line or adds one cannot change
+    them for the journeys it leaves alone (ADR 0025).
     """
     transit, walk_dir = transit_dir or city_dir / "transit", city_dir / "walk"
     for needed in (transit / "stop_times.parquet", walk_dir / "edges.parquet"):
@@ -244,7 +247,8 @@ def load_router(
     walk = load_walk_graph(walk_dir)
     pair_from, pair_to, metres = walk.stop_to_stop(routing.max_transfer_walk_m)
     footpaths = (pair_from, pair_to, walk_seconds(metres, routing.walking_speed_m_s))
-    timetable = _timetable(transit, footpaths, station_entries(transit, routing.station_entry_s))
+    entries = station_entries(city_dir / "transit", routing.station_entry_s)
+    timetable = _timetable(transit, footpaths, entries)
 
     # Points attach to the nearest node of the main walk component; OSM nodes are dense
     # (tens of metres apart), so this costs a few metres at most.
