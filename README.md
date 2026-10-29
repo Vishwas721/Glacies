@@ -72,6 +72,11 @@ uv run glacies worker                           # runs simulations queued from t
 (cd web && pnpm dev)                             # http://localhost:5173 (VITE_BASEMAP=blank: no tiles)
 ```
 
+On Windows, `scripts\start-glacies.bat` (double-click it) does the last three lines and the
+Docker step: it shows the battery and free memory, opens the API, worker and web app in their own
+windows and opens the Easy view. `start-glacies browse` leaves out the worker (less memory, for
+looking at finished results); `start-glacies stop` closes the windows.
+
 The demonstration is scripted in [docs/demo.md](docs/demo.md).
 
 ### On a machine with only Docker

@@ -18,6 +18,8 @@ uv run glacies worker                 # runs simulations
 (cd web && pnpm dev)                  # http://localhost:5173
 ```
 
+On Windows, `scripts\start-glacies.bat` does all four and opens the Easy view.
+
 or, on a machine with only Docker and the built `data/`:
 `docker compose --profile app up -d --build`, then http://localhost:8000 (the same demo run took
 190 s there).
