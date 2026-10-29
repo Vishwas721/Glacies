@@ -104,7 +104,7 @@ pub struct Timetable {
     stop_routes: Vec<(RouteIdx, u32)>,
     footpaths_start: Vec<u32>,
     footpaths: Vec<Footpath>,
-    /// Per stop: seconds to enter it on foot from outside its station, and the station.
+    /// Per stop: seconds to enter it from outside its station before boarding, and the station.
     entry: Vec<StationEntry>,
 }
 
@@ -212,9 +212,9 @@ impl Timetable {
         &self.footpaths[self.footpaths_start[s] as usize..self.footpaths_start[s + 1] as usize]
     }
 
-    /// Seconds to enter `stop` on foot from the origin or from outside its station (e.g. a
-    /// metro station's entrance, security check and stairs); 0 unless set with
-    /// [`TimetableBuilder::set_station_entry`].
+    /// Seconds to enter `stop` from the origin or from outside its station before boarding
+    /// (e.g. a metro station's entrance, security check and stairs); 0 unless set with
+    /// [`TimetableBuilder::set_station_entry`]. Arriving on foot without boarding is free.
     ///
     /// # Panics
     /// If `stop` is out of range.
@@ -357,9 +357,10 @@ impl TimetableBuilder {
         Ok(())
     }
 
-    /// Make `stop` part of `station` (any id shared by its platforms) and charge `seconds`
-    /// whenever it is reached on foot from the origin or from a stop outside that station.
-    /// Changing vehicles within the station is free. A later call replaces the setting.
+    /// Make `stop` part of `station` (any id shared by its platforms) and charge `seconds` to
+    /// board there after walking in from the origin or from a stop outside that station.
+    /// Walking there without boarding, and changing vehicles within the station, are free. A
+    /// later call replaces the setting.
     ///
     /// # Errors
     /// If the stop is unknown.

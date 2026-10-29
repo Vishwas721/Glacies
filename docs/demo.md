@@ -97,11 +97,13 @@ origins recomputed, zone walks rebuilt for the new code), all **Simulated**:
 |---|---:|---:|---:|
 | Trips in the timetable | 58,258 | 58,523 | +265 |
 | Travel time per transit trip | 77.40 min | 77.39 min | −0.006 min |
-| Waiting per transit trip | 13.698 min | 13.700 min | +0.002 min |
-| Transfers per transit trip | 1.3634 | 1.3640 | +0.0007 |
-| Estimated jobs within 45 min (p50, population-weighted) | 2.7399 % | 2.7409 % | +0.0010 pp |
-| Peak passenger-km above design capacity | 58.99 % | 58.92 % | −0.07 pp |
-| Metro gate entries | 219,565 | 219,506 | −60 |
+| Waiting per transit trip | 13.696 min | 13.698 min | +0.002 min |
+| Transfers per transit trip | 1.3630 | 1.3637 | +0.0007 |
+| Estimated jobs within 45 min (p50, population-weighted) | 2.7400 % | 2.7410 % | +0.0010 pp |
+| Peak passenger-km above design capacity | 59.00 % | 58.93 % | −0.07 pp |
+| Metro gate entries | 219,530 | 219,471 | −59 |
+
+(Run of 2026-10-29, after ADR 0025: station entry is paid to board.)
 
 City-wide the package barely moves the averages: three routes out of 4,371. The story is local,
 which is what steps 6 and 7 show. Waiting rises a little because the 304-K riders wait longer for

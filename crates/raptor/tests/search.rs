@@ -179,10 +179,11 @@ fn toy4(seconds: u32) -> Timetable {
 #[test]
 fn station_entry_delays_the_first_boarding() {
     // Reaching A at 08:00 with a 4-minute station entry: on the platform at 08:04, so T1
-    // (08:02) is missed and T2 (08:06) is taken.
+    // (08:02) is missed and T2 (08:06) is taken. A itself is reached at 08:00: entry is paid
+    // to board, not to arrive.
     assert_eq!(earliest(&toy4(0), A, "08:00", C), Some(t("08:12")));
     assert_eq!(earliest(&toy4(240), A, "08:00", C), Some(t("08:16")));
-    assert_eq!(earliest(&toy4(240), A, "08:00", A), Some(t("08:04")));
+    assert_eq!(earliest(&toy4(240), A, "08:00", A), Some(t("08:00")));
 }
 
 /// T1 A 08:00 -> B 08:10; footpath B -> X (120 s); T2 X 08:15 -> C 08:25. X is stop 3.
@@ -206,6 +207,23 @@ fn station_entry_applies_when_walking_in_from_outside() {
 
     assert_eq!(earliest(&caught, A, "08:00", C), Some(t("08:25")));
     assert_eq!(earliest(&missed, A, "08:00", C), None);
+}
+
+#[test]
+fn walking_past_a_station_costs_no_entry() {
+    // X is a platform with 10 minutes of entry. Off T1 at B 08:10, the walk reaches X at 08:12,
+    // where a journey can end; boarding T2 there would need 08:22, so C is out of reach.
+    let x = StopIdx(3);
+    let tt = walk_in(|b| b.set_station_entry(x, 7, 600).unwrap());
+
+    let profile = search(&tt, &PARAMS, &from(A), t("08:00"), &[]);
+    assert_eq!(profile.earliest_arrival(x), Some(t("08:12")));
+    assert_eq!(profile.earliest_arrival(C), None);
+
+    // The same from the origin: walking 2 minutes to X arrives at 08:02.
+    let walked = [Access { stop: x, duration: 120, board_only: false }];
+    let profile = search(&tt, &PARAMS, &walked, t("08:00"), &[]);
+    assert_eq!(profile.earliest_arrival(x), Some(t("08:02")));
 }
 
 #[test]

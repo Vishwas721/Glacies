@@ -88,12 +88,18 @@ pub(crate) fn range_search_each(
         // access to it is ignored (so `best` always comes from some round's label).
         for o in origins.iter().filter(|o| !o.board_only) {
             let s = o.stop.0 as usize;
-            let arrival =
-                departure.saturating_add(o.duration.saturating_add(tt.entry_time(o.stop)));
-            if arrival < rounds[0].walk[s] {
-                rounds[0].walk[s] = arrival;
-                rounds[0].walk_label[s] = Label::Access { duration: o.duration, board_only: false };
-                state.reached(s, arrival);
+            let label = Label::Access { duration: o.duration, board_only: false };
+            let arrival = departure.saturating_add(o.duration);
+            if arrival < rounds[0].foot[s] {
+                rounds[0].foot[s] = arrival;
+                rounds[0].foot_label[s] = label;
+                state.arrived(s, arrival);
+            }
+            let ready = arrival.saturating_add(tt.entry_time(o.stop));
+            if ready < rounds[0].walk[s] {
+                rounds[0].walk[s] = ready;
+                rounds[0].walk_label[s] = label;
+                state.marked[s] = true;
             }
         }
         for o in origins.iter().filter(|o| o.board_only) {

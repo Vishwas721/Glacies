@@ -294,8 +294,8 @@ struct Timetable {
 impl Timetable {
     /// Trips are given in CSR form: trip `i` visits `stops[trip_starts[i]:trip_starts[i+1]]`.
     /// `entry_stops`/`entry_stations`/`entry_seconds` make stops platforms of a station and set
-    /// the time to walk onto them from outside it (e.g. metro security); changes within a
-    /// station are free. Other stops need no entry time.
+    /// the time to board there after walking in from outside it (e.g. metro security); walking
+    /// past and changes within a station are free. Other stops need no entry time.
     #[staticmethod]
     #[pyo3(signature = (
         stop_count, trip_ids, trip_starts, stops, arrivals, departures,

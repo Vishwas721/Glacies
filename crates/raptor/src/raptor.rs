@@ -1,19 +1,24 @@
 //! Round-based search (Delling, Pajor, Werneck 2012, §3).
 //!
-//! Round `k` finds the earliest arrivals using at most `k` vehicles. Two arrival labels are kept
-//! per stop and round, because the minimum transfer time applies only after riding:
+//! Round `k` finds the earliest arrivals using at most `k` vehicles. Three arrival labels are
+//! kept per stop and round, because the minimum transfer time applies only after riding and
+//! station entry only before boarding:
 //!
 //! * `ride` — reached by alighting from a vehicle; boarding again needs `min_transfer_time`.
-//! * `walk` — reached on foot (access walk or a footpath); boarding needs no extra time.
+//! * `walk` — ready to board after arriving on foot (access walk or a footpath), station entry
+//!   included; boarding needs no extra time.
+//! * `foot` — arrived on foot, without station entry: where a journey can end.
 //!
-//! Keeping only the earlier of the two would be wrong: a stop reached by vehicle at 08:10 and
-//! on foot at 08:10:30 is ready for boarding at 08:10:30, not 08:11. Footpaths are relaxed only
-//! from `ride` arrivals, so a journey never has two walking legs in a row.
+//! Keeping only the earlier of `ride` and `walk` would be wrong: a stop reached by vehicle at
+//! 08:10 and on foot at 08:10:30 is ready for boarding at 08:10:30, not 08:11. Footpaths are
+//! relaxed only from `ride` arrivals, so a journey never has two walking legs in a row.
 //!
-//! Station entry time (e.g. metro security and stairs) is part of walking onto a platform: it is
-//! added to access walks and to footpaths that come from outside the platform's station. Staying
-//! in the station (alighting and boarding again, or walking between its platforms) is free, and
-//! alighting never costs it. Because it only changes walking-edge weights, the search stays exact.
+//! Station entry time (e.g. metro security and stairs) is paid to board after walking in, from
+//! the origin or from a stop outside the platform's station. Walking to a platform and on to the
+//! destination costs none, so a closed line's platforms cannot become shortcuts. Staying in the
+//! station (alighting and boarding again, or walking between its platforms) is free, and
+//! alighting never costs it. `walk` and `foot` differ only by a fixed time per walking edge, so
+//! the search stays exact.
 
 use crate::{RouteIdx, StopIdx, Time, Timetable};
 
@@ -42,6 +47,8 @@ pub struct Access {
 pub(crate) enum Via {
     Ride,
     Walk,
+    /// Arrived on foot, without station entry: only where a journey ends, never to board.
+    Foot,
 }
 
 /// How a label was set; enough to walk a journey backwards.
@@ -72,6 +79,8 @@ pub(crate) struct Round {
     pub(crate) walk: Vec<Time>,
     pub(crate) ride_label: Vec<Label>,
     pub(crate) walk_label: Vec<Label>,
+    pub(crate) foot: Vec<Time>,
+    pub(crate) foot_label: Vec<Label>,
 }
 
 impl Round {
@@ -81,16 +90,14 @@ impl Round {
             walk: vec![Time::UNREACHED; stops],
             ride_label: vec![Label::None; stops],
             walk_label: vec![Label::None; stops],
+            foot: vec![Time::UNREACHED; stops],
+            foot_label: vec![Label::None; stops],
         }
     }
 
-    /// Walk arrival at stop `s`, unless it is a board-only access (not an arrival).
-    pub(crate) fn arrived_on_foot(&self, s: usize) -> Time {
-        if matches!(self.walk_label[s], Label::Access { board_only: true, .. }) {
-            Time::UNREACHED
-        } else {
-            self.walk[s]
-        }
+    /// Earliest arrival at stop `s` by vehicle or on foot (station entry is not an arrival).
+    pub(crate) fn arrival(&self, s: usize) -> Time {
+        self.ride[s].min(self.foot[s])
     }
 
     /// Next round starts from this round's arrivals; labels record only new improvements.
@@ -101,6 +108,8 @@ impl Round {
             walk: self.walk.clone(),
             ride_label: vec![Label::None; stops],
             walk_label: vec![Label::None; stops],
+            foot: self.foot.clone(),
+            foot_label: vec![Label::None; stops],
         }
     }
 }
@@ -117,9 +126,7 @@ impl Profile<'_> {
     /// Earliest arrival at `stop` with any number of vehicles (up to `max_rounds`).
     #[must_use]
     pub fn earliest_arrival(&self, stop: StopIdx) -> Option<Time> {
-        let last = self.rounds.last()?;
-        let s = stop.0 as usize;
-        let best = last.ride[s].min(last.walk[s]);
+        let best = self.rounds.last()?.arrival(stop.0 as usize);
         (best != Time::UNREACHED).then_some(best)
     }
 
@@ -127,8 +134,7 @@ impl Profile<'_> {
     #[must_use]
     pub fn arrival_with(&self, vehicles: usize, stop: StopIdx) -> Option<Time> {
         let round = self.rounds.get(vehicles.min(self.rounds.len() - 1))?;
-        let s = stop.0 as usize;
-        let best = round.ride[s].min(round.walk[s]);
+        let best = round.arrival(stop.0 as usize);
         (best != Time::UNREACHED).then_some(best)
     }
 
@@ -225,8 +231,14 @@ impl<'a> Search<'a> {
         }
     }
 
+    /// `stop` is reached at `arrival` and can be boarded from then: ride on from it next round.
     pub(crate) fn reached(&mut self, stop: usize, arrival: Time) {
         self.marked[stop] = true;
+        self.arrived(stop, arrival);
+    }
+
+    /// `stop` is reached at `arrival`, so a journey can end there (boarding may need longer).
+    pub(crate) fn arrived(&mut self, stop: usize, arrival: Time) {
         self.best[stop] = self.best[stop].min(arrival);
         if self.egress_at[stop] != u32::MAX {
             self.bound = self.bound.min(arrival.saturating_add(self.egress_at[stop]));
@@ -238,16 +250,22 @@ impl<'a> Search<'a> {
         let mut first = Round::unreached(self.tt.stop_count());
         for o in origins {
             let s = o.stop.0 as usize;
-            let arrival =
-                departure.saturating_add(o.duration.saturating_add(self.tt.entry_time(o.stop)));
-            if arrival < first.walk[s] {
-                first.walk[s] = arrival;
-                first.walk_label[s] = Label::Access { duration: o.duration, board_only: false };
+            let label = Label::Access { duration: o.duration, board_only: false };
+            let arrival = departure.saturating_add(o.duration);
+            if arrival < first.foot[s] {
+                first.foot[s] = arrival;
+                first.foot_label[s] = label;
+            }
+            let ready = arrival.saturating_add(self.tt.entry_time(o.stop));
+            if ready < first.walk[s] {
+                first.walk[s] = ready;
+                first.walk_label[s] = label;
             }
         }
         for s in 0..first.walk.len() {
             if first.walk[s] != Time::UNREACHED {
-                self.reached(s, first.walk[s]);
+                self.marked[s] = true;
+                self.arrived(s, first.foot[s]);
             }
         }
         first
@@ -329,13 +347,19 @@ impl<'a> Search<'a> {
             let arrival = cur.ride[s];
             for footpath in self.tt.footpaths(StopIdx(to_u32(s))) {
                 let to = footpath.to.0 as usize;
+                let label = Label::Walk { from: StopIdx(to_u32(s)), duration: footpath.duration };
+                let walked = arrival.saturating_add(footpath.duration);
+                if walked < cur.foot[to] && walked < self.bound {
+                    cur.foot[to] = walked;
+                    cur.foot_label[to] = label;
+                    self.arrived(to, walked);
+                }
                 let entry = self.tt.entry_time_from(StopIdx(to_u32(s)), footpath.to);
-                let walked = arrival.saturating_add(footpath.duration.saturating_add(entry));
-                if walked < cur.walk[to] && walked < self.bound {
-                    cur.walk[to] = walked;
-                    cur.walk_label[to] =
-                        Label::Walk { from: StopIdx(to_u32(s)), duration: footpath.duration };
-                    self.reached(to, walked);
+                let ready = walked.saturating_add(entry);
+                if ready < cur.walk[to] && ready < self.bound {
+                    cur.walk[to] = ready;
+                    cur.walk_label[to] = label;
+                    self.marked[to] = true;
                 }
             }
         }

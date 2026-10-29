@@ -123,7 +123,7 @@ fn best_destination(
         .iter()
         .filter_map(|d| {
             let s = d.stop.0 as usize;
-            let at_stop = labels.ride[s].min(labels.walk[s]);
+            let at_stop = labels.arrival(s);
             (at_stop != Time::UNREACHED)
                 .then(|| (at_stop.saturating_add(d.duration), d.stop, d.duration))
         })
@@ -154,7 +154,7 @@ pub(crate) fn rebuild(
     }
     let s = stop.0 as usize;
     let last = &rounds[round];
-    let mut via = if last.ride[s] <= last.walk[s] { Via::Ride } else { Via::Walk };
+    let mut via = if last.ride[s] <= last.foot[s] { Via::Ride } else { Via::Foot };
     let (mut round, mut stop) = (round, stop);
     loop {
         let (r, label) = label(rounds, round, stop, via);
@@ -201,6 +201,7 @@ fn label(rounds: &[Round], round: usize, stop: StopIdx, via: Via) -> (usize, Lab
         let label = match via {
             Via::Ride => rounds[r].ride_label[s],
             Via::Walk => rounds[r].walk_label[s],
+            Via::Foot => rounds[r].foot_label[s],
         };
         if label != Label::None {
             return (r, label);
