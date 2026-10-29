@@ -51,7 +51,7 @@ pub(crate) fn choose(
     let arrival = best[s];
     let round = rounds
         .iter()
-        .position(|r| r.ride[s].min(r.arrived_on_foot(s)) == arrival)
+        .position(|r| r.arrival(s) == arrival)
         .expect("the best arrival comes from some round");
     Choice::Transit(rebuild(
         tt,

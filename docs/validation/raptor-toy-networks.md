@@ -61,11 +61,16 @@ A ──T1/T2──→ C        entering station A on foot takes 4 min (240 s)
 Query A → C departing 08:00: without entry time **arrive 08:12** (T1). With 240 s the
 passenger is on the platform at 08:04, misses T1 and **arrives 08:16** (T2).
 
-The entry time is paid when walking onto a platform from the origin or from outside its
+The entry time is paid to board after walking in from the origin or from outside the
 station: T1 A 08:00 → B 08:10, walk B → X (120 s), T2 X 08:15 → C 08:25. With 180 s entry at
 X the passenger is on the platform at 08:15 and catches T2; with 181 s it is missed. If B and X
 are platforms of the same station, the change is free (on X's platform at 08:12). Alighting,
 or boarding again at the stop just alighted at, never costs the entry time.
+
+Arriving is not boarding (ADR 0025): with 600 s entry at X, the walk still reaches X at 08:12,
+where a journey can end, but T2 at 08:15 is out of reach. A stop is "reached" when someone can
+stand there, not when they could board; otherwise closing a line would lift its stations' entry
+time and make walks past them faster.
 
 ## Toy 5 — zone travel-time percentiles over a window
 

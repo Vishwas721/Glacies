@@ -6,8 +6,8 @@
 //! feasible against the timetable.
 
 use glacies_raptor::{
-    plan, search, Access, Journey, Leg, Params, StopIdx, Time, Timetable, TimetableBuilder,
-    TripInput,
+    plan, range_search, search, Access, Journey, Leg, Params, StopIdx, Time, Timetable,
+    TimetableBuilder, TripInput,
 };
 
 /// Small deterministic PRNG (`SplitMix64`); no external crates needed.
@@ -110,12 +110,15 @@ fn timetable(network: &Network) -> Timetable {
 
 /// Connection Scan earliest arrival with the same rules as the router: the minimum transfer
 /// time applies after riding, staying seated needs none, one footpath follows each ride, and
-/// walking onto a stop from the origin or from outside its station adds its entry time.
+/// boarding after walking in from the origin or from outside a station adds its entry time.
 fn oracle(network: &Network, origins: &[Access], departure: Time, mtt: u32) -> Vec<Time> {
     let n = network.stops as usize;
+    // `walk`: ready to board on foot (entry paid); `foot`: arrived on foot.
     let (mut ride, mut walk) = (vec![Time::UNREACHED; n], vec![Time::UNREACHED; n]);
+    let mut foot = vec![Time::UNREACHED; n];
     for o in origins {
         let s = o.stop.0 as usize;
+        foot[s] = foot[s].min(departure.saturating_add(o.duration));
         walk[s] = walk[s].min(departure.saturating_add(o.duration + network.entry[s].1));
     }
     let mut connections: Vec<(Time, u32, usize, usize, usize, Time)> = Vec::new();
@@ -141,35 +144,44 @@ fn oracle(network: &Network, origins: &[Access], departure: Time, mtt: u32) -> V
                 if f.0 as usize == to {
                     let t = target.0 as usize;
                     let entry = network.entry_from(StopIdx(u32::try_from(to).unwrap()), target);
+                    foot[t] = foot[t].min(arr.saturating_add(duration));
                     walk[t] = walk[t].min(arr.saturating_add(duration + entry));
                 }
             }
         }
     }
-    ride.iter().zip(&walk).map(|(r, w)| *r.min(w)).collect()
+    ride.iter().zip(&foot).map(|(r, f)| *r.min(f)).collect()
 }
 
 /// Replay a journey against the timetable and the transfer rules.
 fn check_feasible(network: &Network, journey: &Journey, mtt: u32) {
     let mut clock = journey.departure;
     let mut after_ride = false;
-    // A zero-second access walk has no leg, but its stop's entry time is still paid.
-    if let Some(Leg::Ride { from, .. } | Leg::Egress { from, .. }) = journey.legs.first() {
-        clock = clock.saturating_add(network.entry[from.0 as usize].1);
-    }
+    // Entry time still to pay before boarding: walking in costs it only if a ride follows. A
+    // zero-second access walk has no leg, but boarding at its stop still pays.
+    let mut entry = match journey.legs.first() {
+        Some(Leg::Ride { from, .. }) => network.entry[from.0 as usize].1,
+        _ => 0,
+    };
     for leg in &journey.legs {
         match *leg {
             Leg::Access { to, duration } => {
-                clock = clock.saturating_add(duration + network.entry[to.0 as usize].1);
+                clock = clock.saturating_add(duration);
+                entry = network.entry[to.0 as usize].1;
             }
             Leg::Egress { duration, .. } => clock = clock.saturating_add(duration),
             Leg::Transfer { from, to, duration } => {
                 assert!(after_ride, "a transfer walk must follow a ride: {journey:#?}");
-                clock = clock.saturating_add(duration + network.entry_from(from, to));
+                clock = clock.saturating_add(duration);
+                entry = network.entry_from(from, to);
                 after_ride = false;
             }
             Leg::Ride { trip_id, from, to, board, alight, .. } => {
-                let ready = if after_ride { clock.saturating_add(mtt) } else { clock };
+                let ready = if after_ride {
+                    clock.saturating_add(mtt)
+                } else {
+                    clock.saturating_add(entry)
+                };
                 assert!(board >= ready, "boarded before ready: {journey:#?}");
                 let trip = network.trips.iter().find(|t| t.trip_id == trip_id).unwrap();
                 let calls = |stop, times: &[Time], at: Time| {
@@ -236,6 +248,47 @@ fn raptor_matches_connection_scan_on_random_networks() {
         }
     }
     assert!(compared > 2_000);
+}
+
+/// Removing trips can only make arrivals later or impossible, never earlier: a scenario that
+/// only takes service away must not speed anyone up (the comparison's direction check).
+#[test]
+fn removing_trips_never_makes_arrivals_earlier() {
+    let mut rng = Rng(20_261_029);
+    for case in 0..1_000 {
+        let network = random_network(&mut rng);
+        let full = timetable(&network);
+        let gone: Vec<u32> =
+            network.trips.iter().map(|t| t.trip_id).filter(|_| rng.below(3) == 0).collect();
+        let fewer = full.retain_trips(|id| !gone.contains(&id));
+        let params = Params { max_rounds: rng.between(1, 6) as usize, min_transfer_time: 60 };
+        let origins = [Access {
+            stop: StopIdx(rng.below(network.stops)),
+            duration: rng.below(300),
+            board_only: false,
+        }];
+        let start = rng.between(7 * 3600, 8 * 3600);
+        let departures: Vec<Time> = (0..4).map(|i| Time(start + i * 300)).collect();
+
+        let (a, b) = (
+            search(&full, &params, &origins, departures[0], &[]),
+            search(&fewer, &params, &origins, departures[0], &[]),
+        );
+        let (ra, rb) = (
+            range_search(&full, &params, &origins, &departures),
+            range_search(&fewer, &params, &origins, &departures),
+        );
+        for s in (0..network.stops).map(StopIdx) {
+            let before = a.earliest_arrival(s).unwrap_or(Time::UNREACHED);
+            let after = b.earliest_arrival(s).unwrap_or(Time::UNREACHED);
+            assert!(after >= before, "case {case}, stop {}: {after:?} < {before:?}", s.0);
+            for i in 0..departures.len() {
+                let before = ra.arrival(i, s).unwrap_or(Time::UNREACHED);
+                let after = rb.arrival(i, s).unwrap_or(Time::UNREACHED);
+                assert!(after >= before, "case {case}, departure {i}, stop {}", s.0);
+            }
+        }
+    }
 }
 
 #[test]
