@@ -9,6 +9,22 @@ are copied from `data/processed/bengaluru/comparisons/baseline__vs__<scenario>/c
 Headline: population-weighted mean share of the city's estimated jobs reachable within 45 min
 at the median (p50) departure in the 07:30-09:30 window. Baseline **2.7399 %**.
 
+**Rebuilt 2026-10-29 (ADR 0025).** Station entry is now paid to board, not to walk past a
+platform, and scenarios keep the baseline's entry times. The baseline headline is 2.7400 %. The
+tables below are the 2026-10-08 runs. Rerun on the fixed engine:
+
+| Scenario | Headline | Zones up / down | Metro gate entries | Direction check |
+|---|---|---|---|---|
+| Baseline | 2.7400 % | | 219,530 | |
+| East package (`bengaluru_demo_east_corridor`) | 2.7410 % | 22 / 15 | 219,471 | not checked (adds and removes) |
+| 375-D twice as often | 2.7417 % | 44 / 13 | 219,342 | not checked (adds and removes) |
+| 285-M taken away (Easy view) | 2.7362 % | 0 / 55 | 219,441 | passed |
+| Purple Line closed | 2.6175 % | 0 / 188 | 111,452 | passed |
+
+The Purple Line closure failed the direction check before the fix: 687 zone pairs got faster,
+by 17 s in the median, because its platforms lost their entry time. After the fix, no pair is
+faster and none is newly reached, in either removal scenario.
+
 ## Summary
 
 | Scenario | Change | Headline | Zones up / down (45 min, p50) | Direction check |

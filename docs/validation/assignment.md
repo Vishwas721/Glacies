@@ -185,6 +185,10 @@ rerun after the direction-check fix took 756 s (laptop slowdown) with the same n
 | crowding, peak passenger-km above design capacity | 58.99 % | 58.91 % | −0.07 pp |
 | peak segments above design capacity | 23,093 | 23,069 | −24 |
 | metro gate entries | 219,565 | 219,494 | −71 |
+
+After ADR 0025 (2026-10-29: station entry paid to board) the rebuilt baseline has 219,530 metro
+gate entries, 59.00 % of peak passenger-km above design capacity and 23,105 segments above it;
+the station fit is unchanged (training level 1.26, held-out 0.98, held-out R² 0.31).
 | zones gaining access (45 min, p50) | | 19 | |
 
 500-D gains 3,040 boardings (4,901 → 7,941), mostly from the parallel ORR services: 500-A −452,
