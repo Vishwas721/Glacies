@@ -19,6 +19,8 @@ def test_the_built_web_app_is_served_at_the_root(tmp_path: Path) -> None:
     client = TestClient(create_app(Settings(web_dist=tmp_path)))
 
     assert "<title>Glacies</title>" in client.get("/").text
+    assert "<title>Glacies</title>" in client.get("/easy").text  # a page of the app, reloaded
+    assert "<title>Glacies</title>" in client.get("/pro?mode=compare").text
     assert client.get("/api/health").json()["status"] == "ok"
 
 
