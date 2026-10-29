@@ -88,7 +88,9 @@ Column labels:
   45 min, but the median resident reaches 0.4 % and 59.6 % of residents reach less than 1 %.
 - **Coverage drives the low end.** 79.9 % of estimated jobs lie in zones whose point has a stop
   within an 800 m walk, but 31.2 % of residents live in zones without one (see
-  `travel-time-matrix.md`). Those residents reach only what is within a 2 km walk.
+  `travel-time-matrix.md`). Those residents reach only what is within a 2 km walk. For 143
+  of those zones (272,887 residents) a stop is under 400 m away in a straight line, but the
+  zone's single point is cut off from it ("Cut-off zones" in `travel-time-matrix.md`).
 - **Reliability**: from a good day (p25) to a bad one (p75), the 45-min headline moves from
   3.4 % to 2.2 %.
 - **Edge zones** (2,470 within 5 km of the bbox, 8.1 % of residents) barely change the headline
