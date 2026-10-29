@@ -56,7 +56,7 @@ cargo test --workspace
 # Web (from web/)
 pnpm install
 pnpm lint && pnpm typecheck && pnpm test && pnpm build
-pnpm dev                      # :5173, proxies /api to :8000; VITE_BASEMAP=blank for no tiles
+pnpm dev                      # :5173 (/ landing, /easy, /pro), proxies /api to :8000; VITE_BASEMAP=blank
 
 # Data archive (see data/README.md)
 uv run glacies ingest list | register | fetch | verify
@@ -93,7 +93,7 @@ uv run uvicorn glacies.api.app:app --reload   # API on :8000, docs at /docs (ADR
 #   /api/cities[/{city}], /api/cities/{city}/{routes[/{idx}],stops,network,zones}
 #   POST /api/cities/{city}/route; /api/cities/{city}/scenarios (CRUD, user files in data/scenarios)
 #   /api/cities/{city}/results (finished runs on disk);
-#   /api/cities/{city}/results/{baseline|key}/{metrics,accessibility,crowding,flows,changes,checks}
+#   /api/cities/{city}/results/{baseline|key}/{metrics,accessibility,reach,crowding,flows,changes,checks}
 #   POST /api/simulations, GET /api/simulations[/{id}[/metrics|…|changes|checks]],
 #   POST /api/simulations/{id}/cancel (ADR 0021)
 uv run glacies worker                         # runs queued simulations, one at a time
