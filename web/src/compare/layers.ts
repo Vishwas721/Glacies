@@ -6,7 +6,8 @@ import { H3HexagonLayer } from "@deck.gl/geo-layers";
 import { LineLayer, PathLayer } from "@deck.gl/layers";
 
 import type { ChangeKind, ChangedRoute, LonLat, Pairs } from "../api/types";
-import { CHANGED, NEW, type RGB, viridis } from "../map/colours";
+import { INK, type RGB, viridis } from "../map/colours";
+import type { Theme } from "../ui/theme";
 import { type ClipBox, clipped, type ZoneValue } from "../map/layers";
 
 // The same classes and colours as the comparison maps of `glacies scenario compare`
@@ -44,10 +45,16 @@ export function deltaZoneLayer(zones: ZoneValue[]): Layer {
 }
 
 // Removed in the loss red, added in the interface's "new" ice, modified in its "changed" amber.
-export const KIND_COLOUR: Record<ChangeKind, RGB> = {
-  removed: [227, 73, 72],
-  added: NEW,
-  modified: CHANGED,
+export function kindColour(kind: ChangeKind, theme: Theme = "dark"): RGB {
+  const ink = INK[theme];
+  return kind === "removed" ? ink.removed : kind === "added" ? ink.fresh : ink.changed;
+}
+
+/** The same colours for swatches in the page, from the theme's CSS tokens. */
+export const KIND_CSS: Record<ChangeKind, string> = {
+  removed: "var(--loss)",
+  added: "var(--ice)",
+  modified: "var(--amber)",
 };
 
 export interface ChangeLine {
@@ -58,7 +65,7 @@ export interface ChangeLine {
 }
 
 /** Removed routes dashed, added routes solid and wide, modified routes solid (PRD §41). */
-export function changesLayer(routes: ChangedRoute[], clip?: ClipBox): Layer {
+export function changesLayer(routes: ChangedRoute[], clip?: ClipBox, theme?: Theme): Layer {
   const data: ChangeLine[] = routes.flatMap((r) =>
     r.coordinates.map((path) => ({
       mutationIdx: r.mutation_idx,
@@ -67,20 +74,26 @@ export function changesLayer(routes: ChangedRoute[], clip?: ClipBox): Layer {
       path,
     })),
   );
-  return changeLinesLayer("changes", data, clip);
+  return changeLinesLayer("changes", data, clip, theme);
 }
 
 // Shared, like the clip extension: a new instance per render would rebuild the shaders.
 const DASH = new PathStyleExtension({ dash: true });
 
 /** The same drawing for any change lines, e.g. a draft scenario not yet simulated. */
-export function changeLinesLayer(id: string, data: ChangeLine[], clip?: ClipBox): Layer {
+export function changeLinesLayer(
+  id: string,
+  data: ChangeLine[],
+  clip?: ClipBox,
+  theme: Theme = "dark",
+): Layer {
   const clip_ = clipped(clip);
   return new PathLayer<ChangeLine, PathStyleExtensionProps<ChangeLine>>({
     id,
     data,
     getPath: (d) => d.path,
-    getColor: (d) => [...KIND_COLOUR[d.kind], 240],
+    getColor: (d) => [...kindColour(d.kind, theme), 240],
+    updateTriggers: { getColor: theme },
     getWidth: (d) => (d.kind === "added" ? 7 : 5),
     widthUnits: "pixels",
     getDashArray: (d) => (d.kind === "removed" ? [3, 2] : [0, 0]),

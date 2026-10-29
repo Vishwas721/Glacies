@@ -4,11 +4,10 @@
 
 import { useChanges, useMetrics } from "../api/queries";
 import type { Changes, MetricRow } from "../api/types";
-import { toCss } from "../map/colours";
 import { NatureBadge, Quantity } from "../ui/Quantity";
 import { format, formatDelta, formatPair } from "../ui/format";
 import { DEFINITIONS, reading } from "./ledger";
-import { KIND_COLOUR } from "./layers";
+import { KIND_CSS } from "./layers";
 
 // The PRD §39 panel leads with these; the rest sit under "All metrics".
 const HEADLINE = [
@@ -77,7 +76,7 @@ function ChangesList({ changes }: { changes: Changes }) {
       <ul className="routes" aria-label="Routes changed">
         {changes.routes.map((r) => (
           <li key={r.mutation_idx} className="route">
-            <span className="swatch" style={{ background: toCss(KIND_COLOUR[r.kind]) }} />{" "}
+            <span className="swatch" style={{ background: KIND_CSS[r.kind] }} />{" "}
             <strong>{r.name ?? r.route_id}</strong> {r.kind}
             {r.trips_added > 0 && (
               <>

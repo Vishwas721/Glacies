@@ -89,7 +89,7 @@
 }
 
 .run-completed {
-  color: #6fd3a0;
+  color: var(--ok);
 }
 
 .run-failed {

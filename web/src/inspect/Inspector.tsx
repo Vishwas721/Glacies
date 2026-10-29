@@ -11,8 +11,7 @@ import type {
   SegmentFeature,
   StopFeature,
 } from "../api/types";
-import { KIND_COLOUR } from "../compare/layers";
-import { toCss } from "../map/colours";
+import { KIND_CSS } from "../compare/layers";
 import { Field, NatureBadge, Quantity } from "../ui/Quantity";
 import { formatDelta, formatPair } from "../ui/format";
 
@@ -248,7 +247,7 @@ export function ChangeCard({
     <Card
       eyebrow={
         <>
-          <span className="swatch" style={{ background: toCss(KIND_COLOUR[change.kind]) }} /> route{" "}
+          <span className="swatch" style={{ background: KIND_CSS[change.kind] }} /> route{" "}
           {change.kind}
         </>
       }
