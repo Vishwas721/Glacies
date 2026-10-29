@@ -674,6 +674,8 @@ def worker(
         serve(settings, burst=burst)
     except RedisConnectionError as exc:
         _fail(f"cannot reach Redis at {settings.redis_url} ({exc}); run docker compose up -d")
+    except RuntimeError as exc:  # Redis gone for good, or a loop that keeps failing
+        _fail(f"worker stopped: {exc}")
 
 
 @app.command()

@@ -9,9 +9,18 @@ from pathlib import Path
 import psutil
 import pytest
 from fakeredis import FakeStrictRedis
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from glacies.jobs.state import Simulation, Status, Store, now
-from glacies.jobs.worker import INTERRUPTED, execute, interrupt_orphans
+from glacies.jobs.worker import (
+    INTERRUPTED,
+    QUICK_END_S,
+    QUICK_ENDS,
+    execute,
+    interrupt_orphans,
+    supervise,
+    wait_for_redis,
+)
 
 
 @pytest.fixture
@@ -195,3 +204,67 @@ def test_runs_left_by_a_stopped_worker_are_marked_interrupted(store: Store, tmp_
         "sim_3": Status.COMPLETED,
     }
     assert interrupt_orphans(store) == []
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_the_worker_starts_again_after_losing_redis() -> None:
+    clock, ends = Clock(), iter([False, False, True])  # timed out twice, then Ctrl+C
+    calls: list[str] = []
+
+    def work() -> bool:
+        calls.append("work")
+        clock.now += 3600  # ran an hour each time
+        return next(ends)
+
+    def reconnect() -> bool:
+        calls.append("reconnect")
+        return True
+
+    supervise(work, reconnect, clock)
+
+    assert calls == ["work", "reconnect", "work", "reconnect", "work"]
+
+
+def test_the_worker_gives_up_when_redis_stays_away() -> None:
+    with pytest.raises(RuntimeError, match="did not come back"):
+        supervise(lambda: False, lambda: False, Clock())
+
+
+def test_a_loop_that_keeps_ending_at_once_stops_the_worker() -> None:
+    clock, runs = Clock(), []
+
+    def work() -> bool:
+        runs.append(1)
+        clock.now += QUICK_END_S / 2
+        return False
+
+    with pytest.raises(RuntimeError, match=f"{QUICK_ENDS} times in a row"):
+        supervise(work, lambda: True, clock)
+    assert len(runs) == QUICK_ENDS
+
+
+class FlakyRedis:
+    def __init__(self, failures: int) -> None:
+        self.failures = failures
+
+    def ping(self) -> bool:
+        if self.failures:
+            self.failures -= 1
+            raise RedisTimeoutError("Timeout connecting to server")
+        return True
+
+
+def test_waiting_for_redis_backs_off_until_it_answers() -> None:
+    pauses: list[float] = []
+    assert wait_for_redis(FlakyRedis(3), 60, pauses.append)  # type: ignore[arg-type]
+    assert pauses == [1, 2, 4]
+    pauses.clear()
+    assert not wait_for_redis(FlakyRedis(100), 60, pauses.append)  # type: ignore[arg-type]
+    assert sum(pauses[:-1]) < 60 <= sum(pauses)

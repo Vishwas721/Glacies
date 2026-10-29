@@ -15,11 +15,12 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import IO
 
 from redis import Redis
+from redis.exceptions import RedisError
 from rq import Queue, SimpleWorker, get_current_job
 from rq.timeouts import TimerDeathPenalty
 
@@ -29,6 +30,9 @@ from glacies.jobs.state import STAGES, Progress, Simulation, Status, Store, now
 QUEUE = "glacies"
 POLL_S = 0.5  # how often a running job checks for a cancel request
 LOG_NAME = "log.txt"
+RECONNECT_S = 300.0  # how long the worker waits for Redis to come back before giving up
+QUICK_END_S = 60.0  # a work loop ending sooner than this after starting counts as failing fast
+QUICK_ENDS = 5  # this many in a row is a bug, not a dropped connection: stop
 INTERRUPTED = (
     "interrupted: the worker stopped while this ran (for example, the computer ran low on "
     "memory); start the simulation again"
@@ -39,6 +43,11 @@ log = logging.getLogger(__name__)
 class _Worker(SimpleWorker):
     # SimpleWorker's default timeout uses SIGALRM, which Windows lacks.
     death_penalty_class = TimerDeathPenalty
+    stopping = False
+
+    def handle_warm_shutdown_request(self) -> None:
+        self.stopping = True  # Ctrl+C: the loop's end is wanted, not a lost connection
+        super().handle_warm_shutdown_request()  # type: ignore[no-untyped-call]
 
 
 def enqueue(redis: Redis, sim: Simulation, timeout_s: int) -> None:
@@ -179,6 +188,59 @@ def serve(settings: Settings, *, burst: bool = False) -> None:
     """Run the worker until stopped (or, with ``burst``, until the queue is empty)."""
     redis = Redis.from_url(settings.redis_url)
     redis.ping()
-    for sim_id in interrupt_orphans(Store(redis)):
-        log.warning("%s was left running by a stopped worker; marked failed", sim_id)
-    _Worker([Queue(QUEUE, connection=redis)], connection=redis).work(burst=burst)
+
+    def work() -> bool:
+        for sim_id in interrupt_orphans(Store(redis)):
+            log.warning("%s was left running by a stopped worker; marked failed", sim_id)
+        worker = _Worker([Queue(QUEUE, connection=redis)], connection=redis)
+        try:
+            worker.work(burst=burst)
+        except RedisError as exc:  # raised, not returned, when Redis is down rather than slow
+            log.warning("lost Redis: %s", exc)
+            return False
+        return burst or worker.stopping
+
+    supervise(work, lambda: wait_for_redis(redis, RECONNECT_S))
+
+
+def supervise(
+    work: Callable[[], bool],
+    reconnect: Callable[[], bool],
+    clock: Callable[[], float] = time.monotonic,
+) -> None:
+    """Run ``work`` again whenever it ends without being asked to (it returns False).
+
+    RQ's work loop returns when a Redis call times out (as when the computer sleeps) and
+    ``serve`` turns a lost connection it raises into a return too; either used to end the
+    worker for good. ``reconnect``
+    waits for Redis and says whether it came back. A loop that keeps ending quickly while
+    Redis answers is a bug, not a dropped connection, and stops the worker.
+    """
+    quick_ends = 0
+    while True:
+        started = clock()
+        if work():
+            return
+        quick_ends = quick_ends + 1 if clock() - started < QUICK_END_S else 0
+        if quick_ends >= QUICK_ENDS:
+            raise RuntimeError(f"the worker loop ended {QUICK_ENDS} times in a row; see the log")
+        log.warning("the worker loop ended (lost Redis?); reconnecting")
+        if not reconnect():
+            raise RuntimeError(f"Redis did not come back within {RECONNECT_S:.0f} s")
+
+
+def wait_for_redis(
+    redis: Redis, limit_s: float, sleep: Callable[[float], None] = time.sleep
+) -> bool:
+    """Ping Redis until it answers, waiting longer each time; False after ``limit_s``."""
+    waited, pause = 0.0, 1.0
+    while True:
+        try:
+            redis.ping()
+        except RedisError:
+            if waited >= limit_s:
+                return False
+            sleep(pause)
+            waited, pause = waited + pause, min(pause * 2, 30.0)
+        else:
+            return True
