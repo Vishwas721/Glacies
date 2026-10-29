@@ -298,6 +298,14 @@ export interface ResultSummary {
   compared: boolean;
 }
 
+/** Where one zone gets to (results/{ref}/reach): destinations nearest first. */
+export interface Reach extends Labelled {
+  zone: string;
+  percentile: number;
+  h3_cell: string[];
+  minutes: number[];
+}
+
 export interface Checks extends Labelled {
   report_window: [string, string];
   station_fits: { set: string; stations: number; level_ratio: number }[];

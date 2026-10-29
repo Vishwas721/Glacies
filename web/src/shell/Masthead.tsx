@@ -1,6 +1,7 @@
 // The strip above the map: which city and timetable, and how big its network is.
 
 import type { CityDetail, FieldInfo } from "../api/types";
+import { PageLink, ThemeToggle } from "../ui/chrome";
 import { Field, Quantity } from "../ui/Quantity";
 
 export interface NetworkSize {
@@ -51,6 +52,10 @@ export function Masthead({ city, size, inspectorOpen, onInspector }: Props) {
           </div>
         </dl>
       )}
+      <nav className="masthead-pages" aria-label="Pages">
+        <PageLink to="easy">Easy view</PageLink>
+        <ThemeToggle />
+      </nav>
       <button
         type="button"
         className="masthead-inspector"

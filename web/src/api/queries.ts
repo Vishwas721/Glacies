@@ -14,6 +14,7 @@ import type {
   MetricRow,
   ResultSummary,
   Network,
+  Reach,
   RouteDetail,
   RouteList,
   Scenario,
@@ -34,8 +35,14 @@ export const useCities = () =>
     ...forever,
   });
 
+/** An empty id waits: pages ask before they know which city is configured. */
 export const useCity = (city: string) =>
-  useQuery({ queryKey: ["city", city], queryFn: () => api<CityDetail>(base(city)), ...forever });
+  useQuery({
+    queryKey: ["city", city],
+    queryFn: () => api<CityDetail>(base(city)),
+    enabled: city !== "",
+    ...forever,
+  });
 
 export const useRoutes = (city: string) =>
   useQuery({
@@ -201,6 +208,15 @@ export const useChanges = (city: string, ref: string | null) =>
     queryKey: ["changes", city, ref],
     queryFn: () => api<Changes>(result(city, ref!, "changes")),
     enabled: ref !== null,
+    ...forever,
+  });
+
+/** Destinations of one zone, for the baseline or a scenario run; null zone: nothing asked. */
+export const useReach = (city: string, ref: string | null, zone: string | null) =>
+  useQuery({
+    queryKey: ["reach", city, ref, zone],
+    queryFn: () => api<Reach>(`${result(city, ref!, "reach")}?zone=${zone}`),
+    enabled: ref !== null && zone !== null,
     ...forever,
   });
 
