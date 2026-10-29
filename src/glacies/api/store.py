@@ -20,7 +20,9 @@ T = TypeVar("T")
 
 def query(sql: str, params: dict[str, Any] | None = None) -> pl.DataFrame:
     with duckdb.connect() as con:
-        return con.execute(sql, params or {}).pl()
+        # DuckDB 2 exports frames from relations only; its stubs type them as Any.
+        frame: pl.DataFrame = con.sql(sql, params=params or {}).pl()
+        return frame
 
 
 class Memo:
