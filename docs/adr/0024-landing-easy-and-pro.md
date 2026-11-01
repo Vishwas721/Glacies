@@ -55,4 +55,5 @@ excludes an LLM-first interface; a language model could also state numbers no ru
 - The Easy view's wording (`easy/plain.ts`) names five comparison metrics; a renamed metric
   drops out of the answer until the table follows.
 - Switching theme rebuilds the map (another style's label layers), keeping the camera.
-- Removing the `map.transform` shim is a task for the next @deck.gl/mapbox upgrade.
+- Removing the `map.transform` shim is a task for the next @deck.gl/mapbox upgrade. Done
+  2026-11-01: the map uses `@deck.gl/maplibre` (MapLibre 6 supported), and the shim is gone.

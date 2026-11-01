@@ -1,4 +1,4 @@
-// MapLibre basemap with deck.gl layers drawn into it, under its labels (MapboxOverlay, interleaved,
+// MapLibre basemap with deck.gl layers drawn into it, under its labels (MapLibreOverlay, interleaved,
 // ADR 0024), and the instruments that read the map itself: controls, edge ticks, cursor position
 // and scale.
 
@@ -6,7 +6,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 import type { Layer, PickingInfo } from "@deck.gl/core";
 import type { ClipExtensionProps } from "@deck.gl/extensions";
-import { MapboxOverlay } from "@deck.gl/mapbox";
+import { MapLibreOverlay } from "@deck.gl/maplibre";
 import {
   AttributionControl,
   Map as MapLibre,
@@ -96,20 +96,6 @@ function place(
   });
 }
 
-/**
- * deck.gl 9.4 draws interleaved layers with a viewport sized from `map.transform.height`, which
- * MapLibre 6 no longer exposes (the map has no `transform`), so every frame threw. It reads only
- * the height there (and near/far planes, which MapLibre passes to the layer itself): give it the
- * canvas height. Remove when @deck.gl/mapbox supports MapLibre 6.
- */
-function exposeHeight(map: MapLibre) {
-  if ("transform" in map) return;
-  Object.defineProperty(map, "transform", {
-    configurable: true,
-    get: () => ({ height: map.getCanvas().clientHeight }),
-  });
-}
-
 // Where the camera was when the map was last torn down: switching theme rebuilds the map and
 // must not throw the viewer back to the whole city.
 let lastCamera: { center: [number, number]; zoom: number; bearing: number; pitch: number } | null =
@@ -131,7 +117,7 @@ export function MapView(props: MapViewProps) {
   }, [layers, fraction, beforeId]);
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibre | null>(null);
-  const overlay = useRef<MapboxOverlay | null>(null);
+  const overlay = useRef<MapLibreOverlay | null>(null);
   const [cursor, setCursor] = useState<{ lng: number; lat: number } | null>(null);
   const [ticks, setTicks] = useState<Ticks | null>(null);
   const [zoom, setZoom] = useState<number | null>(null);
@@ -152,8 +138,7 @@ export function MapView(props: MapViewProps) {
     });
     const credits = new AttributionControl({ compact: true, customAttribution: attribution });
     map.addControl(credits, "bottom-right");
-    exposeHeight(map);
-    const deck = new MapboxOverlay({ interleaved: true, layers: [] });
+    const deck = new MapLibreOverlay({ interleaved: true, layers: [] });
     map.addControl(deck);
     mapRef.current = map;
     overlay.current = deck;
