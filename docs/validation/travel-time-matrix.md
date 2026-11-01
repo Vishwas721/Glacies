@@ -42,6 +42,25 @@ The script writes `data/processed/<city>/reports/cut_off_zones.geoparquet` (hexa
 `cut_off_zones_links.geoparquet` (a line from each zone's point to its nearest stop) for QGIS,
 plus `cut_off_zones.csv`. Checking them against imagery tells real barriers from map gaps.
 
+**What the map shows between point and stop** (`--barriers`, OSM 2026-10-02, checked
+2026-11-01). Each zone gets the first that applies: a railway, water, a motorway or trunk road,
+or a wall or fence on the straight line (bridges and tunnels excluded); else at least 100 m of
+private roads within 150 m of the point, which the walk network leaves out; else none.
+
+| What lies between | Zones | Residents (Estimated) |
+|---|---:|---:|
+| Railway, water, motorway/trunk road or wall (alone or together) | 24 | 74,185 |
+| Private roads around the point (a gated layout, likely) | 31 | 82,294 |
+| No barrier mapped (a winding street layout, or a path missing from the map) | 88 | 116,409 |
+
+- Whitefield (Kadugodi) is a gated layout: 1,284 m of private roads lie within 150 m of its
+  point. People there do reach the station through the gate; the model cannot, because OSM
+  marks the roads private.
+- The 88 zones with nothing in between need 1,054 m on foot in the median, just over the
+  800 m limit; most are probably detours, and only imagery or a site visit can show which are
+  missing paths. These, and the gated layouts, are the cases several points per zone (or a
+  walk rule for private roads) would change.
+
 ## Run
 
 - 371 s on the development machine (24 GB RAM), of which about 183 s is computing the walks
