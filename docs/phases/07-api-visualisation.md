@@ -38,11 +38,13 @@ Phases 3–6 produce Parquet outputs and a scenario runner callable from Python.
 
 ## 5. Your hands-on tasks
 
-- [ ] Sketch the 3-panel UI (PRD §39) on paper and decide which metrics appear in the right panel.
-- [ ] Choose the colour scales: sequential for levels, diverging for deltas.
-- [ ] Rehearse the PRD §73 demo story with the three scenarios from Phase 4 and note what the UI
+- [x] Sketch the 3-panel UI (PRD §39) on paper and decide which metrics appear in the right panel.
+- [x] Choose the colour scales: sequential for levels, diverging for deltas.
+- [x] Rehearse the PRD §73 demo story with the three scenarios from Phase 4 and note what the UI
       must show at each step.
-- [ ] Usability pass: can someone else run a scenario without your help?
+- [x] Usability pass: can someone else run a scenario without your help?
+
+(Done by the user, confirmed 2026-11-01.)
 
 ## 6. Agent tasks
 
