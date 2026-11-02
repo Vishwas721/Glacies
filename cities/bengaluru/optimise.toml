@@ -1,0 +1,46 @@
+# Frequency setting for Bengaluru (Phase 8). Agreed with the user 2026-11-02.
+#
+# Five BMTC trunk routes, chosen on the data (docs/validation/optimisation.md): the routes with
+# the most simulated morning boardings that run every 10 minutes or better, with one stop
+# pattern per direction, on different corridors. The airport and intercity routes carry more
+# passenger-km but run every 12-24 minutes and show the Phase 6 bus pile-up (peak load factors
+# of 6-24), so the search would chase a model artefact there; 285-M (2.08 times its capacity
+# inbound) is left out for the same reason.
+
+[optimise]
+# Headway set from the phase plan, minutes.
+headways_min = [3, 5, 7, 10, 15, 20, 30]
+# Departures from the first stop in this window are regularised in both directions; a trip
+# leaving at 07:00 is still on the road when the assignment window opens at 08:00, and nobody
+# starts a journey after 10:00. Outside the window the timetable is unchanged.
+window = ["07:00", "10:30"]
+# Minutes at each terminal between trips (Assumed; no published BMTC figure was found).
+layover_min = 10.0
+# A route's peak-hour passenger-km over design capacity-km (seats + 6 standing per m2) may not
+# exceed this, estimated from the baseline assignment as baseline x new / current headway
+# (Estimated: riders are held fixed). Limiting the busier direction or the 90th-percentile
+# segment instead leaves almost no feasible vector with today's fleet, because the simulated
+# bus loads include the pile-up artefact.
+max_load_factor = 1.0
+# fleet_vehicles is omitted: the fleet is what the routes need today (Estimated).
+source = "BMTC GTFS 2026-09-07 (timetable, Observed); baseline assignment (loads, Simulated)"
+
+[[optimise.routes]]
+route_id = "1100"
+label = "378"  # Kengeri - Electronic City
+
+[[optimise.routes]]
+route_id = "1558"
+label = "401-K"  # Yelahanka - Kengeri
+
+[[optimise.routes]]
+route_id = "1508"
+label = "600-F"  # Attibele - Banashankari
+
+[[optimise.routes]]
+route_id = "1133"
+label = "226-N"  # Bidadi - Kempegowda Bus Station
+
+[[optimise.routes]]
+route_id = "1097"
+label = "V-335E"  # Kadugodi - Kempegowda Bus Station
