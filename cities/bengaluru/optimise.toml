@@ -4,7 +4,7 @@
 # the most simulated morning boardings that run every 10 minutes or better, with one stop
 # pattern per direction, on different corridors. The airport and intercity routes carry more
 # passenger-km but run every 12-24 minutes and show the Phase 6 bus pile-up (peak load factors
-# of 6-24), so the search would chase a model artefact there; 285-M (2.08 times its capacity
+# of 14-24), so the search would chase a model artefact there; 285-M (2.08 times its capacity
 # inbound) is left out for the same reason.
 
 [optimise]
