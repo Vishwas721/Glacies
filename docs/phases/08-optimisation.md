@@ -26,12 +26,12 @@ runs in a known time. Only start this phase once that is true.
 
 | Decision | Guidance | Your choice |
 |---|---|---|
-| Routes in scope | ≤ 5 trunk routes (PRD §36): pick them | |
-| Decision variables | headway per route from a discrete set {3,5,7,10,15,20,30} min | |
-| Objectives | total passenger waiting time ↓, fleet operating hours ↓ (+ optional accessibility ↑) | |
-| Constraints | total vehicles ≤ fleet available on those routes; max load factor | |
-| Evaluation fidelity | accessibility-only (fast) vs. full assignment (slow); start fast | |
-| Budget | e.g. population 40 × 50 generations; evaluations cached by headway vector | |
+| Routes in scope | ≤ 5 trunk routes (PRD §36): pick them | 378, 401-K, 600-F, 226-N, V-335E: the busiest routes (simulated boardings) running every ≤ 10 min with one pattern per direction, on different corridors; airport/intercity routes and 285-M left out for the bus pile-up artefact (`docs/validation/optimisation.md`, ADR 0026). |
+| Decision variables | headway per route from a discrete set {3,5,7,10,15,20,30} min | As suggested, as `modify_headway` (regular, both directions) on departures 07:00–10:30. |
+| Objectives | total passenger waiting time ↓, fleet operating hours ↓ (+ optional accessibility ↑) | Waiting passenger-hours (Simulated) and vehicles × 3.5 h (Estimated); accessibility reported for chosen solutions only. |
+| Constraints | total vehicles ≤ fleet available on those routes; max load factor | Vehicles = ceil(round trip / headway) ≤ 205 (today's need, Estimated; 10-min layovers Assumed); route peak-hour passenger-km / design capacity-km ≤ 1.0 at baseline riders (Estimated). Checked before evaluating. |
+| Evaluation fidelity | accessibility-only (fast) vs. full assignment (slow); start fast | All-or-nothing assignment of the baseline OD on the scenario network (waiting needs journeys, not accessibility); origin sample sized in M2; full scenario runs for the correlation check and chosen solutions. |
+| Budget | e.g. population 40 × 50 generations; evaluations cached by headway vector | 40 × 50, cached by vector. The load limit leaves 384 allowed vectors, so a run makes at most 384 evaluator calls: ≤ 25 s each fits 2.7 h on a good night. |
 
 ## 5. Your hands-on tasks
 

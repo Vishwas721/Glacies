@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     def assignment_config_path(self) -> Path:
         return self.cities_dir / self.city / "assignment.toml"
 
+    @property
+    def optimise_config_path(self) -> Path:
+        return self.cities_dir / self.city / "optimise.toml"
+
 
 def get_settings() -> Settings:
     return Settings()

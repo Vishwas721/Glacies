@@ -21,12 +21,14 @@ def invoke(*command: str) -> None:
     assert result.exit_code == 0, result.output
 
 
-def build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Toyville with a baseline matrix and accessibility; returns its processed folder."""
-    return build_in(tmp_path, monkeypatch.setenv)
+def build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, feed: Path = TOY_FEED) -> Path:
+    """Toyville with a baseline matrix and accessibility; returns its processed folder.
+
+    ``feed`` replaces the toy GTFS feed (a folder of GTFS text files)."""
+    return build_in(tmp_path, monkeypatch.setenv, feed)
 
 
-def build_in(tmp_path: Path, setenv: Callable[[str, str], None]) -> Path:
+def build_in(tmp_path: Path, setenv: Callable[[str, str], None], feed: Path = TOY_FEED) -> Path:
     """As ``build``, setting the environment with ``setenv`` (the end-to-end setup has no
     pytest)."""
     setenv("GLACIES_CITIES_DIR", str(FIXTURES / "cities"))
@@ -35,7 +37,7 @@ def build_in(tmp_path: Path, setenv: Callable[[str, str], None]) -> Path:
     downloads = tmp_path / "downloads"
     downloads.mkdir()
     sources = {
-        "toy_gtfs": shutil.copytree(TOY_FEED, downloads / "toy_feed"),
+        "toy_gtfs": shutil.copytree(feed, downloads / "toy_feed"),
         "toy_osm": shutil.copy(FIXTURES / "osm" / "toy.osm", downloads / "toy.osm"),
         "toy_population": write_population(downloads / "pop.tif"),
         "toy_landcover": write_landcover(downloads / "lc.tif"),

@@ -20,6 +20,7 @@ dependencies = [
     "pyarrow>=17",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    "pymoo>=0.6.1",
     "pyproj>=3.6",
     "rasterio>=1.4",
     "redis>=8.1,<9",
@@ -90,7 +91,7 @@ files = ["src", "tests", "crates/raptor-py/glacies_raptor.pyi"]
 
 [[tool.mypy.overrides]]
 # These ship no type information and no stub package exists.
-module = ["h3", "h3.*", "pyarrow", "pyarrow.*", "rasterio", "rasterio.*"]
+module = ["h3", "h3.*", "pyarrow", "pyarrow.*", "pymoo", "pymoo.*", "rasterio", "rasterio.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -548,7 +548,7 @@ def run_accessibility(
     return manifest, out_dir
 
 
-def _demand_settings(settings: Settings, config: CityConfig) -> tuple[DemandConfig, str]:
+def demand_settings(settings: Settings, config: CityConfig) -> tuple[DemandConfig, str]:
     """The city's demand.toml and the mode its calibration ridership counts."""
     try:
         demand = load_demand(settings.demand_config_path)
@@ -581,7 +581,7 @@ def _cost_dir(base: Path, scenario: str, demand: DemandConfig) -> tuple[str, Pat
     return "demand_matrix", base / "demand_matrix" / scenario
 
 
-def _demand_walks(
+def demand_walks(
     router: Router,
     base: Path,
     zones: pl.DataFrame,
@@ -613,7 +613,7 @@ def run_demand_matrix(
 
     Accessibility keeps the walk-only ``tt_matrix``; only demand uses this one.
     """
-    demand, mode = _demand_settings(settings, config)
+    demand, mode = demand_settings(settings, config)
     if demand.ride_access is None:
         raise PipelineError(
             "demand.toml has no [demand.ride_access]; demand uses the tt-matrix as it is"
@@ -625,7 +625,7 @@ def run_demand_matrix(
     rides = demand.ride_access.model_dump_json().encode()
     try:
         router = load_router(base, config.routing, config.city.crs_projected)
-        walks, _ = _demand_walks(router, base, zones, config, demand, mode)
+        walks, _ = demand_walks(router, base, zones, config, demand, mode)
         return build_matrix(
             router,
             zones,
@@ -662,7 +662,7 @@ def run_paths(
     Per zone pair: departures reached, walked all the way, and using the metro; per metro
     station pair: departures. Independent of demand, so it is built once per network.
     """
-    demand, mode = _demand_settings(settings, config)
+    demand, mode = demand_settings(settings, config)
     base = city_dir(settings, config)
     cost_stage, cost_dir = _cost_dir(base, scenario, demand)
     stages = {
@@ -675,7 +675,7 @@ def run_paths(
     zones = pl.read_parquet(stages["zones"] / "zones.parquet").sort("zone_idx")
     try:
         router = load_router(base, config.routing, config.city.crs_projected)
-        walks, metro = _demand_walks(router, base, zones, config, demand, mode)
+        walks, metro = demand_walks(router, base, zones, config, demand, mode)
         has_walk = np.array([stops.size > 0 for stops, _ in walks.access])
         ride_stations = np.array(
             [stops.size for stops, _ in walks.ride] if walks.ride else [0] * zones.height,
@@ -797,7 +797,7 @@ def run_demand(
     settings: Settings, config: CityConfig, *, scenario: str = "baseline"
 ) -> tuple[DemandManifest, ModelBuild, Path]:
     """AM-peak trip ends and the balanced gravity OD matrix (Phase 5 M1-M2)."""
-    demand, mode = _demand_settings(settings, config)
+    demand, mode = demand_settings(settings, config)
     model, stages = _prepare(settings, config, demand, mode, scenario)
     try:
         result = build_model(model, demand.gravity.beta_per_min)
@@ -848,7 +848,7 @@ def run_calibration(
     on_point: Callable[[SweepPoint], None] | None = None,
 ) -> tuple[CalibrationManifest, Path]:
     """Choose β by fitting station entry shares on the training stations (Phase 5 M4)."""
-    demand, mode = _demand_settings(settings, config)
+    demand, mode = demand_settings(settings, config)
     cal = demand.calibration
     model, stages = _prepare(settings, config, demand, mode, scenario)
     base = city_dir(settings, config)
@@ -883,7 +883,7 @@ def run_sensitivity(
     on_variant: Callable[[VariantResult], None] | None = None,
 ) -> tuple[SensitivityManifest, Path]:
     """Headline demand metrics under alternative β, proxies and priors (Phase 5 M5)."""
-    demand, mode = _demand_settings(settings, config)
+    demand, mode = demand_settings(settings, config)
     proxy = config.attraction
     if proxy is None:
         raise PipelineError(f"city {config.city.id!r} has no [attraction] section in city.toml")
@@ -938,7 +938,7 @@ def run_station_flows(
     settings: Settings, config: CityConfig, *, scenario: str = "baseline"
 ) -> tuple[MetroManifest, Path]:
     """Simulated metro entries, exits and station-pair flows of the OD matrix (Phase 5 M3)."""
-    _, mode = _demand_settings(settings, config)
+    _, mode = demand_settings(settings, config)
     base = city_dir(settings, config)
     stages = {"paths": base / "paths" / scenario, "demand": base / "demand" / scenario}
     _require(stages)
@@ -984,7 +984,7 @@ def run_assignment(
     ``transit_dir`` swaps in another network (a scenario's) and ``out_dir`` sets where results
     go; demand is always the baseline OD, so a scenario changes routes, not trips (ADR 0019).
     """
-    demand, mode = _demand_settings(settings, config)
+    demand, mode = demand_settings(settings, config)
     try:
         assignment = load_assignment(settings.assignment_config_path)
     except CityConfigError as exc:
@@ -1017,7 +1017,7 @@ def run_assignment(
         router = load_router(
             base, config.routing, config.city.crs_projected, transit_dir=transit_dir
         )
-        walks, metro = _demand_walks(
+        walks, metro = demand_walks(
             router, base, zones, config, demand, mode, transit_dir=stages["transit"]
         )
         stop_times = pl.read_parquet(stages["transit"] / "stop_times.parquet").sort(
@@ -1146,7 +1146,7 @@ def run_assignment_report(
 
 def run_ridership(settings: Settings, config: CityConfig) -> tuple[RidershipManifest, Path]:
     """Validate the calibration ridership snapshot into canonical tables (Observed)."""
-    demand, mode = _demand_settings(settings, config)
+    demand, mode = demand_settings(settings, config)
     dataset, snapshot = demand.calibration.dataset, demand.calibration.snapshot
     source = config.source(dataset)
     if source.format is None:
