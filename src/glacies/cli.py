@@ -925,3 +925,71 @@ def scenario_compare(
         )
     typer.echo(f"direction check: {m.direction_check}")
     typer.echo(f"report -> {result.out_dir / 'comparison.md'}")
+
+
+optimise_app = typer.Typer(
+    help="Frequency setting over trunk routes (Phase 8).", no_args_is_help=True
+)
+app.add_typer(optimise_app, name="optimise")
+
+
+@optimise_app.command("facts")
+def optimise_facts(city: CityOption = None) -> None:
+    """Show the trunk routes of optimise.toml as the baseline has them."""
+    from glacies.optimise.city import city_facts
+    from glacies.optimise.problem import baseline_fleet
+    from glacies.optimise.routes import OptimiseError
+
+    settings, config = _load(city)
+    try:
+        optimise, facts = city_facts(settings, config)
+    except OptimiseError as exc:
+        _fail(str(exc))
+    limit = optimise.max_load_factor
+    for f in facts:
+        allowed = [h for h in optimise.headways_min if f.load_factor(h * 60) <= limit + 1e-9]
+        typer.echo(
+            f"  {f.label} (route_id {f.route_id}): every {f.headway_now_s / 60:.1f} min now, "
+            f"round trip {f.cycle_s / 60:.0f} min, {f.vehicles(f.headway_now_s)} vehicles, "
+            f"peak-hour load {f.utilisation:.2f}; headways within the load limit: {allowed}"
+        )
+    fleet = optimise.fleet_vehicles or baseline_fleet(facts)
+    source = "optimise.toml" if optimise.fleet_vehicles else "Estimated from the baseline"
+    typer.echo(f"fleet: {fleet} vehicles ({source})")
+
+
+@optimise_app.command("evaluate")
+def optimise_evaluate(
+    headways: Annotated[str, typer.Argument(help="Headways in minutes, one per route: 5,7,5,5,10")],
+    city: CityOption = None,
+) -> None:
+    """Evaluate one headway vector (cached): vehicles, operating hours, waiting time."""
+    from glacies.optimise.city import city_problem
+    from glacies.optimise.routes import OptimiseError
+
+    settings, config = _load(city)
+    try:
+        vector = [int(h) for h in headways.split(",")]
+    except ValueError:
+        _fail(f"headways must be whole minutes separated by commas, not {headways!r}")
+    started = time.perf_counter()
+    try:
+        problem = city_problem(settings, config)
+        typer.echo(f"set up in {time.perf_counter() - started:.1f} s")
+        e = problem.evaluate(vector)
+    except (OptimiseError, PipelineError, RouterError, ScenarioError) as exc:
+        _fail(str(exc))
+    typer.echo(
+        f"vehicles {e.vehicles} = {sum(e.vehicles)} of {e.fleet_vehicles}, "
+        f"{e.vehicle_hours:,.1f} vehicle-hours (Estimated)"
+    )
+    typer.echo("load factors " + ", ".join(f"{lf:.2f}" for lf in e.load_factors) + " (Estimated)")
+    if e.waiting_hours is None:
+        typer.echo("breaks a constraint: not evaluated")
+        return
+    cached = "cached" if problem.evaluator_calls == 0 else f"evaluated in {e.seconds:.1f} s"
+    mean = e.waiting_hours * 60 / (e.transit_trips or 1)
+    typer.echo(
+        f"waiting {e.waiting_hours:,.0f} passenger-hours, {mean:.2f} min per transit trip "
+        f"(Simulated, all-or-nothing; {cached}); peak memory {_peak_mb():,.0f} MiB"
+    )
